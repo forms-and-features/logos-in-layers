@@ -6,13 +6,13 @@ Experiment with interpretability of open-weights Large Language Models using tun
 
 This project explores the internal workings of transformer models by analyzing how predictions evolve through different layers. We use the `tuned_lens` library to peek inside models and understand how they process information.
 
-## Features
+## What This Does
 
 - **Layer-by-layer prediction analysis** using tuned lens
 - **Model comparison** across different architectures (DialoGPT, Llama 3)
 - **Temperature exploration** to understand prediction confidence
 - **Bias detection** and knowledge representation analysis
-- **Support for multiple model types** with automatic compatibility checking
+- **Model compatibility testing** for various transformer architectures
 
 ## Hardware Requirements
 
@@ -74,17 +74,7 @@ python lens_analysis.py
 - **Final layers**: Confident correct prediction
 - **Directional bias**: Some models better at "Berlin is capital of ___" than "capital of Germany is ___"
 
-## Project Structure
 
-```
-interpretability/
-├── lens_analysis.py      # Main analysis script
-├── chat.py              # Chat demo with quantized models
-├── models/              # Local model storage (.gitignored)
-├── PROJECT_NOTES.md     # Detailed findings and progress
-├── requirements.txt     # Python dependencies
-└── README.md           # This file
-```
 
 ## Technical Notes
 
@@ -93,13 +83,7 @@ interpretability/
 - **Quantization**: Avoided due to Apple Silicon compatibility issues
 - **Model Compatibility**: Automatic fallback for unsupported architectures
 
-## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
 
 ## License
 
