@@ -2,31 +2,39 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from tuned_lens import TunedLens
 import torch
 
-# 1. Pick a model that is ALREADY in HF format (recent, capable models)
-# # Let's try Llama models - may need to use a compatible version
-# model_id = "meta-llama/Llama-2-7b-hf"           # Llama 2 7B
-#model_id = "huggingface/CodeLlama-7b-hf"         # CodeLlama might have better support
-# Latest Gemma 3 models (March 2025) - most capable
-# model_id = "google/gemma-3-1b"                   # 1B - optimized for on-device
-# model_id = "google/gemma-3-4b"                   # 4B - good balance
-# model_id = "google/gemma-3-12b-pt"               # 12B - NOT supported by tuned_lens yet
-model_id = "meta-llama/Meta-Llama-3-8B"          # 8B - WORKS with tuned_lens
-# model_id = "google/gemma-3-27b"                  # 27B - might be too large
-# model_id = "google/gemma-7b"                     # Older Gemma 1 (Feb 2024)
-#model_id = "microsoft/DialoGPT-large"             # Starting small for testing, then switch to above
-# model_id = "meta-llama/Meta-Llama-3-8B"
+# 1. Pick a model that is ALREADY in HF format
+
+# ✅ CONFIRMED WORKING with tuned_lens:
+# 345M - WORKS, but biased (Frankfurt > Berlin)
+# model_id = "microsoft/DialoGPT-large"
+# 8B - WORKS, correct knowledge (Berlin)
+model_id = "meta-llama/Meta-Llama-3-8B"
+
+# 🧪 UNTESTED (cutting-edge models worth trying):
+# 7B - Older Gemma 1 (Feb 2024), might work
+# model_id = "google/gemma-7b"
+
+# ❌ CONFIRMED NOT WORKING with tuned_lens:
+# Mistral (all versions) - "Unknown model type" errors
+# Gemma 3 (all versions) - "Unknown model type" errors
+# Qwen3 (all versions) - "Unknown model type" errors
+# DeepSeek-R1-Distill-Qwen (all versions) - "Unknown model type" errors (Qwen2 base)
 
 # 2. Load tokenizer + model on the M-series GPU (no quantization needed)
 tok = AutoTokenizer.from_pretrained(model_id)
+# Load model with automatic device mapping to GPU where possible
+# Use half precision for memory efficiency on Apple Silicon
 model = AutoModelForCausalLM.from_pretrained(
     model_id,
-    device_map="auto",                        # GPU where possible
-    torch_dtype=torch.float16                # Use half precision for efficiency
+    device_map="auto",
+    torch_dtype=torch.float16
 ).eval()
 
 # 3. Build a tuned lens (projects every layer through the LM head)
-lens = TunedLens.from_model(model)           # instant, no training
-lens = lens.to(model.device)                 # Move lens to same device as model
+# Create tuned lens - this is instant, no training required
+lens = TunedLens.from_model(model)
+# Move lens to same device as model
+lens = lens.to(model.device)
 
 # 4. Inspect a short prompt
 prompt = "The capital of Germany is"
@@ -60,12 +68,14 @@ trajectory = PredictionTrajectory.from_lens_and_model(
 print(f"\nTop predictions for next token after '{prompt}':")
 print("-" * 60)
 
-# Look at a few key layers
-layers_to_check = [0, 6, 12, 18, 24, 30, 36]  # Sample across the 37 layers
+# Sample key layers across the model's 37 layers (0-36)
+layers_to_check = [0, 6, 12, 18, 24, 30, 36]
 # Add the final layer since we have 37 layers (0-36)
 if trajectory.log_probs.shape[0] > 36:
-    layers_to_check.append(trajectory.log_probs.shape[0] - 1)  # Add the very last layer
-last_pos = -1  # Look at the last position (after "is")
+    # Add the very last layer
+    layers_to_check.append(trajectory.log_probs.shape[0] - 1)
+# Look at the last position (after "is")
+last_pos = -1
 
 for layer in layers_to_check:
     if layer < trajectory.log_probs.shape[0]:
@@ -91,7 +101,8 @@ print("=" * 60)
 print("ACTUAL MODEL PREDICTION (for comparison):")
 with torch.no_grad():
     model_output = model(input_ids.to(model.device))
-    final_logits = model_output.logits[0, -1, :]  # Last position logits
+    # Last position logits
+    final_logits = model_output.logits[0, -1, :]
     final_probs = torch.softmax(final_logits, dim=0)
     top_probs, top_indices = torch.topk(final_probs, 5)
     
@@ -162,6 +173,4 @@ print(f"Sequence length: {trajectory.log_probs.shape[1]}")
 print(f"Vocab size: {trajectory.log_probs.shape[2]}")
 print("=== END OF TRAJECTORY STATS ========\n")
 
-
-
-# Optional: show() opens an interactive HTML if you’re in Jupyter
+# Optional: show() opens an interactive HTML if you're in Jupyter

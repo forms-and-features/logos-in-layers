@@ -23,7 +23,7 @@ Experiment with interpretability of open-weights LLMs.
 - llama 4 scout transformers size is too large for this machine, and there is no pre-quantized version
 - tuned_lens library support varies by architecture:
   - WORKS: GPT-2, GPT-Neo, GPT-NeoX, OPT, Pythia, Llama 3
-  - FAILS: Mistral, Gemma 3 (throws "Unknown model type" errors)
+  - FAILS: Mistral, Gemma 3, Qwen2/3, DeepSeek-R1-Distill-Qwen (throws "Unknown model type" errors)
   - UNTESTED: Gemma 1/2 (older versions)
 - Model architecture dramatically affects factual knowledge:
   - DialoGPT: confidently wrong about German capital (Frankfurt bias)
