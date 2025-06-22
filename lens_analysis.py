@@ -11,13 +11,12 @@ import torch
 model_id = "meta-llama/Meta-Llama-3-8B"
 
 # 🧪 UNTESTED (cutting-edge models worth trying):
-# 7B - Older Gemma 1 (Feb 2024), might work
-# model_id = "google/gemma-7b"
+# (None remaining - all tested models failed)
 
 # ❌ CONFIRMED NOT WORKING with tuned_lens:
 # Mistral (all versions) - "Unknown model type" errors
-# Gemma 3 (all versions) - "Unknown model type" errors
-# Qwen3 (all versions) - "Unknown model type" errors
+# Gemma (all versions, including Gemma 1/7B) - "Unknown model type" errors
+# Qwen2/3 (all versions) - "Unknown model type" errors
 # DeepSeek-R1-Distill-Qwen (all versions) - "Unknown model type" errors (Qwen2 base)
 
 # 2. Load tokenizer + model on the M-series GPU (no quantization needed)

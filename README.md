@@ -56,7 +56,7 @@ python lens_analysis.py
 
 ### ❌ Not Supported
 - **Mistral** - Architecture not supported by tuned_lens
-- **Gemma 3** - Latest architecture not supported yet
+- **Gemma** - Entire architecture family not supported (including Gemma 1/7B)
 - **Qwen2/3** - Latest architecture not supported yet
 - **DeepSeek-R1-Distill-Qwen** - Based on Qwen2, not supported
 - **GGUF files** - Require raw transformer format
