@@ -110,4 +110,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - **tuned_lens** library for interpretability tools
 - **Hugging Face** for model hosting and transformers library
 - **EleutherAI, Meta** for open-weight models
-- **Apple** for Metal GPU acceleration 
+- **Apple** for Metal GPU acceleration
+
+### AI-Assisted Development
+This research was guided by **OpenAI ChatGPT o3** for conceptual direction and implemented with **Anthropic Claude 4 Sonnet** via **Cursor IDE** for code development and analysis. 
