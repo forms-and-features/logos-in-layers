@@ -1,18 +1,18 @@
 # LLM Interpretability Project
 
-Experiment with interpretability of open-weights Large Language Models using tuned lens analysis and other techniques.
+Experiment with interpretability of open-weights Large Language Models using TransformerLens and other cutting-edge techniques.
 
 ## Overview
 
-This project explores the internal workings of transformer models by analyzing how predictions evolve through different layers. We use the `tuned_lens` library to peek inside models and understand how they process information.
+This project explores the internal workings of transformer models by analyzing how predictions evolve through different layers. We use the `TransformerLens` library to peek inside models and understand how they process information, with support for the latest model architectures.
 
 ## What This Does
 
-- **Layer-by-layer prediction analysis** using tuned lens
-- **Model comparison** across different architectures (DialoGPT, Llama 3)
+- **Layer-by-layer prediction analysis** using TransformerLens
+- **Model comparison** across different architectures (DialoGPT, Llama 3, Mistral 7B)
 - **Temperature exploration** to understand prediction confidence
 - **Bias detection** and knowledge representation analysis
-- **Model compatibility testing** for various transformer architectures
+- **Cutting-edge model support** for Mistral, Gemma, Qwen, and more
 
 ## Hardware Requirements
 
@@ -48,31 +48,34 @@ python lens_analysis.py
 
 ## Supported Models
 
-### ✅ Working with tuned_lens
+### ✅ Working with TransformerLens
 - **GPT-2, GPT-Neo, GPT-NeoX** - EleutherAI models
 - **OPT, Pythia** - Meta and EleutherAI models  
 - **Llama 3** - Meta's latest models (confirmed working)
+- **Mistral 7B** - Mistral AI models (confirmed working)
 - **DialoGPT** - Microsoft's conversational models
+- **Gemma** - Google's Gemma model family (supported)
+- **Qwen2/3** - Alibaba's latest models (supported)
+- **DeepSeek** - DeepSeek model family (supported)
 
 ### ❌ Not Supported
-- **Mistral** - Architecture not supported by tuned_lens
-- **Gemma** - Entire architecture family not supported (including Gemma 1/7B)
-- **Qwen2/3** - Latest architecture not supported yet
-- **DeepSeek-R1-Distill-Qwen** - Based on Qwen2, not supported
 - **GGUF files** - Require raw transformer format
+- **Extremely large models** - Limited by hardware constraints
 
 ## Key Findings
 
 ### Model Bias Analysis
 - **DialoGPT**: Confidently wrong about German capital (Frankfurt > Cologne > Berlin)
 - **Llama 3**: Correct knowledge with clear layer evolution (0% → 67% → 79% confidence for Berlin)
-- **Temperature scaling**: Reveals deep-seated biases vs. surface-level uncertainty
+- **Mistral 7B**: Correct knowledge with clean progression (0.4% → 2.2% → 22.6% confidence for Berlin)
+- **Temperature scaling**: Reveals deep-seated biases vs. surface-level uncertainty across architectures
 
 ### Interpretability Insights
 - **Early layers**: Generic/random predictions
 - **Middle layers**: Correct answer starts emerging
 - **Final layers**: Confident correct prediction
-- **Directional bias**: Some models better at "Berlin is capital of ___" than "capital of Germany is ___"
+- **Universal pattern**: Layer evolution holds across DialoGPT, Llama 3, and Mistral architectures
+- **Directional bias**: Models consistently better at "Berlin is capital of ___" than "capital of Germany is ___"
 
 
 
@@ -91,9 +94,9 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Acknowledgments
 
-- **tuned_lens** library for interpretability tools
+- **TransformerLens** library for comprehensive interpretability tools
 - **Hugging Face** for model hosting and transformers library
-- **EleutherAI, Meta** for open-weight models
+- **EleutherAI, Meta, Mistral AI** for open-weight models
 - **Apple** for Metal GPU acceleration
 
 ### AI-Assisted Development

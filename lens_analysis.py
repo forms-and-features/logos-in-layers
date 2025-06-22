@@ -1,39 +1,28 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from tuned_lens import TunedLens
+import transformer_lens
+from transformer_lens import HookedTransformer
 import torch
 
 # 1. Pick a model that is ALREADY in HF format
 
-# ✅ CONFIRMED WORKING with tuned_lens:
-# 345M - WORKS, but biased (Frankfurt > Berlin)
+# ✅ PREVIOUSLY TESTED:
+# 345M - DialoGPT, biased (Frankfurt > Berlin)
 # model_id = "microsoft/DialoGPT-large"
-# 8B - WORKS, correct knowledge (Berlin)
-model_id = "meta-llama/Meta-Llama-3-8B"
+# 8B - Llama 3, correct knowledge (Berlin)
+# model_id = "meta-llama/Meta-Llama-3-8B"
 
-# 🧪 UNTESTED (cutting-edge models worth trying):
-# (None remaining - all tested models failed)
+# ✅ NOW TESTING:
+# 7B - Testing Mistral support
+model_id = "mistral-7b"
 
-# ❌ CONFIRMED NOT WORKING with tuned_lens:
-# Mistral (all versions) - "Unknown model type" errors
-# Gemma (all versions, including Gemma 1/7B) - "Unknown model type" errors
-# Qwen2/3 (all versions) - "Unknown model type" errors
-# DeepSeek-R1-Distill-Qwen (all versions) - "Unknown model type" errors (Qwen2 base)
+# 🧪 FUTURE CANDIDATES:
+# Gemma (all versions, including Gemma 1/7B)
+# Qwen2/3 (all versions)
+# DeepSeek-R1-Distill-Qwen (all versions)
 
-# 2. Load tokenizer + model on the M-series GPU (no quantization needed)
-tok = AutoTokenizer.from_pretrained(model_id)
-# Load model with automatic device mapping to GPU where possible
-# Use half precision for memory efficiency on Apple Silicon
-model = AutoModelForCausalLM.from_pretrained(
-    model_id,
-    device_map="auto",
-    torch_dtype=torch.float16
-).eval()
-
-# 3. Build a tuned lens (projects every layer through the LM head)
-# Create tuned lens - this is instant, no training required
-lens = TunedLens.from_model(model)
-# Move lens to same device as model
-lens = lens.to(model.device)
+# 2. Load model with TransformerLens
+# TransformerLens handles tokenizer and model loading automatically
+model = HookedTransformer.from_pretrained(model_id)
 
 # 4. Inspect a short prompt
 prompt = "The capital of Germany is"
@@ -43,47 +32,39 @@ print(prompt)
 print("=== END OF PROMPT =================\n")
 
 print("\n=== INSPECTING ====================")
-# Use PredictionTrajectory to analyze layer-by-layer predictions
-from tuned_lens.plotting import PredictionTrajectory
+# Use TransformerLens to analyze layer-by-layer predictions
 import torch
 
 # Tokenize the prompt
-input_ids = tok.encode(prompt, return_tensors="pt")
-targets = input_ids[0, 1:].tolist() + [tok.eos_token_id]
+tokens = model.to_tokens(prompt)
 
-print(f"Input tokens: {tok.convert_ids_to_tokens(input_ids[0])}")
-print(f"Predicting next tokens for: {targets}")
+print(f"Input tokens: {model.to_str_tokens(prompt)}")
 
-# Create prediction trajectory
-trajectory = PredictionTrajectory.from_lens_and_model(
-    lens, 
-    model, 
-    tokenizer=tok,
-    input_ids=input_ids[0].tolist(),
-    targets=targets
-)
+# Run model and get activations
+logits, cache = model.run_with_cache(tokens)
 
 # Show top predictions at different layers for the last token position
 print(f"\nTop predictions for next token after '{prompt}':")
 print("-" * 60)
 
-# Sample key layers across the model's 37 layers (0-36)
-layers_to_check = [0, 6, 12, 18, 24, 30, 36]
-# Add the final layer since we have 37 layers (0-36)
-if trajectory.log_probs.shape[0] > 36:
-    # Add the very last layer
-    layers_to_check.append(trajectory.log_probs.shape[0] - 1)
+# Sample key layers across the model's layers
+n_layers = model.cfg.n_layers
+layers_to_check = [0, n_layers//6, n_layers//3, n_layers//2, 2*n_layers//3, 5*n_layers//6, n_layers-1]
+
 # Look at the last position (after "is")
 last_pos = -1
 
 for layer in layers_to_check:
-    if layer < trajectory.log_probs.shape[0]:
-        # Get log probabilities for this layer and position
-        layer_logits = trajectory.log_probs[layer, last_pos, :]
+    if layer < n_layers:
+        # Get residual stream at this layer and apply unembedding
+        if layer == 0:
+            # Use embeddings for layer 0
+            resid = cache["embed"]
+        else:
+            resid = cache["resid_post", layer-1]
         
-        # Convert to PyTorch tensor if it's numpy
-        if not isinstance(layer_logits, torch.Tensor):
-            layer_logits = torch.from_numpy(layer_logits)
+        # Apply the unembedding to get logits
+        layer_logits = model.unembed(resid[0, last_pos, :])
         
         # Convert to probabilities and get top 5
         probs = torch.softmax(layer_logits, dim=0)
@@ -91,24 +72,21 @@ for layer in layers_to_check:
         
         print(f"Layer {layer:2d}:")
         for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
-            token = tok.decode([idx.item()])
+            token = model.to_string(idx.unsqueeze(0))
             print(f"  {i+1}. '{token}' ({prob.item():.3f})")
         print()
 
-# Let's also see what the actual model would predict (without the lens)
+# Let's also see what the actual model would predict (final layer)
 print("=" * 60)
 print("ACTUAL MODEL PREDICTION (for comparison):")
-with torch.no_grad():
-    model_output = model(input_ids.to(model.device))
-    # Last position logits
-    final_logits = model_output.logits[0, -1, :]
-    final_probs = torch.softmax(final_logits, dim=0)
-    top_probs, top_indices = torch.topk(final_probs, 5)
-    
-    print("Model's final prediction:")
-    for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
-        token = tok.decode([idx.item()])
-        print(f"  {i+1}. '{token}' ({prob.item():.3f})")
+final_logits = logits[0, -1, :]
+final_probs = torch.softmax(final_logits, dim=0)
+top_probs, top_indices = torch.topk(final_probs, 5)
+
+print("Model's final prediction:")
+for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
+    token = model.to_string(idx.unsqueeze(0))
+    print(f"  {i+1}. '{token}' ({prob.item():.3f})")
 
 # Let's probe the model's knowledge a bit more
 print("=" * 60)
@@ -125,17 +103,15 @@ test_prompts = [
 
 for test_prompt in test_prompts:
     print(f"\nPrompt: '{test_prompt}'")
-    test_ids = tok.encode(test_prompt, return_tensors="pt")
+    test_tokens = model.to_tokens(test_prompt)
     
-    with torch.no_grad():
-        test_output = model(test_ids.to(model.device))
-        test_logits = test_output.logits[0, -1, :]
-        test_probs = torch.softmax(test_logits, dim=0)
-        top_probs, top_indices = torch.topk(test_probs, 3)
-        
-        for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
-            token = tok.decode([idx.item()])
-            print(f"  {i+1}. '{token}' ({prob.item():.3f})")
+    test_logits = model(test_tokens)
+    test_probs = torch.softmax(test_logits[0, -1, :], dim=0)
+    top_probs, top_indices = torch.topk(test_probs, 3)
+    
+    for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
+        token = model.to_string(idx.unsqueeze(0))
+        print(f"  {i+1}. '{token}' ({prob.item():.3f})")
 
 # Let's explore how temperature affects the predictions
 print("=" * 60)
@@ -143,33 +119,33 @@ print("TEMPERATURE EXPLORATION:")
 print("(Temperature controls randomness: low=confident, high=creative)")
 
 test_prompt = "The capital of Germany is"
-test_ids = tok.encode(test_prompt, return_tensors="pt")
+test_tokens = model.to_tokens(test_prompt)
 
 temperatures = [0.1, 0.5, 1.0, 1.5, 2.0]
 
 for temp in temperatures:
     print(f"\nTemperature {temp}:")
     
-    with torch.no_grad():
-        test_output = model(test_ids.to(model.device))
-        test_logits = test_output.logits[0, -1, :]
-        
-        # Apply temperature scaling
-        scaled_logits = test_logits / temp
-        test_probs = torch.softmax(scaled_logits, dim=0)
-        top_probs, top_indices = torch.topk(test_probs, 5)
-        
-        for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
-            token = tok.decode([idx.item()])
-            print(f"  {i+1}. '{token}' ({prob.item():.3f})")
+    test_logits = model(test_tokens)
+    
+    # Apply temperature scaling
+    scaled_logits = test_logits[0, -1, :] / temp
+    test_probs = torch.softmax(scaled_logits, dim=0)
+    top_probs, top_indices = torch.topk(test_probs, 5)
+    
+    for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
+        token = model.to_string(idx.unsqueeze(0))
+        print(f"  {i+1}. '{token}' ({prob.item():.3f})")
 
 print("=== END OF INSPECTING ==============\n")
 
-# 5. Show some basic statistics about the trajectory
-print("\n=== TRAJECTORY STATS ===============")
-print(f"Number of layers: {trajectory.log_probs.shape[0]}")
-print(f"Sequence length: {trajectory.log_probs.shape[1]}")
-print(f"Vocab size: {trajectory.log_probs.shape[2]}")
-print("=== END OF TRAJECTORY STATS ========\n")
+# 5. Show some basic statistics about the model
+print("\n=== MODEL STATS ===============")
+print(f"Number of layers: {model.cfg.n_layers}")
+print(f"Model dimension: {model.cfg.d_model}")
+print(f"Number of heads: {model.cfg.n_heads}")
+print(f"Vocab size: {model.cfg.d_vocab}")
+print(f"Context length: {model.cfg.n_ctx}")
+print("=== END OF MODEL STATS ========\n")
 
 # Optional: show() opens an interactive HTML if you're in Jupyter
