@@ -6,17 +6,18 @@ import torch
 # 1. Pick a model that is ALREADY in HF format
 
 # ✅ PREVIOUSLY TESTED:
-# 345M - DialoGPT, biased (Frankfurt > Berlin)
-# model_id = "microsoft/DialoGPT-large"
-# 8B - Llama 3, correct knowledge (Berlin)
+# 8B - Llama 3, correct knowledge (Berlin) with completion prompts AND Q&A format
 # model_id = "meta-llama/Meta-Llama-3-8B"
+# 7B - Mistral, correct knowledge (Berlin) with completion prompts AND Q&A format
+# model_id = "mistralai/Mistral-7B-v0.1"
+# 9B - Gemma 2, correct knowledge (Berlin) with Q&A format
+# model_id = "google/gemma-2-9b"
 
 # ✅ NOW TESTING:
-# 7B - Testing Mistral support
-model_id = "mistral-7b"
+# Ready for next model
+# model_id = ""
 
 # 🧪 FUTURE CANDIDATES:
-# Gemma (all versions, including Gemma 1/7B)
 # Qwen2/3 (all versions)
 # DeepSeek-R1-Distill-Qwen (all versions)
 
@@ -24,8 +25,8 @@ model_id = "mistral-7b"
 # TransformerLens handles tokenizer and model loading automatically
 model = HookedTransformer.from_pretrained(model_id)
 
-# 4. Inspect a short prompt
-prompt = "The capital of Germany is"
+# 4. Inspect a short prompt - using Q&A format that works best across models
+prompt = "Question: What is the capital of Germany? Answer:"
 
 print("\n=== PROMPT =========================")
 print(prompt)
@@ -61,7 +62,7 @@ for layer in layers_to_check:
             # Use embeddings for layer 0
             resid = cache["embed"]
         else:
-            resid = cache["resid_post", layer-1]
+            resid = cache["resid_post", layer]
         
         # Apply the unembedding to get logits
         layer_logits = model.unembed(resid[0, last_pos, :])
@@ -94,11 +95,9 @@ print("ADDITIONAL PROBING:")
 
 # Test some variations to understand the model's knowledge
 test_prompts = [
-    "The capital city of Germany is",
     "Germany's capital is", 
     "Berlin is the capital of",
-    "Frankfurt is the capital of",
-    "The current capital of Germany is"
+    "Respond in one word: which city is the capital of Germany?"
 ]
 
 for test_prompt in test_prompts:
@@ -118,10 +117,10 @@ print("=" * 60)
 print("TEMPERATURE EXPLORATION:")
 print("(Temperature controls randomness: low=confident, high=creative)")
 
-test_prompt = "The capital of Germany is"
+test_prompt = "Question: What is the capital of Germany? Answer:"
 test_tokens = model.to_tokens(test_prompt)
 
-temperatures = [0.1, 0.5, 1.0, 1.5, 2.0]
+temperatures = [0.1, 2.0]
 
 for temp in temperatures:
     print(f"\nTemperature {temp}:")

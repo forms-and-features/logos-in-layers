@@ -49,14 +49,12 @@ python lens_analysis.py
 ## Supported Models
 
 ### ✅ Working with TransformerLens
-- **GPT-2, GPT-Neo, GPT-NeoX** - EleutherAI models
-- **OPT, Pythia** - Meta and EleutherAI models  
-- **Llama 3** - Meta's latest models (confirmed working)
-- **Mistral 7B** - Mistral AI models (confirmed working)
-- **DialoGPT** - Microsoft's conversational models
-- **Gemma** - Google's Gemma model family (supported)
-- **Qwen2/3** - Alibaba's latest models (supported)
-- **DeepSeek** - DeepSeek model family (supported)
+- **Llama 3** - Meta's latest models (confirmed working with both completion and Q&A formats)
+- **Mistral 7B** - Mistral AI models (confirmed working with both formats)
+- **Gemma 2** - Google's latest models (confirmed working, prefers Q&A format)
+- **Qwen2/3** - Alibaba's latest models (supported, untested)
+- **DeepSeek** - DeepSeek model family (supported, untested)
+- **Phi-4** - Microsoft's latest models (supported, untested)
 
 ### ❌ Not Supported
 - **GGUF files** - Require raw transformer format
@@ -64,18 +62,20 @@ python lens_analysis.py
 
 ## Key Findings
 
-### Model Bias Analysis
-- **DialoGPT**: Confidently wrong about German capital (Frankfurt > Cologne > Berlin)
-- **Llama 3**: Correct knowledge with clear layer evolution (0% → 67% → 79% confidence for Berlin)
-- **Mistral 7B**: Correct knowledge with clean progression (0.4% → 2.2% → 22.6% confidence for Berlin)
-- **Temperature scaling**: Reveals deep-seated biases vs. surface-level uncertainty across architectures
+### Model Analysis Results
+- **Llama 3**: Correct knowledge (Berlin) with both completion and Q&A formats - robust across prompting styles
+- **Mistral 7B**: Correct knowledge (Berlin) with both formats - shows clean layer evolution and strong final confidence
+- **Gemma 2 9B**: Conversational model that works best with Q&A format (79.1% confidence for Berlin vs generic responses with completion)
+- **Prompt format sensitivity**: Q&A format ("Question: ... Answer:") more reliable than completion format across models
+- **Temperature scaling**: Reveals model confidence patterns - low temp shows true beliefs, high temp shows robustness
 
 ### Interpretability Insights
-- **Early layers**: Generic/random predictions
-- **Middle layers**: Correct answer starts emerging
-- **Final layers**: Confident correct prediction
-- **Universal pattern**: Layer evolution holds across DialoGPT, Llama 3, and Mistral architectures
+- **Early layers**: Generic/random predictions across all tested models
+- **Middle layers**: Correct answer starts emerging gradually
+- **Final layers**: Confident correct prediction (but see technical note below)
+- **Universal pattern**: Layer evolution holds across Llama 3, Mistral, and Gemma architectures
 - **Directional bias**: Models consistently better at "Berlin is capital of ___" than "capital of Germany is ___"
+- **Technical discovery**: Final residual stream differs from actual model output, revealing additional processing steps
 
 
 
