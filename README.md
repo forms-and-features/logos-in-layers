@@ -9,10 +9,10 @@ This project explores the internal workings of transformer models by analyzing h
 ## What This Does
 
 - **Layer-by-layer prediction analysis** using TransformerLens
-- **Model comparison** across different architectures (DialoGPT, Llama 3, Mistral 7B)
+- **Model comparison** across different architectures (Llama 3, Mistral 7B, Gemma 2, Qwen3)
 - **Temperature exploration** to understand prediction confidence
 - **Bias detection** and knowledge representation analysis
-- **Cutting-edge model support** for Mistral, Gemma, Qwen, and more
+- **Cutting-edge model support** for major open-weights architectures
 
 ## Hardware Requirements
 
@@ -53,8 +53,6 @@ python lens_analysis.py
 - **Mistral 7B** - Mistral AI models (confirmed working with both formats)
 - **Gemma 2** - Google's latest models (confirmed working, prefers Q&A format)
 - **Qwen3** - Alibaba's latest models (confirmed working, shows sharp confidence transitions)
-- **Qwen2.5** - Alibaba's previous generation (supported, untested)
-- **Phi-4** - Microsoft's latest models (supported, untested)
 
 ### ❌ Not Supported
 - **GGUF files** - Require raw transformer format
@@ -94,7 +92,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - **TransformerLens** library for comprehensive interpretability tools
 - **Hugging Face** for model hosting and transformers library
-- **EleutherAI, Meta, Mistral AI** for open-weight models
+- **EleutherAI, Meta, Mistral AI, Google, Alibaba** for open-weight models
 - **Apple** for Metal GPU acceleration
 
 ### AI-Assisted Development
