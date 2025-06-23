@@ -12,14 +12,15 @@ import torch
 # model_id = "mistralai/Mistral-7B-v0.1"
 # 9B - Gemma 2, correct knowledge (Berlin) with Q&A format
 # model_id = "google/gemma-2-9b"
+# 8B - Qwen3, correct knowledge (Berlin) with Q&A format, shows sharp confidence transitions
+# model_id = "Qwen/Qwen3-8B"
 
 # ✅ NOW TESTING:
-# Ready for next model
+# Testing complete - good coverage across major architectures
 # model_id = ""
 
 # 🧪 FUTURE CANDIDATES:
-# Qwen2/3 (all versions)
-# DeepSeek-R1-Distill-Qwen (all versions)
+# Will revisit when new cutting-edge open-weights models are released
 
 # 2. Load model with TransformerLens
 # TransformerLens handles tokenizer and model loading automatically

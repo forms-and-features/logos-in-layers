@@ -52,8 +52,8 @@ python lens_analysis.py
 - **Llama 3** - Meta's latest models (confirmed working with both completion and Q&A formats)
 - **Mistral 7B** - Mistral AI models (confirmed working with both formats)
 - **Gemma 2** - Google's latest models (confirmed working, prefers Q&A format)
-- **Qwen2/3** - Alibaba's latest models (supported, untested)
-- **DeepSeek** - DeepSeek model family (supported, untested)
+- **Qwen3** - Alibaba's latest models (confirmed working, shows sharp confidence transitions)
+- **Qwen2.5** - Alibaba's previous generation (supported, untested)
 - **Phi-4** - Microsoft's latest models (supported, untested)
 
 ### ❌ Not Supported
@@ -66,18 +66,18 @@ python lens_analysis.py
 - **Llama 3**: Correct knowledge (Berlin) with both completion and Q&A formats - robust across prompting styles
 - **Mistral 7B**: Correct knowledge (Berlin) with both formats - shows clean layer evolution and strong final confidence
 - **Gemma 2 9B**: Conversational model that works best with Q&A format (79.1% confidence for Berlin vs generic responses with completion)
+- **Qwen3 8B**: Correct knowledge (Berlin) with Q&A format - shows most decisive confidence patterns and sharp transitions
 - **Prompt format sensitivity**: Q&A format ("Question: ... Answer:") more reliable than completion format across models
 - **Temperature scaling**: Reveals model confidence patterns - low temp shows true beliefs, high temp shows robustness
 
 ### Interpretability Insights
-- **Early layers**: Generic/random predictions across all tested models
-- **Middle layers**: Correct answer starts emerging gradually
-- **Final layers**: Confident correct prediction (but see technical note below)
-- **Universal pattern**: Layer evolution holds across Llama 3, Mistral, and Gemma architectures
+- **Early layers**: Generic/random predictions across all tested models (Qwen3 shows multilingual noise from diverse training)
+- **Middle layers**: Correct answer starts emerging gradually (Qwen3 shows sharper transitions, especially layers 12→18)
+- **Final layers**: Confident correct prediction (Qwen3 shows "perfect confidence" phenomenon with 1.000 probabilities)
+- **Universal pattern**: Layer evolution holds across Llama 3, Mistral, Gemma, and Qwen3 architectures
+- **Qwen3 unique patterns**: "Wrong right answer" sequence (Germany→Berlin), more extreme confidence jumps than other models
 - **Directional bias**: Models consistently better at "Berlin is capital of ___" than "capital of Germany is ___"
-- **Technical discovery**: Final residual stream differs from actual model output, revealing additional processing steps
-
-
+- **Technical discovery**: Final residual stream differs from actual model output across all models, most pronounced in Qwen3
 
 ## Technical Notes
 
@@ -85,8 +85,6 @@ python lens_analysis.py
 - **Memory Optimization**: Half-precision (float16) loading to reduce memory usage
 - **Quantization**: Avoided due to Apple Silicon compatibility issues
 - **Model Compatibility**: Automatic fallback for unsupported architectures
-
-
 
 ## License
 
