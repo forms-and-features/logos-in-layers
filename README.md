@@ -1,28 +1,33 @@
 # LLM Interpretability Project
 
-Experiment with interpretability of open-weights Large Language Models using TransformerLens and other cutting-edge techniques.
+Exploring how transformer models process information layer-by-layer, using TransformerLens to analyze how predictions evolve through the network.
 
 ## Overview
 
-This project explores the internal workings of transformer models by analyzing how predictions evolve through different layers. We use the `TransformerLens` library to peek inside models and understand how they process information, with support for the latest model architectures.
+This project examines how predictions change through different layers of transformer models. We analyze how several models handle a factual question to understand their internal processing patterns.
 
-## What This Does
+## Experiments
 
-- **Layer-by-layer prediction analysis** using TransformerLens
-- **Model comparison** across different architectures (Llama 3, Mistral 7B, Gemma 2, Qwen3)
-- **Temperature exploration** to understand prediction confidence
-- **Bias detection** and knowledge representation analysis
-- **Cutting-edge model support** for major open-weights architectures
+### 001: Layer-by-Layer Logit Analysis
+**Files**: `001_layers_and_logits.py` + `001_layers_and_logits.md`
 
-## Hardware Requirements
+Analysis of how the prediction for "What is the capital of Germany?" evolves through the layers of four different models:
 
+- **Qwen3-8B** (36 layers): Shows a distinctive "Germany → Berlin" transition pattern
+- **Meta-Llama-3-8B** (32 layers): More direct path to the correct answer
+- **Mistral-7B-v0.1** (32 layers): Early emergence of German-related tokens
+- **Gemma-2-9B** (42 layers): Later convergence on the factual answer
+
+**Finding**: All models converge on the correct answer around 80-85% through their layers, followed by confidence calibration in the final layers.
+
+## Setup
+
+### Requirements
 - **Apple Silicon Mac** (M1/M2/M3) with Metal GPU support
 - **64GB+ RAM** recommended for larger models
 - **50GB+ free disk space** for model downloads
 
-## Setup
-
-### 1. Clone and Setup Environment
+### Installation
 
 ```bash
 git clone <your-repo-url>
@@ -32,68 +37,65 @@ source venv/bin/activate  # On macOS/Linux
 pip install -r requirements.txt
 ```
 
-### 2. Hugging Face Authentication
+### Authentication
 
 ```bash
 huggingface-cli login
 ```
 
-You'll need to accept the license agreements for gated models (Llama, etc.).
+Accept license agreements for gated models (Llama, etc.).
 
-### 3. Run Analysis
+### Running Experiments
 
 ```bash
-python lens_analysis.py
+# Run the layer-by-layer analysis
+python 001_layers_and_logits.py
 ```
 
 ## Supported Models
 
-### ✅ Working with TransformerLens
-- **Llama 3** - Meta's latest models (confirmed working with both completion and Q&A formats)
-- **Mistral 7B** - Mistral AI models (confirmed working with both formats)
-- **Gemma 2** - Google's latest models (confirmed working, prefers Q&A format)
-- **Qwen3** - Alibaba's latest models (confirmed working, shows sharp confidence transitions)
+### ✅ Confirmed Working
+- **Llama 3** (Meta)
+- **Mistral 7B** (Mistral AI)  
+- **Gemma 2** (Google)
+- **Qwen3** (Alibaba)
 
 ### ❌ Not Supported
 - **GGUF files** - Require raw transformer format
-- **Extremely large models** - Limited by hardware constraints
+- **Extremely large models** - Hardware constraints
 
-## Key Findings
+## Key Insights
 
-### Model Analysis Results
-- **Llama 3**: Correct knowledge (Berlin) with both completion and Q&A formats - robust across prompting styles
-- **Mistral 7B**: Correct knowledge (Berlin) with both formats - shows clean layer evolution and strong final confidence
-- **Gemma 2 9B**: Conversational model that works best with Q&A format (79.1% confidence for Berlin vs generic responses with completion)
-- **Qwen3 8B**: Correct knowledge (Berlin) with Q&A format - shows most decisive confidence patterns and sharp transitions
-- **Prompt format sensitivity**: Q&A format ("Question: ... Answer:") more reliable than completion format across models
-- **Temperature scaling**: Reveals model confidence patterns - low temp shows true beliefs, high temp shows robustness
+### Patterns Identified
+- **Convergence timing**: Models consistently arrive at the correct answer around 80-85% through their depth
+- **Processing phases**: Early layers show noise, middle layers develop the answer, final layers calibrate confidence
+- **Internal confidence**: Models exhibit higher internal certainty than their final output probabilities suggest
+- **Directional asymmetry**: "Berlin is capital of Germany" produces higher confidence than "Germany's capital is Berlin"
 
-### Interpretability Insights
-- **Early layers**: Generic/random predictions across all tested models (Qwen3 shows multilingual noise from diverse training)
-- **Middle layers**: Correct answer starts emerging gradually (Qwen3 shows sharper transitions, especially layers 12→18)
-- **Final layers**: Confident correct prediction (Qwen3 shows "perfect confidence" phenomenon with 1.000 probabilities)
-- **Universal pattern**: Layer evolution holds across Llama 3, Mistral, Gemma, and Qwen3 architectures
-- **Qwen3 unique patterns**: "Wrong right answer" sequence (Germany→Berlin), more extreme confidence jumps than other models
-- **Directional bias**: Models consistently better at "Berlin is capital of ___" than "capital of Germany is ___"
-- **Technical discovery**: Final residual stream differs from actual model output across all models, most pronounced in Qwen3
+### Technical Notes
+- **LayerNorm correction**: Important to apply the same normalization the model uses internally
+- **Final layer adjustments**: Last few layers seem to moderate the confidence for more natural responses
+- **Temperature effects**: Lower temperature shows what the model "really thinks"
 
-## Technical Notes
 
-- **Device Management**: Automatic MPS (Metal) GPU detection for Apple Silicon
-- **Memory Optimization**: Half-precision (float16) loading to reduce memory usage
-- **Quantization**: Avoided due to Apple Silicon compatibility issues
-- **Model Compatibility**: Automatic fallback for unsupported architectures
+
+## Possible Next Steps
+
+- **Attention patterns**: Look at which parts of the input different layers pay attention to
+- **Other types of questions**: Try math problems, historical facts, etc.
+- **Intervention experiments**: Try changing intermediate layers to see what happens
+- **Newer/larger models**: Test the same patterns on bigger models when possible
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT License - see LICENSE file for details.
 
 ## Acknowledgments
 
-- **TransformerLens** library for comprehensive interpretability tools
-- **Hugging Face** for model hosting and transformers library
-- **EleutherAI, Meta, Mistral AI, Google, Alibaba** for open-weight models
+- **TransformerLens** for comprehensive interpretability tools
+- **Hugging Face** for model hosting and ecosystem
+- **Model Creators**: Meta, Mistral AI, Google, Alibaba for open-weight models
 - **Apple** for Metal GPU acceleration
 
 ### AI-Assisted Development
-This research was guided by **OpenAI ChatGPT o3** for conceptual direction and implemented with **Anthropic Claude 4 Sonnet** via **Cursor IDE** for code development and analysis. 
+Research guided by **OpenAI ChatGPT o3** for conceptual direction, implemented with **Anthropic Claude 4 Sonnet** via **Cursor IDE** for code development and analysis. 

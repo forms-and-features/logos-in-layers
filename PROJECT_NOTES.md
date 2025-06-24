@@ -1,46 +1,93 @@
 # Interpretability Project Notes
 
-## Goal
-Experiment with interpretability of open-weights LLMs.
+## Project Goal
+Experiment with interpretability of open-weights LLMs using systematic layer-by-layer analysis to understand internal computation patterns.
 
-## Recent Progress
-- Switched from tuned_lens to TransformerLens for better model support
-- lens_analysis.py now works with Llama 3, Mistral 7B, Gemma 2 9B, and Qwen3 8B models
-- Implemented layer-by-layer prediction analysis showing how knowledge emerges through transformer layers
-- **Prompt format discovery**: Q&A format ("Question: What is the capital of Germany? Answer:") works better than completion format for many models
-- Tested model differences in factual knowledge:
-  - Llama 3: correctly predicts Berlin with both completion and Q&A formats (high confidence)
-  - Mistral 7B: correctly predicts Berlin with both formats, shows interesting layer evolution patterns
-  - Gemma 2 9B: conversational model that works best with Q&A format (79.1% confidence for Berlin)
-  - **Qwen3 8B: correctly predicts Berlin with Q&A format, shows sharp confidence transitions and "perfect confidence" phenomenon**
-- **Technical insight**: Found discrepancy between final residual stream and actual model output, revealing additional processing layers
-- Temperature scaling reveals model confidence patterns across architectures
+## Completed Experiments
 
-## Next Steps
-- **Model testing complete** - good coverage across major architectures (Llama 3, Mistral, Gemma 2, Qwen3)
-- Investigate the residual stream vs final output discrepancy across different models
-- Explore advanced TransformerLens features (attention patterns, circuit analysis)
-- Compare prompt format sensitivity patterns across the tested model families
-- **Future model testing**: Will revisit when new cutting-edge open-weights models are released
+### 001: Layer-by-Layer Logit Analysis (`001_layers_and_logits.py`)
+- **Status**: Complete with comprehensive analysis in `001_layers_and_logits.md`
+- **Models Tested**: Qwen3-8B, Meta-Llama-3-8B, Mistral-7B-v0.1, Gemma-2-9B
+- **Key Technical Achievement**: LayerNorm lens implementation for accurate residual stream analysis
+- **Sampling Strategy**: Key layers at 0, n_layers//6, n_layers//3, n_layers//2, 2*n_layers//3, 5*n_layers//6, n_layers-1
 
-## Key Findings
-- Existing libraries that are useful for interpretability do not work with .gguf files and require raw transformer files
-- Llama 4 Scout transformers size is too large for this machine, and there is no pre-quantized version
-- TransformerLens provides vastly superior model support compared to tuned_lens (the downside, however, is the speed): Llama 3, Mistral, Gemma, Qwen3, and many more
-- Model behavior varies by architecture and prompting:
-  - Llama 3: correct knowledge (Berlin) with both completion and Q&A formats
-  - Mistral 7B: correct knowledge (Berlin) with both formats, shows clean layer evolution
-  - Gemma 2 9B: conversational model that works best with Q&A format (79% confidence vs generic responses)
-  - **Qwen3 8B: correct knowledge (Berlin) with Q&A format, shows most decisive confidence patterns**
-- Interpretability insights from layer analysis:
-  - Early layers: generic/random predictions across all models (Qwen3 shows multilingual noise due to training)
-  - Middle layers: correct answer starts emerging gradually (Qwen3 shows sharper transitions at layers 12→18)
-  - Final layers: confident prediction (Qwen3 shows "perfect confidence" phenomenon with 1.000 probabilities)
-  - **Pattern holds across architectures**: Layer evolution consistent across Llama 3, Mistral, Gemma, and Qwen3
-  - **Qwen3 unique patterns**: "Wrong right answer" sequence (Germany→Berlin), more extreme confidence jumps
-- Directional knowledge bias exists across models: "Berlin is capital of Germany" works better than "capital of Germany is Berlin"
-- **Residual stream vs final output discrepancy**: Universal across all tested models, most pronounced in Qwen3
+## Technical Implementation Notes
 
-## Chat Context
-Assume the user is a software engineer with no python background.
-The code is running on Macbook Pro M2 Max 64Gb.
+### LayerNorm Lens Implementation
+**Critical insight**: Models never see raw residual streams. Each layer applies LayerNorm before processing, and `ln_final` is applied before unembedding.
+
+#### Implementation Details:
+- **RAW mode** (`USE_NORM_LENS = False`): Analyzes `resid_post` directly - useful for activation patching and causal interventions
+- **NORMALIZED mode** (`USE_NORM_LENS = True`): Applies LayerNorm before unembedding - shows actual model decision-making
+- **Layer 0 handling**: Uses `cache["embed"]` instead of `resid_post`
+- **Final layer handling**: Uses `model.ln_final()` for proper normalization
+- **Intermediate layers**: Uses `model.blocks[layer + 1].ln1()` to apply the LayerNorm that the next block would see
+
+#### Why This Matters:
+- Eliminates artificial confidence inflation seen in raw analysis
+- Perfect alignment with actual model behavior
+- Reveals true cognitive transitions between processing modes
+- Essential for understanding calibration mechanisms
+
+### Model Loading and Compatibility
+- **Library**: TransformerLens (switched from tuned_lens for superior model support)
+- **Device Management**: Automatic MPS detection for Apple Silicon
+- **Memory Optimization**: Half-precision (float16) loading
+- **Known Limitations**: GGUF files unsupported, extremely large models limited by hardware
+
+### Sampling and Analysis Strategy
+- **Prompt Format**: Q&A format ("Question: ... Answer:") more reliable than completion across models
+- **Layer Sampling**: Strategic sampling across depth percentages for cross-model comparison
+- **Additional Probing**: Directional bias testing, temperature exploration, alternative prompts
+- **Probability Precision**: 6 decimal places for accurate confidence measurement
+
+## Development Environment
+- **Hardware**: MacBook Pro M2 Max 64GB
+- **OS**: macOS (Metal GPU acceleration)
+- **Python Environment**: Virtual environment with requirements.txt
+- **Authentication**: Hugging Face CLI for gated model access
+
+## Next Development Steps
+
+### Immediate Technical Priorities
+1. **Attention Pattern Analysis**: Implement attention head analysis using TransformerLens
+   - Focus on layers 40-85% depth where semantic resolution occurs
+   - Investigate attention to different token types (entities, relations, punctuation)
+
+2. **Circuit Analysis**: Use TransformerLens advanced features for mechanistic analysis
+   - Identify specific attention heads responsible for factual retrieval
+   - Analyze MLPs vs attention contributions to prediction changes
+
+3. **Activation Patching**: Implement causal interventions
+   - Test hypotheses about layer functions discovered in 001 experiment
+   - Use RAW mode for proper intervention on actual model computation
+
+### Code Organization Guidelines
+- **Numbering Convention**: `XXX_experiment_name.py` + `XXX_experiment_name.md`
+- **Results Storage**: Keep detailed numerical results in markdown files
+- **Code Focus**: Scripts should be clean, reproducible, with minimal hardcoded values
+- **Toggle Switches**: Maintain `USE_NORM_LENS` toggle for backward compatibility with activation patching
+
+## Technical Lessons Learned
+
+### Library Selection
+- **TransformerLens**: Superior model support, comprehensive features, but slower than specialized libraries
+- **Quantization**: Avoided due to Apple Silicon compatibility issues
+- **Model Format**: Raw transformer format required, GGUF unsupported
+
+### Hardware Optimization
+- **Memory Management**: 64GB barely sufficient for 9B models with analysis overhead
+- **GPU Acceleration**: Metal Performance Shaders essential for reasonable speed
+- **Storage**: Model caching requires significant disk space planning
+
+### Analysis Best Practices
+- **Normalization**: Always use LayerNorm lens for interpretability analysis
+- **Raw Mode**: Reserve for activation patching and causal interventions only
+- **Cross-Model Comparison**: Use depth percentages rather than absolute layer numbers
+- **Temperature Exploration**: Essential for understanding true vs calibrated confidence
+
+## Context for Future Development
+- **User Profile**: Software engineer with no Python background
+- **Hardware**: MacBook Pro M2 Max 64GB
+- **Focus**: Systematic, reproducible experiments with clear technical documentation
+

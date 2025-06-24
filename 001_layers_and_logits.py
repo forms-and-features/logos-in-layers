@@ -3,28 +3,29 @@ import transformer_lens
 from transformer_lens import HookedTransformer
 import torch
 
+# Layer-by-layer prediction analysis with LayerNorm lens correction
+# Toggle USE_NORM_LENS for raw vs normalized residual stream analysis
+
 # 1. Pick a model that is ALREADY in HF format
 
-# ✅ PREVIOUSLY TESTED:
-# 8B - Llama 3, correct knowledge (Berlin) with completion prompts AND Q&A format
+# ✅ CONFIRMED SUPPORTED:
+# 8B - Llama 3 Base
 # model_id = "meta-llama/Meta-Llama-3-8B"
-# 7B - Mistral, correct knowledge (Berlin) with completion prompts AND Q&A format
+# 7B - Mistral
 # model_id = "mistralai/Mistral-7B-v0.1"
-# 9B - Gemma 2, correct knowledge (Berlin) with Q&A format
-# model_id = "google/gemma-2-9b"
-# 8B - Qwen3, correct knowledge (Berlin) with Q&A format, shows sharp confidence transitions
+# 9B - Gemma 2
+model_id = "google/gemma-2-9b"
+# 8B - Qwen3
 # model_id = "Qwen/Qwen3-8B"
 
-# ✅ NOW TESTING:
-# Testing complete - good coverage across major architectures
-# model_id = ""
-
-# 🧪 FUTURE CANDIDATES:
-# Will revisit when new cutting-edge open-weights models are released
 
 # 2. Load model with TransformerLens
 # TransformerLens handles tokenizer and model loading automatically
 model = HookedTransformer.from_pretrained(model_id)
+
+# Toggle for using normalized lens (recommended for accurate interpretation)
+USE_NORM_LENS = True
+# Note: Raw residual analysis still useful for activation patching and causal interventions
 
 # 4. Inspect a short prompt - using Q&A format that works best across models
 prompt = "Question: What is the capital of Germany? Answer:"
@@ -47,23 +48,35 @@ logits, cache = model.run_with_cache(tokens)
 
 # Show top predictions at different layers for the last token position
 print(f"\nTop predictions for next token after '{prompt}':")
+if USE_NORM_LENS:
+    print("Using NORMALIZED residual stream (LayerNorm applied - more accurate)")
+else:
+    print("Using RAW residual stream (no LayerNorm - may be less accurate)")
 print("-" * 60)
 
 # Sample key layers across the model's layers
 n_layers = model.cfg.n_layers
 layers_to_check = [0, n_layers//6, n_layers//3, n_layers//2, 2*n_layers//3, 5*n_layers//6, n_layers-1]
 
-# Look at the last position (after "is")
+# Look at the last position (after "Answer:")
 last_pos = -1
 
 for layer in layers_to_check:
     if layer < n_layers:
-        # Get residual stream at this layer and apply unembedding
+        # Get residual stream at this layer
         if layer == 0:
             # Use embeddings for layer 0
             resid = cache["embed"]
         else:
             resid = cache["resid_post", layer]
+        
+        # Apply LayerNorm if requested and not the final layer
+        if USE_NORM_LENS and layer < n_layers - 1:
+            # Apply the LayerNorm that the next block would use
+            resid = model.blocks[layer + 1].ln1(resid)
+        elif USE_NORM_LENS and layer == n_layers - 1:
+            # For the final layer, apply the final LayerNorm
+            resid = model.ln_final(resid)
         
         # Apply the unembedding to get logits
         layer_logits = model.unembed(resid[0, last_pos, :])
@@ -75,7 +88,7 @@ for layer in layers_to_check:
         print(f"Layer {layer:2d}:")
         for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
             token = model.to_string(idx.unsqueeze(0))
-            print(f"  {i+1}. '{token}' ({prob.item():.3f})")
+            print(f"  {i+1}. '{token}' ({prob.item():.6f})")
         print()
 
 # Let's also see what the actual model would predict (final layer)
@@ -88,7 +101,7 @@ top_probs, top_indices = torch.topk(final_probs, 5)
 print("Model's final prediction:")
 for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
     token = model.to_string(idx.unsqueeze(0))
-    print(f"  {i+1}. '{token}' ({prob.item():.3f})")
+    print(f"  {i+1}. '{token}' ({prob.item():.6f})")
 
 # Let's probe the model's knowledge a bit more
 print("=" * 60)
@@ -111,7 +124,7 @@ for test_prompt in test_prompts:
     
     for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
         token = model.to_string(idx.unsqueeze(0))
-        print(f"  {i+1}. '{token}' ({prob.item():.3f})")
+        print(f"  {i+1}. '{token}' ({prob.item():.6f})")
 
 # Let's explore how temperature affects the predictions
 print("=" * 60)
@@ -135,7 +148,7 @@ for temp in temperatures:
     
     for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
         token = model.to_string(idx.unsqueeze(0))
-        print(f"  {i+1}. '{token}' ({prob.item():.3f})")
+        print(f"  {i+1}. '{token}' ({prob.item():.6f})")
 
 print("=== END OF INSPECTING ==============\n")
 
@@ -148,4 +161,3 @@ print(f"Vocab size: {model.cfg.d_vocab}")
 print(f"Context length: {model.cfg.n_ctx}")
 print("=== END OF MODEL STATS ========\n")
 
-# Optional: show() opens an interactive HTML if you're in Jupyter
