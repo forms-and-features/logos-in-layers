@@ -8,8 +8,15 @@ This project examines how predictions change through different layers of transfo
 
 ## Experiments
 
-### 001: Layer-by-Layer Logit Analysis
-**Files**: `001_layers_and_logits.py` + `001_layers_and_logits.md`
+### 000: Basic Chat
+**Directory**: `000_basic_chat/`
+**Files**: `run.py`
+
+Basic chat interface for testing model responses and getting familiar with the models.
+
+### 001: Layer-by-Layer Analysis
+**Directory**: `001_layers_and_logits/`
+**Files**: `run.py`, `analyses.md`, `prompt.txt`, and result files
 
 Analysis of how the prediction for "What is the capital of Germany?" evolves through the layers of four different models:
 
@@ -48,8 +55,13 @@ Accept license agreements for gated models (Llama, etc.).
 ### Running Experiments
 
 ```bash
+# Run the basic chat interface
+cd 000_basic_chat
+python run.py
+
 # Run the layer-by-layer analysis
-python 001_layers_and_logits.py
+cd 001_layers_and_logits
+python run.py
 ```
 
 ## Supported Models

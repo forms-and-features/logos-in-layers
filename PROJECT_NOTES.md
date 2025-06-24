@@ -5,8 +5,12 @@ Experiment with interpretability of open-weights LLMs using systematic layer-by-
 
 ## Completed Experiments
 
-### 001: Layer-by-Layer Logit Analysis (`001_layers_and_logits.py`)
-- **Status**: Complete with comprehensive analysis in `001_layers_and_logits.md`
+### 000: Basic Chat (`000_basic_chat/run.py`)
+- **Status**: Complete - basic chat interface for model testing
+- **Purpose**: Simple interface for testing model responses and getting familiar with different models
+
+### 001: Layer-by-Layer Logit Analysis (`001_layers_and_logits/run.py`)
+- **Status**: Complete with comprehensive analysis in `001_layers_and_logits/analyses.md`
 - **Models Tested**: Qwen3-8B, Meta-Llama-3-8B, Mistral-7B-v0.1, Gemma-2-9B
 - **Key Technical Achievement**: LayerNorm lens implementation for accurate residual stream analysis
 - **Sampling Strategy**: Key layers at 0, n_layers//6, n_layers//3, n_layers//2, 2*n_layers//3, 5*n_layers//6, n_layers-1
@@ -63,8 +67,10 @@ Experiment with interpretability of open-weights LLMs using systematic layer-by-
    - Use RAW mode for proper intervention on actual model computation
 
 ### Code Organization Guidelines
-- **Numbering Convention**: `XXX_experiment_name.py` + `XXX_experiment_name.md`
-- **Results Storage**: Keep detailed numerical results in markdown files
+- **Directory Structure**: Each experiment gets its own directory `XXX_experiment_name/`
+- **Numbering Convention**: `XXX_experiment_name/run.py` + supporting files
+- **Results Storage**: Keep detailed numerical results in markdown files within experiment directories
+- **Supporting Files**: Store prompts, configurations, and output files alongside the main script
 - **Code Focus**: Scripts should be clean, reproducible, with minimal hardcoded values
 - **Toggle Switches**: Maintain `USE_NORM_LENS` toggle for backward compatibility with activation patching
 
