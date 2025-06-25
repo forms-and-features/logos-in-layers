@@ -8,6 +8,6 @@ In a new markdown file, wrute up cross-model analysis: identify and analyse key 
 
 Raw outputs of experimental runs are accessible in the project folder as "output-model-name.txt" files, but they are not included in the context of this question because of context length limit. Access them if necessary.
 
-Be thorough and specific. Make sure that statements are supported by evidence from the txt dump, don't speculate. Contextualize your findings using your broader knowledge of the latest intepretability research, citing sources when appropriate. Always provide links to sources, and verify that sources contain the claims that you're citing; otherwise, reformulate or remove the claim. In any case, never provide a non-existent source.
+Be thorough and specific. Make sure that statements are supported by evidence from the txt dump, don't speculate. Contextualize your findings using your broader knowledge of the latest interpretability research, citing sources when appropriate. Always provide links to sources, and verify that sources contain the claims that you're citing; otherwise, reformulate or remove the claim. In any case, never provide a non-existent source.
 
 The markdown file should be named "evaluation-cross-model.md".
