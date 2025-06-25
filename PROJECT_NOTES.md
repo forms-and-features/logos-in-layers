@@ -1,99 +1,135 @@
-# Interpretability Project Notes
+# Interpretability Project - Development Notes
 
-## Project Goal
-Experiment with interpretability of open-weights LLMs using systematic layer-by-layer analysis to understand internal computation patterns.
+## Current State
+- **001_layers_and_logits**: Complete layer-by-layer analysis with 4 models
+- **File structure**: Reorganized from single script to proper experiment directory
+- **Analysis**: Individual model reports + cross-model comparison (AI-generated)
 
-## Completed Experiments
+## Key Technical Implementation Details
 
-### 000: Basic Chat (`000_basic_chat/run.py`)
-- **Status**: Complete - basic chat interface for model testing
-- **Purpose**: Simple interface for testing model responses and getting familiar with different models
+### RMSNorm vs LayerNorm Handling
+**Problem**: All tested models use Pre-RMSNorm, not vanilla LayerNorm. Applying LayerNorm lens to RMSNorm creates artifacts.
 
-### 001: Layer-by-Layer Logit Analysis (`001_layers_and_logits/run.py`)
-- **Status**: Complete with comprehensive analysis in `001_layers_and_logits/analyses.md`
-- **Models Tested**: Qwen3-8B, Meta-Llama-3-8B, Mistral-7B-v0.1, Gemma-2-9B
-- **Key Technical Achievement**: LayerNorm lens implementation for accurate residual stream analysis
-- **Sampling Strategy**: Key layers at 0, n_layers//6, n_layers//3, n_layers//2, 2*n_layers//3, 5*n_layers//6, n_layers-1
+**Solution**: 
+```python
+def is_safe_layernorm(norm_mod):
+    return isinstance(norm_mod, nn.LayerNorm)
 
-## Technical Implementation Notes
+def apply_norm_or_skip(resid, norm_mod, layer_info=""):
+    if isinstance(norm_mod, nn.LayerNorm):
+        return norm_mod(resid)
+    # Skip for RMSNorm to avoid distortion
+    return resid
+```
 
-### LayerNorm Lens Implementation
-**Critical insight**: Models never see raw residual streams. Each layer applies LayerNorm before processing, and `ln_final` is applied before unembedding.
+**Models tested**: All use Pre-RMSNorm (Meta, Mistral, Google, Alibaba)
 
-#### Implementation Details:
-- **RAW mode** (`USE_NORM_LENS = False`): Analyzes `resid_post` directly - useful for activation patching and causal interventions
-- **NORMALIZED mode** (`USE_NORM_LENS = True`): Applies LayerNorm before unembedding - shows actual model decision-making
-- **Layer 0 handling**: Uses `cache["embed"]` instead of `resid_post`
-- **Final layer handling**: Uses `model.ln_final()` for proper normalization
-- **Intermediate layers**: Uses `model.blocks[layer + 1].ln1()` to apply the LayerNorm that the next block would see
+### Memory Optimization for Large Models
+**Problem**: `run_with_cache()` loads full activations, causing OOM on 9B models
 
-#### Why This Matters:
-- Eliminates artificial confidence inflation seen in raw analysis
-- Perfect alignment with actual model behavior
-- Reveals true cognitive transitions between processing modes
-- Essential for understanding calibration mechanisms
+**Solution**: Targeted caching with hooks
+```python
+def make_cache_hook(cache_dict):
+    def cache_residual_hook(tensor, hook):
+        # Only last token, move to CPU
+        cache_dict[hook.name] = tensor[:, -1:, :].cpu().detach()
+    return cache_residual_hook
+```
 
-### Model Loading and Compatibility
-- **Library**: TransformerLens (switched from tuned_lens for superior model support)
-- **Device Management**: Automatic MPS detection for Apple Silicon
-- **Memory Optimization**: Half-precision (float16) loading
-- **Known Limitations**: GGUF files unsupported, extremely large models limited by hardware
+### Device/Precision Management
+```python
+model = HookedTransformer.from_pretrained(
+    model_id,
+    device="cuda" if torch.cuda.is_available() else "cpu",
+    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+)
+```
 
-### Sampling and Analysis Strategy
-- **Prompt Format**: Q&A format ("Question: ... Answer:") more reliable than completion across models
-- **Layer Sampling**: Strategic sampling across depth percentages for cross-model comparison
-- **Additional Probing**: Directional bias testing, temperature exploration, alternative prompts
-- **Probability Precision**: 6 decimal places for accurate confidence measurement
+## Model-Specific Gotchas Found
 
-## Development Environment
-- **Hardware**: MacBook Pro M2 Max 64GB
-- **OS**: macOS (Metal GPU acceleration)
-- **Python Environment**: Virtual environment with requirements.txt
-- **Authentication**: Hugging Face CLI for gated model access
+### Qwen3-8B
+- Template token "Answer" gets p≈0.74 in mid-layers (blocks 17-24)
+- Placeholder tokens "____" spike later
+- Strong template prior can override factual circuits
 
-## Next Development Steps
+### Meta-Llama-3-8B  
+- Junk token "ABCDEFGHIJKLMNOP" gets 7% probability (blocks 17-21)
+- Likely memorized artifact or placeholder feature
+- Should be activation-patched to test circuit function
 
-### Immediate Technical Priorities
-1. **Attention Pattern Analysis**: Implement attention head analysis using TransformerLens
-   - Focus on layers 40-85% depth where semantic resolution occurs
-   - Investigate attention to different token types (entities, relations, punctuation)
+### Mistral-7B-v0.1
+- Newline token dominates instruction prompts
+- Oscillation between Berlin and Washington in blocks 23-31
+- Shows formatting bias and semantic interference
 
-2. **Circuit Analysis**: Use TransformerLens advanced features for mechanistic analysis
-   - Identify specific attention heads responsible for factual retrieval
-   - Analyze MLPs vs attention contributions to prediction changes
+### Gemma-2-9B
+- First 9 blocks deterministic on ':' (entropy≈0)
+- Early over-confidence masks signal until layer 10
+- Limited long-range integration in early layers
 
-3. **Activation Patching**: Implement causal interventions
-   - Test hypotheses about layer functions discovered in 001 experiment
-   - Use RAW mode for proper intervention on actual model computation
+## Development Environment Notes
 
-### Code Organization Guidelines
-- **Directory Structure**: Each experiment gets its own directory `XXX_experiment_name/`
-- **Numbering Convention**: `XXX_experiment_name/run.py` + supporting files
-- **Results Storage**: Keep detailed numerical results in markdown files within experiment directories
-- **Supporting Files**: Store prompts, configurations, and output files alongside the main script
-- **Code Focus**: Scripts should be clean, reproducible, with minimal hardcoded values
-- **Toggle Switches**: Maintain `USE_NORM_LENS` toggle for backward compatibility with activation patching
+### Hardware Requirements (MacBook Pro M2 Max 64GB)
+- **Memory**: 64GB barely sufficient for 9B models + analysis
+- **GPU**: Metal acceleration essential (MPS detection works)
+- **Storage**: ~50GB for model caching
 
-## Technical Lessons Learned
+### Library Stack
+- **TransformerLens**: Better than tuned_lens for model support
+- **No quantization**: Apple Silicon compatibility issues
+- **Raw format only**: GGUF unsupported
 
-### Library Selection
-- **TransformerLens**: Superior model support, comprehensive features, but slower than specialized libraries
-- **Quantization**: Avoided due to Apple Silicon compatibility issues
-- **Model Format**: Raw transformer format required, GGUF unsupported
+## Code Organization Patterns
 
-### Hardware Optimization
-- **Memory Management**: 64GB barely sufficient for 9B models with analysis overhead
-- **GPU Acceleration**: Metal Performance Shaders essential for reasonable speed
-- **Storage**: Model caching requires significant disk space planning
+### Experiment Structure
+```
+XXX_experiment_name/
+├── run.py                  # Main script
+├── evaluation-*.md         # Analysis results  
+├── output-*.txt           # Raw outputs
+├── prompt-*.txt           # Evaluation prompts
+└── interpretability/      # AI-generated analysis
+    └── XXX_experiment_name/
+        └── evaluation-cross-model.md
+```
 
-### Analysis Best Practices
-- **Normalization**: Always use LayerNorm lens for interpretability analysis
-- **Raw Mode**: Reserve for activation patching and causal interventions only
-- **Cross-Model Comparison**: Use depth percentages rather than absolute layer numbers
-- **Temperature Exploration**: Essential for understanding true vs calibrated confidence
+### Toggle Patterns
+```python
+USE_NORM_LENS = True  # Keep for backward compatibility
+# Raw mode still needed for activation patching
+```
 
-## Context for Future Development
-- **User Profile**: Software engineer with no Python background
-- **Hardware**: MacBook Pro M2 Max 64GB
-- **Focus**: Systematic, reproducible experiments with clear technical documentation
+## AI Evaluation System
+
+### Prompt Templates
+- `prompt-single-model-evaluation.txt`: Individual model analysis
+- `prompt-cross-model-evaluation.txt`: Comparative analysis
+- `prompt-meta-evaluation.txt`: Methodology analysis
+
+### Usage Pattern
+1. Run experiment → generate `output-*.txt`
+2. Feed outputs to AI with evaluation prompts
+3. Generate `evaluation-*.md` files
+4. Cross-model analysis in `interpretability/` subdirectory
+
+
+
+
+
+
+
+### Known Issues
+- Entropy values not comparable across models due to RMSNorm skipping
+- Early layers show BPE noise artifacts (not harmful but clutters output)
+- Temperature sweep only done on final output, not per-layer
+
+## Philosophical Project Context
+- **Goal**: Use interpretability to inform nominalism vs realism debate
+- **Current evidence**: Layer-relative perspective (early=nominalist templates, late=realist concepts)
+
+
+## User Context
+- Software engineer, growing ML interpretability knowledge
+- No formal ML background but learning through implementation
+- Prefers systematic, reproducible experiments with clear documentation
 

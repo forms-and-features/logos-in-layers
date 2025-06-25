@@ -16,16 +16,21 @@ Basic chat interface for testing model responses and getting familiar with the m
 
 ### 001: Layer-by-Layer Analysis
 **Directory**: `001_layers_and_logits/`
-**Files**: `run.py`, `analyses.md`, `prompt.txt`, and result files
+**Files**: `run.py`, individual model evaluations (`evaluation-*.md`), cross-model analysis (`interpretability/001_layers_and_logits/evaluation-cross-model.md`), raw outputs (`output-*.txt`), and evaluation prompts (`prompt-*.txt`)
 
-Analysis of how the prediction for "What is the capital of Germany?" evolves through the layers of four different models:
+Layer-by-layer analysis of how the prediction for "What is the capital of Germany?" evolves through four different models:
 
-- **Qwen3-8B** (36 layers): Shows a distinctive "Germany → Berlin" transition pattern
-- **Meta-Llama-3-8B** (32 layers): More direct path to the correct answer
-- **Mistral-7B-v0.1** (32 layers): Early emergence of German-related tokens
-- **Gemma-2-9B** (42 layers): Later convergence on the factual answer
+- **Qwen3-8B** (36 layers): Shows distinctive "Germany → Berlin" transition with template-driven behavior
+- **Meta-Llama-3-8B** (32 layers): More direct path with anomalous junk tokens in mid-layers  
+- **Mistral-7B-v0.1** (32 layers): Early emergence of German-related tokens with formatting bias
+- **Gemma-2-9B** (42 layers): Later convergence with early over-confidence on punctuation
 
-**Finding**: All models converge on the correct answer around 80-85% through their layers, followed by confidence calibration in the final layers.
+
+**Cross-Model Findings**: 
+- All models converge on the correct answer around 75-85% through their layers
+- Consistent "category-before-instance" pattern (generic "capital" before specific "Berlin")
+- Model-specific anomalies reveal spurious features and template biases
+- Asymmetric factual recall (reverse relations easier than forward)
 
 ## Setup
 
@@ -59,7 +64,7 @@ Accept license agreements for gated models (Llama, etc.).
 cd 000_basic_chat
 python run.py
 
-# Run the layer-by-layer analysis
+# Run the layer-by-layer analysis (all models)
 cd 001_layers_and_logits
 python run.py
 ```
@@ -67,10 +72,10 @@ python run.py
 ## Supported Models
 
 ### ✅ Confirmed Working
-- **Llama 3** (Meta)
-- **Mistral 7B** (Mistral AI)  
-- **Gemma 2** (Google)
-- **Qwen3** (Alibaba)
+- **Llama 3** (Meta) - 32 layers
+- **Mistral 7B** (Mistral AI) - 32 layers  
+- **Gemma 2** (Google) - 42 layers
+- **Qwen3** (Alibaba) - 36 layers
 
 ### ❌ Not Supported
 - **GGUF files** - Require raw transformer format
@@ -78,25 +83,41 @@ python run.py
 
 ## Key Insights
 
-### Patterns Identified
-- **Convergence timing**: Models consistently arrive at the correct answer around 80-85% through their depth
-- **Processing phases**: Early layers show noise, middle layers develop the answer, final layers calibrate confidence
-- **Internal confidence**: Models exhibit higher internal certainty than their final output probabilities suggest
-- **Directional asymmetry**: "Berlin is capital of Germany" produces higher confidence than "Germany's capital is Berlin"
+### Interpretability Patterns
+- **Late-binding factual knowledge**: Correct answers emerge consistently at 75-85% network depth
+- **Hierarchical processing**: Abstract categories ("capital") before specific instances ("Berlin")
+- **Model-specific artifacts**: Each architecture shows unique spurious features and biases
+- **Surface-form sensitivity**: Strong dependence on prompt formatting and direction
 
-### Technical Notes
-- **LayerNorm correction**: Important to apply the same normalization the model uses internally
-- **Final layer adjustments**: Last few layers seem to moderate the confidence for more natural responses
-- **Temperature effects**: Lower temperature shows what the model "really thinks"
+## Technical Implementation
 
+### Normalization Handling
+- **Automatic detection**: Script identifies RMSNorm vs LayerNorm architectures
+- **Safe application**: Only applies normalization lens to vanilla LayerNorm to avoid distortion
+- **Raw mode fallback**: Maintains interpretability for non-vanilla architectures
 
+### Memory Management
+- **Targeted caching**: Only stores required residual streams instead of full activations
+- **Device optimization**: Automatic GPU/CPU management with appropriate precision
+- **Efficient computation**: Top-k selection before softmax for performance
 
-## Possible Next Steps
+### Analysis Pipeline
+- **Individual evaluation**: Detailed per-model analysis with anomaly detection
+- **Cross-model comparison**: Systematic comparison identifying universal patterns
+- **AI-assisted insights**: Expert-level evaluation using specialized interpretability prompts
 
-- **Attention patterns**: Look at which parts of the input different layers pay attention to
-- **Other types of questions**: Try math problems, historical facts, etc.
-- **Intervention experiments**: Try changing intermediate layers to see what happens
-- **Newer/larger models**: Test the same patterns on bigger models when possible
+## File Structure
+
+```
+001_layers_and_logits/
+├── run.py                           # Main experiment script
+├── evaluation-[model].md            # Individual model analyses  
+├── output-[model].txt               # Raw experimental outputs
+├── prompt-*.txt                     # Evaluation prompts
+└── interpretability/
+    └── 001_layers_and_logits/
+        └── evaluation-cross-model.md # Cross-model comparative analysis
+```
 
 ## License
 
@@ -110,4 +131,4 @@ MIT License - see LICENSE file for details.
 - **Apple** for Metal GPU acceleration
 
 ### AI-Assisted Development
-Research guided by **OpenAI ChatGPT o3** for conceptual direction, implemented with **Anthropic Claude 4 Sonnet** via **Cursor IDE** for code development and analysis. 
+Research guided by **OpenAI o3** for conceptual direction, implemented with **Anthropic Claude 4 Sonnet** via **Cursor IDE** for code development and analysis. Individual model evaluations and cross-model analysis generated using OpenAI o3. 

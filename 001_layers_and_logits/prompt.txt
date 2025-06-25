@@ -1,8 +1,0 @@
-You’re an AI-interpretability researcher at a leading lab (think OpenAI / Anthropic).
-You're given 4 artefacts as .txt files with raw console dump from a probe implemented in @run.py and run against 4 models (model names are in the .txt files).
-
-Write up as markdown, in @analyses.md :
-- section 1 with model-level analysis for each of the models (subsection per model)
-- section 2 with cross-model insights.
-
-In your analysis, identify and analyse key patterns, as well as interesting anomalies or red flags. You can also come up with your own perspectives and angles to the analysis as you see fit.
