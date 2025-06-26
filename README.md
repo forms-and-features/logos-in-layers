@@ -1,6 +1,6 @@
-# Iterative LLM probing
+# λόγος in layers
 
-Systematic probes of open-weight LLMs to track **where** and **how** concepts crystallise inside transformer layers — informing a long-term study of nominalism ↔ realism.
+Systematic probing of open-weight LLMs to trace **where** and **how** concepts crystallise across transformer layers - groundwork for the nominalism ↔ realism debate.
 
 ## Overview
 
