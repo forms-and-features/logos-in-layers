@@ -105,6 +105,10 @@ python run.py
         └── evaluation-cross-model.md # Cross-model comparative analysis
 ```
 
+## Further Reading
+
+For implementation details, developer-focused toggles, and methodology notes, see `PROJECT_NOTES.md`. 
+
 ## License
 
 MIT License - see LICENSE file for details.
@@ -116,9 +120,6 @@ MIT License - see LICENSE file for details.
 - **Model Creators**: Meta, Mistral AI, Google, Alibaba for open-weight models
 - **Apple** for Metal GPU acceleration
 
-### AI-Assisted Development
+## AI-Assisted Development
 Research guided by **OpenAI o3** for conceptual direction, implemented with **Anthropic Claude 4 Sonnet** via **Cursor IDE** for code development and analysis. Individual model evaluations and cross-model analysis generated using OpenAI o3.
 
-## Further Reading
-
-For implementation details, developer-focused toggles, and methodology notes, see `PROJECT_NOTES.md`. 
