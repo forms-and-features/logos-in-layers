@@ -43,7 +43,7 @@ Layer-by-layer analysis of how the prediction for "What is the capital of German
 
 ```bash
 git clone <your-repo-url>
-cd interpretability
+cd tinycave
 python -m venv venv
 source venv/bin/activate  # On macOS/Linux
 pip install -r requirements.txt
