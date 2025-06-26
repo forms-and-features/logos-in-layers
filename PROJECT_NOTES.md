@@ -113,11 +113,6 @@ USE_NORM_LENS = True  # Keep for backward compatibility
 4. Cross-model analysis in `interpretability/` subdirectory
 
 
-
-
-
-
-
 ### Known Issues
 - Entropy values not comparable across models due to RMSNorm skipping
 - Early layers show BPE noise artifacts (not harmful but clutters output)
@@ -126,7 +121,6 @@ USE_NORM_LENS = True  # Keep for backward compatibility
 ## Philosophical Project Context
 - **Goal**: Use interpretability to inform nominalism vs realism debate
 - **Current evidence**: Layer-relative perspective (early=nominalist templates, late=realist concepts)
-
 
 ## User Context
 - Software engineer, growing ML interpretability knowledge

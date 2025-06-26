@@ -6,9 +6,9 @@ Loading model: google/gemma-2-9b...
 Loaded pretrained model google/gemma-2-9b into HookedTransformer
 
 === NORMALIZATION ANALYSIS ========
-Block LayerNorm type: RMSNormPre
-⚠️  Non-vanilla norm detected (RMSNormPre) - norm-lens will be skipped to avoid distortion
-Final LayerNorm type: RMSNormPre
+Block normalization type: RMSNormPre
+⚠️  RMSNorm detected but no weight/scale parameter - norm-lens will be skipped
+Final normalization type: RMSNormPre
 === END NORMALIZATION ANALYSIS ====
 
 
@@ -22,11 +22,11 @@ Input tokens: ['<bos>', 'Question', ':', ' What', ' is', ' the', ' capital', ' o
 Computing layer-wise predictions (memory-efficient targeted caching)...
 
 Top predictions for next token after 'Question: What is the capital of Germany? Answer:':
-Using RAW residual stream (non-vanilla norms detected, skipping normalization to avoid distortion)
-Note: Shown probabilities are softmax over top-k only (don't sum to 1)
+Using RAW residual stream (unsupported normalization, skipping to avoid distortion)
+Note: Shown probabilities are from full softmax (calibrated and comparable)
 ------------------------------------------------------------
 Layer  0 (embeddings):
-  (entropy: -0.000):
+  (entropy: -0.000 bits):
    1. ':' (1.000000)
    2. ',' (0.000000)
    3. ' ' (0.000000)
@@ -51,7 +51,7 @@ Layer  0 (embeddings):
   19. ' "' (0.000000)
   20. '?' (0.000000)
 
-Layer  1 (after block 0) (entropy: 0.000):
+Layer  1 (after transformer block 0) (entropy: 0.000 bits):
    1. ':' (1.000000)
    2. ' :' (0.000000)
    3. '：' (0.000000)
@@ -73,7 +73,7 @@ Layer  1 (after block 0) (entropy: 0.000):
   19. '?:' (0.000000)
   20. '::' (0.000000)
 
-Layer  2 (after block 1) (entropy: 0.000):
+Layer  2 (after transformer block 1) (entropy: 0.000 bits):
    1. ':' (1.000000)
    2. '’:' (0.000000)
    3. ':' (0.000000)
@@ -95,7 +95,7 @@ Layer  2 (after block 1) (entropy: 0.000):
   19. ' _:' (0.000000)
   20. '}:' (0.000000)
 
-Layer  3 (after block 2) (entropy: 0.000):
+Layer  3 (after transformer block 2) (entropy: 0.000 bits):
    1. ':' (1.000000)
    2. '：' (0.000000)
    3. '}:' (0.000000)
@@ -117,7 +117,7 @@ Layer  3 (after block 2) (entropy: 0.000):
   19. ':",' (0.000000)
   20. '':' (0.000000)
 
-Layer  4 (after block 3) (entropy: 0.000):
+Layer  4 (after transformer block 3) (entropy: 0.000 bits):
    1. ':' (1.000000)
    2. ']:' (0.000000)
    3. '’:' (0.000000)
@@ -139,7 +139,7 @@ Layer  4 (after block 3) (entropy: 0.000):
   19. '$:' (0.000000)
   20. ':\' (0.000000)
 
-Layer  5 (after block 4) (entropy: 0.000):
+Layer  5 (after transformer block 4) (entropy: 0.000 bits):
    1. ':' (1.000000)
    2. ' :' (0.000000)
    3. '：' (0.000000)
@@ -161,7 +161,7 @@ Layer  5 (after block 4) (entropy: 0.000):
   19. '»' (0.000000)
   20. '{' (0.000000)
 
-Layer  6 (after block 5) (entropy: 0.000):
+Layer  6 (after transformer block 5) (entropy: 0.000 bits):
    1. ':' (1.000000)
    2. ' :' (0.000000)
    3. ' menjawab' (0.000000)
@@ -185,7 +185,7 @@ Layer  6 (after block 5) (entropy: 0.000):
   19. ' Antwort' (0.000000)
   20. ' Münch' (0.000000)
 
-Layer  7 (after block 6) (entropy: 0.000):
+Layer  7 (after transformer block 6) (entropy: 0.000 bits):
    1. ':' (1.000000)
    2. ' :' (0.000000)
    3. ' Grecs' (0.000000)
@@ -207,7 +207,7 @@ Layer  7 (after block 6) (entropy: 0.000):
   19. ' japonais' (0.000000)
   20. ' chêne' (0.000000)
 
-Layer  8 (after block 7) (entropy: 0.000):
+Layer  8 (after transformer block 7) (entropy: 0.000 bits):
    1. ':' (1.000000)
    2. ' answer' (0.000000)
    3. 'answer' (0.000000)
@@ -231,7 +231,7 @@ Layer  8 (after block 7) (entropy: 0.000):
   19. '":' (0.000000)
   20. ' Münch' (0.000000)
 
-Layer  9 (after block 8) (entropy: 0.001):
+Layer  9 (after transformer block 8) (entropy: 0.002 bits):
    1. ':' (0.999895)
    2. ' answer' (0.000095)
    3. 'Answer' (0.000008)
@@ -256,7 +256,7 @@ Layer  9 (after block 8) (entropy: 0.001):
   19. '3' (0.000000)
   20. '#' (0.000000)
 
-Layer 10 (after block 9) (entropy: 0.118):
+Layer 10 (after transformer block 9) (entropy: 0.171 bits):
    1. ' answer' (0.975117)
    2. 'Answer' (0.024572)
    3. ':' (0.000265)
@@ -281,7 +281,7 @@ Layer 10 (after block 9) (entropy: 0.118):
   19. '#' (0.000000)
   20. ' =' (0.000000)
 
-Layer 11 (after block 10) (entropy: 0.013):
+Layer 11 (after transformer block 10) (entropy: 0.018 bits):
    1. ':' (0.998299)
    2. ' answer' (0.001689)
    3. 'Answer' (0.000007)
@@ -304,7 +304,7 @@ Layer 11 (after block 10) (entropy: 0.013):
   19. 'B' (0.000000)
   20. 'i' (0.000000)
 
-Layer 12 (after block 11) (entropy: 0.002):
+Layer 12 (after transformer block 11) (entropy: 0.002 bits):
    1. ':' (0.999864)
    2. 'A' (0.000066)
    3. 'Answer' (0.000027)
@@ -329,7 +329,7 @@ Layer 12 (after block 11) (entropy: 0.002):
   19. '' (0.000000)
   20. 'I' (0.000000)
 
-Layer 13 (after block 12) (entropy: 0.078):
+Layer 13 (after transformer block 12) (entropy: 0.113 bits):
    1. ':' (0.985737)
    2. '
 ' (0.013378)
@@ -354,7 +354,7 @@ Layer 13 (after block 12) (entropy: 0.078):
   19. '//' (0.000000)
   20. '' (0.000000)
 
-Layer 14 (after block 13) (entropy: 0.018):
+Layer 14 (after transformer block 13) (entropy: 0.026 bits):
    1. 'a' (0.997779)
    2. ':' (0.001198)
    3. 'A' (0.000649)
@@ -379,7 +379,7 @@ Layer 14 (after block 13) (entropy: 0.018):
   19. 'C' (0.000000)
   20. ' =' (0.000000)
 
-Layer 15 (after block 14) (entropy: 0.382):
+Layer 15 (after transformer block 14) (entropy: 0.551 bits):
    1. 'a' (0.906525)
    2. 's' (0.070176)
    3. ':' (0.015800)
@@ -404,7 +404,7 @@ Layer 15 (after block 14) (entropy: 0.382):
   19. 'an' (0.000000)
   20. 'x' (0.000000)
 
-Layer 16 (after block 15) (entropy: 0.176):
+Layer 16 (after transformer block 15) (entropy: 0.254 bits):
    1. 'a' (0.958738)
    2. 'A' (0.040665)
    3. ':' (0.000300)
@@ -427,7 +427,7 @@ Layer 16 (after block 15) (entropy: 0.176):
   19. 'L' (0.000000)
   20. 'd' (0.000000)
 
-Layer 17 (after block 16) (entropy: 0.601):
+Layer 17 (after transformer block 16) (entropy: 0.867 bits):
    1. 's' (0.820125)
    2. 'a' (0.115485)
    3. 'A' (0.061596)
@@ -450,7 +450,7 @@ Layer 17 (after block 16) (entropy: 0.601):
   19. ' to' (0.000000)
   20. ''' (0.000000)
 
-Layer 18 (after block 17) (entropy: 1.074):
+Layer 18 (after transformer block 17) (entropy: 1.549 bits):
    1. ' ' (0.468759)
    2. 'a' (0.305792)
    3. 's' (0.221849)
@@ -472,7 +472,7 @@ Layer 18 (after block 17) (entropy: 1.074):
   19. ' The' (0.000000)
   20. 'is' (0.000000)
 
-Layer 19 (after block 18) (entropy: 1.057):
+Layer 19 (after transformer block 18) (entropy: 1.526 bits):
    1. ' ' (0.561628)
    2. ' the' (0.293448)
    3. ' a' (0.106469)
@@ -494,7 +494,7 @@ Layer 19 (after block 18) (entropy: 1.057):
   19. '2' (0.000000)
   20. 'do' (0.000000)
 
-Layer 20 (after block 19) (entropy: 0.026):
+Layer 20 (after transformer block 19) (entropy: 0.038 bits):
    1. ' the' (0.996267)
    2. ' a' (0.003173)
    3. ' ' (0.000559)
@@ -516,7 +516,7 @@ Layer 20 (after block 19) (entropy: 0.026):
   19. 'A' (0.000000)
   20. 'as' (0.000000)
 
-Layer 21 (after block 20) (entropy: 0.001):
+Layer 21 (after transformer block 20) (entropy: 0.001 bits):
    1. ' the' (0.999942)
    2. ' ' (0.000058)
    3. ' a' (0.000000)
@@ -538,7 +538,7 @@ Layer 21 (after block 20) (entropy: 0.001):
   19. ' “' (0.000000)
   20. ' you' (0.000000)
 
-Layer 22 (after block 21) (entropy: 0.016):
+Layer 22 (after transformer block 21) (entropy: 0.023 bits):
    1. ' the' (0.997757)
    2. ' ' (0.002163)
    3. 'The' (0.000079)
@@ -560,7 +560,7 @@ Layer 22 (after block 21) (entropy: 0.016):
   19. ' of' (0.000000)
   20. 'A' (0.000000)
 
-Layer 23 (after block 22) (entropy: 0.005):
+Layer 23 (after transformer block 22) (entropy: 0.007 bits):
    1. ' the' (0.999449)
    2. ' ' (0.000463)
    3. 'The' (0.000087)
@@ -582,7 +582,7 @@ Layer 23 (after block 22) (entropy: 0.005):
   19. '1' (0.000000)
   20. ' It' (0.000000)
 
-Layer 24 (after block 23) (entropy: 0.004):
+Layer 24 (after transformer block 23) (entropy: 0.006 bits):
    1. ' the' (0.999570)
    2. 'The' (0.000395)
    3. ' ' (0.000035)
@@ -604,7 +604,7 @@ Layer 24 (after block 23) (entropy: 0.004):
   19. 'a' (0.000000)
   20. ' ‘' (0.000000)
 
-Layer 25 (after block 24) (entropy: 0.690):
+Layer 25 (after transformer block 24) (entropy: 0.995 bits):
    1. 'The' (0.556863)
    2. ' the' (0.442765)
    3. ' ' (0.000369)
@@ -626,7 +626,7 @@ Layer 25 (after block 24) (entropy: 0.690):
   19. ' “' (0.000000)
   20. '1' (0.000000)
 
-Layer 26 (after block 25) (entropy: 0.011):
+Layer 26 (after transformer block 25) (entropy: 0.016 bits):
    1. 'The' (0.998562)
    2. ' the' (0.001437)
    3. ' ' (0.000001)
@@ -648,7 +648,7 @@ Layer 26 (after block 25) (entropy: 0.011):
   19. 'A' (0.000000)
   20. '1' (0.000000)
 
-Layer 27 (after block 26) (entropy: 0.000):
+Layer 27 (after transformer block 26) (entropy: 0.000 bits):
    1. 'The' (0.999999)
    2. ' the' (0.000001)
    3. ' The' (0.000000)
@@ -670,7 +670,7 @@ Layer 27 (after block 26) (entropy: 0.000):
   19. 's' (0.000000)
   20. '-' (0.000000)
 
-Layer 28 (after block 27) (entropy: 0.005):
+Layer 28 (after transformer block 27) (entropy: 0.008 bits):
    1. 'The' (0.999367)
    2. ' The' (0.000633)
    3. ' the' (0.000001)
@@ -692,7 +692,7 @@ Layer 28 (after block 27) (entropy: 0.005):
   19. 'Don' (0.000000)
   20. 'We' (0.000000)
 
-Layer 29 (after block 28) (entropy: 0.000):
+Layer 29 (after transformer block 28) (entropy: 0.000 bits):
    1. 'The' (0.999998)
    2. ' The' (0.000002)
    3. ' the' (0.000000)
@@ -716,7 +716,7 @@ Layer 29 (after block 28) (entropy: 0.000):
 ' (0.000000)
   20. ',' (0.000000)
 
-Layer 30 (after block 29) (entropy: 0.011):
+Layer 30 (after transformer block 29) (entropy: 0.016 bits):
    1. ' The' (0.998576)
    2. 'The' (0.001420)
    3. ' ' (0.000003)
@@ -738,7 +738,7 @@ Layer 30 (after block 29) (entropy: 0.011):
   19. ' “' (0.000000)
   20. ' City' (0.000000)
 
-Layer 31 (after block 30) (entropy: 0.080):
+Layer 31 (after transformer block 30) (entropy: 0.116 bits):
    1. ' The' (0.984417)
    2. 'The' (0.015583)
    3. ' the' (0.000000)
@@ -760,7 +760,7 @@ Layer 31 (after block 30) (entropy: 0.080):
   19. ' (' (0.000000)
   20. ' Washington' (0.000000)
 
-Layer 32 (after block 31) (entropy: 0.000):
+Layer 32 (after transformer block 31) (entropy: 0.000 bits):
    1. ' The' (1.000000)
    2. 'The' (0.000000)
    3. ' ' (0.000000)
@@ -782,7 +782,7 @@ Layer 32 (after block 31) (entropy: 0.000):
   19. 'It' (0.000000)
   20. ' London' (0.000000)
 
-Layer 33 (after block 32) (entropy: 0.000):
+Layer 33 (after transformer block 32) (entropy: 0.001 bits):
    1. ' The' (0.999965)
    2. ' ' (0.000035)
    3. 'The' (0.000000)
@@ -804,7 +804,7 @@ Layer 33 (after block 32) (entropy: 0.000):
   19. ',' (0.000000)
   20. ' in' (0.000000)
 
-Layer 34 (after block 33) (entropy: 0.010):
+Layer 34 (after transformer block 33) (entropy: 0.014 bits):
    1. ' Berlin' (0.998710)
    2. ' The' (0.001290)
    3. ' ' (0.000000)
@@ -826,7 +826,7 @@ Layer 34 (after block 33) (entropy: 0.010):
   19. ' Paris' (0.000000)
   20. 'Capital' (0.000000)
 
-Layer 35 (after block 34) (entropy: 0.000):
+Layer 35 (after transformer block 34) (entropy: 0.000 bits):
    1. ' Berlin' (1.000000)
    2. 'Berlin' (0.000000)
    3. ' The' (0.000000)
@@ -848,7 +848,7 @@ Layer 35 (after block 34) (entropy: 0.000):
   19. '  ' (0.000000)
   20. 'This' (0.000000)
 
-Layer 36 (after block 35) (entropy: 0.000):
+Layer 36 (after transformer block 35) (entropy: 0.000 bits):
    1. ' Berlin' (1.000000)
    2. 'Berlin' (0.000000)
    3. ' The' (0.000000)
@@ -872,7 +872,7 @@ Layer 36 (after block 35) (entropy: 0.000):
   19. 'This' (0.000000)
   20. '  ' (0.000000)
 
-Layer 37 (after block 36) (entropy: 0.000):
+Layer 37 (after transformer block 36) (entropy: 0.000 bits):
    1. ' Berlin' (1.000000)
    2. ' The' (0.000000)
    3. 'Berlin' (0.000000)
@@ -896,7 +896,7 @@ Layer 37 (after block 36) (entropy: 0.000):
   19. 'This' (0.000000)
   20. 'New' (0.000000)
 
-Layer 38 (after block 37) (entropy: 0.000):
+Layer 38 (after transformer block 37) (entropy: 0.000 bits):
    1. ' Berlin' (1.000000)
    2. 'Berlin' (0.000000)
    3. ' The' (0.000000)
@@ -920,7 +920,7 @@ Layer 38 (after block 37) (entropy: 0.000):
 
 ' (0.000000)
 
-Layer 39 (after block 38) (entropy: 0.000):
+Layer 39 (after transformer block 38) (entropy: 0.000 bits):
    1. ' Berlin' (1.000000)
    2. 'Berlin' (0.000000)
    3. ' The' (0.000000)
@@ -944,7 +944,7 @@ Layer 39 (after block 38) (entropy: 0.000):
   19. 'This' (0.000000)
   20. 'BER' (0.000000)
 
-Layer 40 (after block 39) (entropy: -0.000):
+Layer 40 (after transformer block 39) (entropy: -0.000 bits):
    1. ' Berlin' (1.000000)
    2. ' The' (0.000000)
    3. 'Berlin' (0.000000)
@@ -969,7 +969,7 @@ Layer 40 (after block 39) (entropy: -0.000):
 ' (0.000000)
   20. ' We' (0.000000)
 
-Layer 41 (after block 40) (entropy: -0.000):
+Layer 41 (after transformer block 40) (entropy: -0.000 bits):
    1. ' Berlin' (1.000000)
    2. 'Berlin' (0.000000)
    3. ' The' (0.000000)
@@ -993,7 +993,7 @@ Layer 41 (after block 40) (entropy: -0.000):
   19. ' There' (0.000000)
   20. ' In' (0.000000)
 
-Layer 42 (after block 41) (entropy: -0.000):
+Layer 42 (after transformer block 41) (entropy: -0.000 bits):
    1. ' Berlin' (1.000000)
    2. ' The' (0.000000)
    3. ' It' (0.000000)
@@ -1019,79 +1019,79 @@ Layer 42 (after block 41) (entropy: -0.000):
 
 ============================================================
 ACTUAL MODEL PREDICTION (for comparison):
-Model's final prediction (entropy: 1.388):
-   1. ' Berlin' (0.850448)
-   2. ' The' (0.022042)
-   3. ' It' (0.017281)
-   4. ' Bonn' (0.014459)
-   5. ' Germany' (0.011866)
-   6. ' BERLIN' (0.010677)
+Model's final prediction (entropy: 2.003 bits):
+   1. ' Berlin' (0.790751)
+   2. ' The' (0.020495)
+   3. ' It' (0.016068)
+   4. ' Bonn' (0.013445)
+   5. ' Germany' (0.011033)
+   6. ' BERLIN' (0.009927)
    7. '
 
-' (0.009764)
-   8. ' I' (0.008592)
-   9. ' ' (0.008246)
-  10. 'Berlin' (0.006725)
-  11. ' What' (0.006601)
-  12. ' This' (0.005325)
-  13. ' “' (0.004984)
-  14. ' Hamburg' (0.003755)
-  15. ' A' (0.003557)
-  16. '  ' (0.003520)
-  17. ' Munich' (0.003347)
-  18. ' "' (0.003067)
-  19. ' There' (0.002914)
-  20. ' You' (0.002827)
+' (0.009079)
+   8. ' I' (0.007989)
+   9. ' ' (0.007667)
+  10. 'Berlin' (0.006253)
+  11. ' What' (0.006138)
+  12. ' This' (0.004951)
+  13. ' “' (0.004634)
+  14. ' Hamburg' (0.003492)
+  15. ' A' (0.003308)
+  16. '  ' (0.003273)
+  17. ' Munich' (0.003112)
+  18. ' "' (0.002852)
+  19. ' There' (0.002710)
+  20. ' You' (0.002629)
 ============================================================
 ADDITIONAL PROBING:
 
 Prompt: 'Germany's capital is'
-  (entropy: 3.692)
-   1. ' a' (0.343119)
-   2. ' one' (0.143769)
-   3. ' the' (0.122252)
-   4. ' home' (0.094358)
-   5. ' known' (0.072611)
-   6. ' not' (0.066297)
-   7. ' an' (0.050883)
-   8. ' full' (0.040089)
-   9. ' famous' (0.036301)
-  10. ' set' (0.030321)
+  (entropy: 5.326 bits)
+   1. ' a' (0.212154)
+   2. ' one' (0.088894)
+   3. ' the' (0.075590)
+   4. ' home' (0.058343)
+   5. ' known' (0.044897)
+   6. ' not' (0.040992)
+   7. ' an' (0.031461)
+   8. ' full' (0.024788)
+   9. ' famous' (0.022445)
+  10. ' set' (0.018748)
 
 Prompt: 'Berlin is the capital of'
-  (entropy: 0.667)
-   1. ' Germany' (0.899384)
-   2. ' the' (0.071754)
-   3. ' modern' (0.007902)
-   4. ' a' (0.005432)
-   5. ' ' (0.003482)
-   6. ' Europe' (0.003160)
-   7. ' German' (0.002913)
-   8. ' both' (0.002491)
-   9. ' Berlin' (0.001919)
-  10. ' germany' (0.001564)
+  (entropy: 0.962 bits)
+   1. ' Germany' (0.876591)
+   2. ' the' (0.069935)
+   3. ' modern' (0.007702)
+   4. ' a' (0.005295)
+   5. ' ' (0.003393)
+   6. ' Europe' (0.003080)
+   7. ' German' (0.002839)
+   8. ' both' (0.002428)
+   9. ' Berlin' (0.001870)
+  10. ' germany' (0.001524)
 
 Prompt: 'Respond in one word: which city is the capital of Germany?'
-  (entropy: 3.686)
+  (entropy: 5.318 bits)
    1. '
 
-' (0.264715)
-   2. ' If' (0.185901)
-   3. ' Berlin' (0.174559)
-   4. ' Of' (0.076018)
-   5. ' The' (0.075707)
-   6. ' You' (0.055997)
+' (0.158684)
+   2. ' If' (0.111439)
+   3. ' Berlin' (0.104639)
+   4. ' Of' (0.045569)
+   5. ' The' (0.045383)
+   6. ' You' (0.033567)
    7. '
-' (0.050243)
-   8. ' That' (0.044829)
-   9. ' Yes' (0.037684)
-  10. ' And' (0.034347)
+' (0.030118)
+   8. ' That' (0.026873)
+   9. ' Yes' (0.022590)
+  10. ' And' (0.020589)
 ============================================================
 TEMPERATURE EXPLORATION:
 (Temperature controls randomness: low=confident, high=creative)
 
 Temperature 0.1:
-  (entropy: 0.000)
+  (entropy: 0.000 bits)
    1. ' Berlin' (1.000000)
    2. ' The' (0.000000)
    3. ' It' (0.000000)
@@ -1111,24 +1111,24 @@ Temperature 0.1:
   15. ' A' (0.000000)
 
 Temperature 2.0:
-  (entropy: 7.632)
-   1. ' Berlin' (0.410835)
-   2. ' The' (0.066141)
-   3. ' It' (0.058563)
-   4. ' Bonn' (0.053570)
-   5. ' Germany' (0.048529)
-   6. ' BERLIN' (0.046032)
+  (entropy: 11.011 bits)
+   1. ' Berlin' (0.085554)
+   2. ' The' (0.013773)
+   3. ' It' (0.012195)
+   4. ' Bonn' (0.011156)
+   5. ' Germany' (0.010106)
+   6. ' BERLIN' (0.009586)
    7. '
 
-' (0.044021)
-   8. ' I' (0.041294)
-   9. ' ' (0.040455)
-  10. 'Berlin' (0.036534)
-  11. ' What' (0.036195)
-  12. ' This' (0.032510)
-  13. ' “' (0.031451)
-  14. ' Hamburg' (0.027300)
-  15. ' A' (0.026570)
+' (0.009167)
+   8. ' I' (0.008599)
+   9. ' ' (0.008425)
+  10. 'Berlin' (0.007608)
+  11. ' What' (0.007537)
+  12. ' This' (0.006770)
+  13. ' “' (0.006549)
+  14. ' Hamburg' (0.005685)
+  15. ' A' (0.005533)
 === END OF INSPECTING ==============
 
 

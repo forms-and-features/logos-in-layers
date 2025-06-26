@@ -1,100 +1,114 @@
-# Evaluation – Mistral-7B-v0.1
+# Mistral-7B-v0.1 – Layer-wise Logit-Lens Inspection  
 
-*File analysed *: `output-Mistral-7B-v0.1.txt`
-*Probe script *: `run.py` (layer-wise residual inspection with optional norm-lens)
-*Date of run *: 2025-06-24 ‑- timestamps inside the dump
-
----
-
-## 1. Model metadata
-
-| Property | Value | Evidence |
-|----------|-------|----------|
-| Family / checkpoint | `mistralai/Mistral-7B-v0.1` | First header lines of dump |
-| Parameter count | 7 B (public spec) | vendor doc |
-| Layers (nlayers) | **32** | "Number of layers: 32" (l. 872) |
-| d<sub>model</sub> | **4096** | dump |
-| Attention heads | **32** | dump |
-| Normalisation | **RMSNormPre** (pre-norm) | "Block LayerNorm type: RMSNormPre" (l. 14) |
-
-Important consequence: RMSNorm ≠ vanilla LayerNorm, so the script **skipped norm-lens** and worked on *raw* residual streams.  Interpretation of logits therefore uses different scaling than in Llama-family models and absolute probabilities should be treated with caution.
+*File analysed:* `output-Mistral-7B-v0.1.txt` (full console dump produced by `run.py`).  
+*Model:* `mistralai/Mistral-7B-v0.1` – 32-layer decoder-only Transformer, *d*ₘₒ𝖽𝖾𝖑 = 4096, 32 heads, vocab ≈ 32 k, context = 2 048. The architecture uses **RMSNorm-pre** at every block and before the final unembedding.  
 
 ---
 
-## 2. Layer-wise prediction dynamics
+## 1. Methodological notes & caveats
 
-### 2.1 Emergence of the correct answer
+| Item | Evidence | Implications |
+|------|----------|--------------|
+| RMSNorm without exposed scale parameter | "⚠️ RMSNorm detected but no weight/scale parameter – norm-lens will be skipped" (normalisation analysis section) | Intermediate predictions are read **from the raw residual stream** rather than a normalised version. Prior work (e.g. [Belrose et al., 2023](https://arxiv.org/abs/2303.08112)) shows that lack of calibration can distort early-layer distributions. Magnitudes and entropies should therefore be treated **qualitatively**, not quantitatively. |
+| Unembed weights promoted to FP32 | "🔬 Promoting unembed weights to FP32…" | Numerical stability for probability/entropy estimates is adequate despite raw lens. |
+| Prompt | `Question: What is the capital of Germany? Answer:` | Simple factual-retrieval setup; permits inspection of last-token logits across layers. |
 
-```
-12:20:001_layers_and_logits/output-Mistral-7B-v0.1.txt
-Layer 19 … 6. 'Berlin' (0.0515)
-Layer 22 … 1. 'Berlin' (0.1081)
-Layer 25 … 1. 'Berlin' (0.2702)
-Layer 30 … 1. 'Berlin' (0.6293)
-Layer 31 … 1. 'Berlin' (0.6419)
-``` 
-
-A clear monotonic rise in the log-probability of **'Berlin'** illustrates the usual *knowledge funnel* pattern ([Elhage et al., 2022](https://transformer-circuits.pub/)), where low-level noise is gradually refined into the final factual answer.
-
-### 2.2 Entropy trajectory
-
-* From **layers 0-17** the token-level entropy stays flat around **10.37 bits**, indicating an almost uniform distribution over the top-20 bucket – essentially *uninformative*.
-* Beginning with layer 18 entropy starts to drop, reaching **5.7 bits** by layer 32 and **1.25 bits** at the final logits.  The sharp fall from layers 24–31 coincides with the rapid rise in 'Berlin' probability (see excerpt above).
-
-Entropy collapse that late in the stack is typical for 7-B scale pre-norm transformers and matches what [Belrose et al., 2023](https://arxiv.org/abs/2303.08112) observed for GPT-J.
-
-### 2.3 Early-layer noise
-
-Layers 0-10 are dominated by fragmented sub-word morphemes – e.g. 'laug', 'avais', '/******/'.  This is an artefact of the *logit lens* when applied on raw RMS-normalised residuals: without the scaling of LayerNorm, high-norm tokens whose embeddings happen to align with arbitrary directions get spuriously high scores.  Similar behaviour was reported in [Nostalgebraist 2020](https://www.lesswrong.com/posts/AcKRB8wDpdaN6v6ru/interpreting-gpt-the-logit-lens).
+> **Take-away:** Findings about *which* tokens climb or fall in rank are trustworthy, but exact probabilities, especially in the first ~10 layers, may shift when using a tuned or normed lens.
 
 ---
 
-## 3. Prompt sensitivity tests
+## 2. Entropy trajectory
 
-| Test prompt | Top-1 prediction | Top-1 p | Comment |
-|-------------|------------------|---------|---------|
-| Germany's capital is … | **'a'** | 0.37 | Hallucinated indefinite article; factual recall fails |
-| Berlin is the capital of … | **'Germany'** | 0.92 | Symmetric reformulation works |
-| Respond in **one word**: which city is the capital of Germany? | newline token | 0.63 | Control token dominates; 'Berlin' only 0.20 |
+The last-token entropy (in bits) is reported per layer:
 
-**Red flag:** The newline bias shows that instruction tokens ("Respond in one word:") are *not* sufficiently suppressing formatting tokens.  This fragility could matter if downstream philosophical tasks rely on precise format adherence.
+| Stage | Layers | Entropy range | Comment |
+|-------|--------|---------------|---------|
+| Embedding & very early | 0–5 | **14.966–14.965** | Almost maximally flat (uniform over 32 k ≈ 15 bits). Model has not specialised yet. |
+| Mid stack | 6–18 | 14.965 → 14.951 | Slow, almost linear decrease; distribution still effectively noise. |
+| Fact-emergence band | 19–24 | 14.945 → 14.891 | Noticeable information gain; first appearance of factual tokens (`Berlin`, `Germany`, `capital`). |
+| Late convergence | 25–32 | 14.842 → **8.254** | Rapid sharpening; final layers perform bulk of logit focusing (≈ 6.6 bits drop across last seven layers). |
+| Final logits | — | **1.800** | Extremely peaked: `Berlin` 0.83 prob. |
+
+*Pattern echoes observations in tuned-lens work that many factual models defer decisive computation to late layers.*
 
 ---
 
-## 4. Notable anomalies
+## 3. Layer-wise token dynamics
 
-* Frequent high-ranking garbage literals such as `'/******/', '........', 'Â'` between layers 10-17.  These come from byte-level artefacts in the SentencePiece vocab and point to **representation noise** in early residual stream directions.
-* By layer 23 the model oscillates between 'Berlin' and **'Washington'** as top candidates even though Washington is unrelated.  This indicates *semantic interference* between capital-city features.
-* The script issues `⚠️ Non-vanilla norm detected – norm-lens skipped`, reminding that applying a vanilla LayerNorm would distort features.  Researchers should treat norm-lens outputs published elsewhere with caution when the underlying model uses RMSNorm.
+### 3.1 Early layers (0–5)
+* Top-20 lists are filled with morphologically rare sub-tokens (`"laug"`, `"avax"`, `"ueto"`).
+* No prompt-related strings appear. This is typical when the unnormalised residual is dominated by embedding noise.
+
+### 3.2 Transitional middle (6–18)
+* Repetitive meta-tokens surge: `'Answer'`, `'answer'`, `'swer'`, `'cities'`.
+* Indicates the network is **first parsing the prompt format** (Q → A) before grounding factual content.
+* Minor but rising semantic hints – by layer 18 the words **`capital`** and **`Germany`** enter top-20.
+
+### 3.3 Fact emergence (19–24)
+* Layer 19: `cities` still rank #1, but **`Germany` (0.00008)** and **`Berlin` (0.00007)** appear.
+* Layer 21: ranking flips – `capital` then **`Berlin` #2** (0.00019).
+* **Anomaly:** Layer 23 list is topped by **`Washington`** (0.00054) *ahead* of `Berlin` (0.00050). Possible U.S. capital interference suggests overlapping representation for the concept *capital-city* without strong country disambiguation yet.
+* Layer 24 reverses: `Berlin` overtakes (`0.00071`) while `Washington` slips.
+
+### 3.4 Late convergence (25–32)
+* Probabilities for `Berlin` grow super-linearly:
+  * L 25 → 0.0029
+  * L 26 → 0.0047
+  * L 27 → 0.0090
+  * L 28 → 0.0259
+  * L 29 → 0.0514
+  * L 30 → 0.0785
+  * L 31 → 0.1416
+  * L 32 → 0.296 (intermediate) – before softmax temperature rescaling.
+* Final unembedded logits yield **0.83** probability for `Berlin`.
+* Entropy drops accordingly, with the largest single decrease between layers 31→32 (~3.5 bits), highlighting **decisive computation in the final block**.
+
+---
+
+## 4. Noteworthy anomalies & red flags
+
+1. **Spurious U.S. bias:** The temporary dominance of `Washington` at layer 23 is striking. Although later corrected, it implies a residual association "capital → Washington" that competes strongly with the country cue.
+2. **Generic noun confusion:** Prolonged high rank of `cities` (layers 18–21) suggests the model sometimes treats *capital* as a generic plural class before narrowing to a specific entity.
+3. **Prompt-echo artefacts:** Tokens like `'Answer'`, `'answer'`, `'swer'` persist through layer 18 despite being invalid next-word completions, reflecting over-representation of prompt templates in pre-training data.
+4. **Flat early entropy:** Almost perfect 15-bit entropy until layer 5 indicates that without normalisation the embedding vector alone offers negligible discriminative signal, in line with findings that raw logit lens overestimates early-layer uncertainty ([nostalgebraist 2020](https://www.lesswrong.com/posts/AcKRB8wDpdaN6v6ru/interpreting-gpt-the-logit-lens)).
 
 ---
 
 ## 5. Interpretability take-aways
 
-1. **RMSNorm complicates norm-lens.**  Because RMSNorm preserves mean but rescales by RMS only, applying a vanilla LayerNorm ex-post would add a learned bias and change directions.  See [Zhang & Sennrich 2019](https://arxiv.org/abs/1910.07467) for details on RMSNorm behaviour.
-2. The gradual sharpening of 'Berlin' supports the hypothesis that Mistral encodes *factual relations* in later blocks rather than storing them in embeddings – contrasting with smaller BERT-style models where embedding lookup sometimes suffices.
-3. Entropy-collapse point (≈layer 25) is a useful hook for targeted measurement interventions (e.g. activation patching) – most of the decisive computation seems to finish there.
+* The **capital-city fact** is *not* encoded in embeddings; it materialises gradually and is only decisively represented after ~80 % of the network depth.
+* Competitive alternatives (`Washington`, `Frankfurt`, `Paris`) rise and fall, hinting at an internal **selection circuit** that weighs multiple query-matching candidates before committing.
+* The sharp late-layer logit jump lends support to the hypothesis that transformer blocks closer to the output act as **refiners/validators** rather than knowledge retrievers (cf. "tuned lens" observations on Llama-2).
+* The raw-lens limitation under RMSNorm underscores the importance of **norm-aware lenses**; without them, early-layer semantics are likely under-estimated (see discussion in Belrose et al., 2023, §3).
 
 ---
 
-## 6. Implications for the nominalism ↔ realism debate
+## 6. Relevance to the Realism vs Nominalism debate (tentative)
 
-The layer-wise trace offers an empirical glimpse into how a modern LLM transitions from *token-surface regularities* (early sub-word soup) to an abstract *universal concept* ('capital-city-of') and finally to the *particular* instance 'Berlin'.  The late binding of the universal relation to the particular token suggests that, inside the network, **universals are represented as directions that are later combined with entity-specific vectors** – a pattern aligned with platonic realism about abstract relations.  Whether those directions qualify as *real abstract objects* or as convenient high-dimensional bookkeeping remains an open philosophical question, but the trace clearly shows both strata.
+| Observation | Nominalist reading | Realist reading |
+|-------------|-------------------|-----------------|
+| Early stages dominated by surface tokens (`Answer`, `cities`) | Model begins with *names* and syntactic forms, supporting view that categories are constructed labels. | These surface forms are scaffolding; true *concepts* (e.g. a particular city) emerge later, suggesting underlying reality. |
+| Gradual sharpening towards a single city | Conceptual representation appears to *track an external fact* (`Berlin`), hinting that the model holds a reality-anchored entity. | Could still be an internal convention derived from statistical co-occurrence; no necessary commitment to ontological realism. |
+| Competing `Washington` candidate | Shows category overlap and absence of innate essences – concepts are distributional clusters. | The eventual suppression of `Washington` demonstrates a constraint consistent with the real-world mapping "Germany → Berlin". |
 
----
-
-## 7. Recommendations for further work
-
-1. **Apply tuned-lens with RMS compensation.**  Train per-layer linear maps à la [Tuned Lens](https://arxiv.org/abs/2303.08112) to obtain more faithful intermediate beliefs despite RMSNorm.
-2. **Patch attention heads 22-26.**  Activation-patching could localise where the 'capital-city' circuit is implemented.
-3. **Stress-test prompt robustness.**  Vary wh-phrasing and output-format constraints to quantify the newline issue.
-4. **Compare with Gemma-2-9B** (uses vanilla LayerNorm) to isolate norm-type effects on interpretability metrics.
+> **Caution:** These traces offer raw empirical glimpses into the model's internal states; they do **not** by themselves settle metaphysical questions. They might, however, inform *testable predictions* for future philosophical inquiry (e.g. whether concept individuation corresponds to unique attractor states inside the residual stream).
 
 ---
 
-## 8. Summary
+## 7. Summary of key points
 
-The Mistral-7B-v0.1 checkpoint successfully answers the probe question but only after ~60 % of its depth.  Early activations are noisy and uninterpretable without a dedicated RMS-aware lens.  Late-layer attention heads form a clear factual-recall circuit, yet the model remains sensitive to prompt wording and output formatting.  For philosophy-of-language experiments, the newline bias and RMSNorm complications deserve particular scrutiny. 
+1. **Entropy profile** is almost flat until layer 18, then collapses – factual information is consolidated late.
+2. **Layer 23 anomaly** (`Washington` > `Berlin`) highlights residual geographic ambiguity.
+3. **Prompt-format tokens** clutter the mid-stack, reflecting dataset biases.
+4. Raw logit lens under RMSNorm deserves calibration; results are directionally informative but numerically noisy.
+5. Findings provide concrete hooks for philosophical analysis without yet favouring realism or nominalism.
+
+---
+
+### References
+
+* Belrose, N., Furman, Z., et al. (2023). *Eliciting Latent Predictions from Transformers with the Tuned Lens.* arXiv:2303.08112.
+* nostalgebraist (2020). *Interpreting GPT: The Logit Lens.* LessWrong post. <https://www.lesswrong.com/posts/AcKRB8wDpdaN6v6ru/interpreting-gpt-the-logit-lens>.
 
 ---
 

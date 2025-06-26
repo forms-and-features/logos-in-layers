@@ -16,6 +16,7 @@ With the help of an AI co-pilot, the user ran experiments on a few open-weights 
 Your task is to:
 - review the experiment's code: anything wrong about the approach (other than limitations highlighted in model evaluation docs)?
 - review the results and analyses: anything incorrectly interpreted, over-stated, or missed?
+- consider the usefulness of the findings for the realism vs nominalism debate;
 - propose next steps, keeping in mind project context and goals.
 
 Use your knowledge of cutting-edge LLM research. Be thorough and specific. Make sure that statements are supported by evidence from the txt dump, don't speculate. Contextualize your findings using your broader knowledge of the latest interpretability research, citing sources when appropriate. Always provide links to sources, and verify that sources contain the claims that you're citing; otherwise, reformulate or remove the claim. In any case, never provide a non-existent source.

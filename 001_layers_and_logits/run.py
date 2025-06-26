@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import warnings
+import math
 
 # Layer-by-layer prediction analysis with LayerNorm lens correction
 # Toggle USE_NORM_LENS for raw vs normalized residual stream analysis
@@ -26,9 +27,31 @@ def is_safe_layernorm(norm_mod):
     """Check if a normalization module is vanilla LayerNorm that's safe to apply"""
     return isinstance(norm_mod, nn.LayerNorm)
 
+def rms_lens(resid, gamma, eps=1e-5):
+    """
+    Apply RMS normalization with learnable scale parameter.
+    
+    Args:
+        resid: Residual stream tensor [B, seq_len, d_model]
+        gamma: Scale parameter from RMSNorm layer [d_model]
+        eps: Epsilon for numerical stability (default: 1e-5)
+    
+    Returns:
+        RMS-normalized residual stream
+    """
+    # Ensure gamma matches device and dtype of residual
+    gamma = gamma.to(resid.device, dtype=resid.dtype)
+    
+    # Compute RMS: [B, seq_len, d_model] -> [B, seq_len, 1]
+    # CRITICAL: eps must be INSIDE the sqrt for numerical correctness
+    rms = torch.sqrt(resid.pow(2).mean(-1, keepdim=True) + eps)
+    
+    # Normalize and scale
+    return resid / rms * gamma
+
 def apply_norm_or_skip(resid, norm_mod, layer_info=""):
     """
-    Apply normalization safely, or skip if the norm type is problematic.
+    Apply normalization safely, with support for both LayerNorm and RMSNorm.
     
     Args:
         resid: Residual stream tensor
@@ -42,17 +65,25 @@ def apply_norm_or_skip(resid, norm_mod, layer_info=""):
     if isinstance(norm_mod, nn.LayerNorm):
         return norm_mod(resid)
     
-    # RMSNorm or other normalization types - skip to avoid distortion
+    # RMSNorm - use RMS-aware lens if scale parameter is available
     norm_type = type(norm_mod).__name__
-    if hasattr(norm_mod, '__class__') and 'RMS' in norm_type:
-        warnings.warn(f"Skipping norm-lens at {layer_info} because {norm_type} "
-                     f"is not vanilla LayerNorm (avoiding potential distortion)")
-        return resid
+    if 'RMS' in norm_type:
+        # Try to get scale parameter (weight or scale attribute)
+        gamma = getattr(norm_mod, 'weight', getattr(norm_mod, 'scale', None))
+        if gamma is not None:
+            # Try to get epsilon from the norm module, fallback to default
+            eps = getattr(norm_mod, 'eps', 1e-5)
+            return rms_lens(resid, gamma, eps)
     
-    # Any other normalization type - also skip
+        # RMSNorm without accessible scale parameter - skip with warning
+        else:
+            warnings.warn(f"Skipping RMS lens at {layer_info} - no accessible weight/scale parameter")
+            return resid
+    
+    # Any other normalization type - skip
     if norm_type != 'LayerNorm':
         warnings.warn(f"Skipping norm-lens at {layer_info} because {norm_type} "
-                     f"is not vanilla LayerNorm (avoiding potential distortion)")
+                     f"is not supported (only LayerNorm and RMSNorm supported)")
         return resid
     
     # Fallback - this shouldn't happen but be safe
@@ -86,19 +117,37 @@ def run_experiment_for_model(model_id):
         # Toggle for using normalized lens (recommended for accurate interpretation)
         USE_NORM_LENS = True
         
+        # Toggle for FP32 unembedding (recommended for research-grade precision)
+        # Prevents under-resolving logit gaps < 1e-5 at cost of ~50MB memory
+        USE_FP32_UNEMBED = True
+        
+        # Promote unembedding weights to FP32 if requested for true precision gain
+        if USE_FP32_UNEMBED and model.unembed.W_U.dtype != torch.float32:
+            print(f"🔬 Promoting unembed weights to FP32 for research-grade precision (was {model.unembed.W_U.dtype})")
+            model.unembed.W_U = torch.nn.Parameter(model.unembed.W_U.float(), requires_grad=False)
+        
         # Diagnostic: Check normalization types in the model
         print("\n=== NORMALIZATION ANALYSIS ========")
         if hasattr(model, 'blocks') and len(model.blocks) > 0:
             first_block_ln1_type = type(model.blocks[0].ln1).__name__
-            print(f"Block LayerNorm type: {first_block_ln1_type}")
+            print(f"Block normalization type: {first_block_ln1_type}")
+            
             if is_safe_layernorm(model.blocks[0].ln1):
-                print("✅ Safe vanilla LayerNorm detected - norm-lens will be applied")
+                print("✅ LayerNorm detected - standard norm-lens will be applied")
+            elif 'RMS' in first_block_ln1_type:
+                first_norm = model.blocks[0].ln1
+                gamma = getattr(first_norm, 'weight', getattr(first_norm, 'scale', None))
+                if gamma is not None:
+                    param_name = 'weight' if hasattr(first_norm, 'weight') else 'scale'
+                    print(f"✅ RMSNorm detected with {param_name} parameter - RMS-aware lens will be applied")
+                else:
+                    print("⚠️  RMSNorm detected but no weight/scale parameter - norm-lens will be skipped")
             else:
-                print(f"⚠️  Non-vanilla norm detected ({first_block_ln1_type}) - norm-lens will be skipped to avoid distortion")
+                print(f"⚠️  Unsupported norm type ({first_block_ln1_type}) - norm-lens will be skipped")
         
         if hasattr(model, 'ln_final'):
             final_ln_type = type(model.ln_final).__name__
-            print(f"Final LayerNorm type: {final_ln_type}")
+            print(f"Final normalization type: {final_ln_type}")
         print("=== END NORMALIZATION ANALYSIS ====\n")
         
         # Inspect a short prompt - using Q&A format that works best across models
@@ -154,19 +203,30 @@ def run_experiment_for_model(model_id):
                 print(f"\nTop predictions for next token after '{prompt}':")
                 if USE_NORM_LENS:
                     # Check if we'll actually be applying norms
-                    if hasattr(model, 'blocks') and len(model.blocks) > 0 and is_safe_layernorm(model.blocks[0].ln1):
-                        print("Using NORMALIZED residual stream (vanilla LayerNorm applied - more accurate)")
+                    if hasattr(model, 'blocks') and len(model.blocks) > 0:
+                        first_norm = model.blocks[0].ln1
+                        norm_type = type(first_norm).__name__
+                        
+                        if is_safe_layernorm(first_norm):
+                            print("Using NORMALIZED residual stream (LayerNorm applied - more accurate)")
+                        elif 'RMS' in norm_type and hasattr(first_norm, 'weight'):
+                            print("Using NORMALIZED residual stream (RMS-aware lens applied - more accurate)")
+                        else:
+                            print("Using RAW residual stream (unsupported normalization, skipping to avoid distortion)")
                     else:
-                        print("Using RAW residual stream (non-vanilla norms detected, skipping normalization to avoid distortion)")
+                        print("Using RAW residual stream (no normalization layers found)")
                 else:
                     print("Using RAW residual stream (normalization disabled)")
-                print("Note: Shown probabilities are softmax over top-k only (don't sum to 1)")
+                print("Note: Shown probabilities are from full softmax (calibrated and comparable)")
                 print("-" * 60)
                 
                 # Look at the last position (after "Answer:")
                 last_pos = -1
                 
-                # FIXED: Correct layer indexing - show embeddings as layer 0, then each transformer block
+                # Layer indexing scheme: 
+                # Layer 0 = embeddings (before any transformer blocks)
+                # Layer N = after transformer block N-1 (N = 1, 2, ..., n_layers)
+                
                 # Layer 0: embeddings
                 print("Layer  0 (embeddings):")
                 resid = residual_cache['hook_embed'].to(model.cfg.device)  # Move from CPU to GPU
@@ -176,17 +236,26 @@ def run_experiment_for_model(model_id):
                     resid = apply_norm_or_skip(resid, model.blocks[0].ln1, "layer 0 (embeddings + block 0 ln1)")
                 
                 # Apply the unembedding to get logits (resid is now [1, 1, d_model] from caching last token only)
-                layer_logits = model.unembed(resid[0, 0, :]).float()  # Cast to float32 to avoid float16 underflow in entropy
+                # Get weight dtype safely (TransformerLens Unembed uses .W_U)
+                weight_dtype = getattr(model.unembed, "weight", model.unembed.W_U).dtype
+                if USE_FP32_UNEMBED:
+                    # Use float32 throughout for research-grade precision (weights already promoted)
+                    layer_logits = model.unembed(resid[0, 0, :].float())
+                else:
+                    # Cast to weight dtype for matmul, then to float32 for calculations
+                    layer_logits = model.unembed(resid[0, 0, :].to(weight_dtype)).float()
                 
-                # More efficient: get top-k on logits first, then softmax
-                top_logits, top_indices = torch.topk(layer_logits, 20, largest=True, sorted=True)
-                top_probs = torch.softmax(top_logits, dim=0)
+                # Get top-k indices, then compute calibrated probabilities from full softmax
+                _, top_indices = torch.topk(layer_logits, 20, largest=True, sorted=True)
+                full_probs = torch.softmax(layer_logits, dim=0)
+                top_probs = full_probs[top_indices]
                 
-                # Calculate entropy efficiently using log_softmax
+                # Calculate entropy efficiently using log_softmax (convert to bits)
                 log_probs = torch.log_softmax(layer_logits, dim=0)
-                entropy = -torch.sum(torch.exp(log_probs) * log_probs)
+                entropy_nats = -torch.sum(torch.exp(log_probs) * log_probs)
+                entropy_bits = entropy_nats.item() / math.log(2)
                 
-                print(f"  (entropy: {entropy.item():.3f}):")
+                print(f"  (entropy: {entropy_bits:.3f} bits):")
                 for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
                     token = model.tokenizer.decode([idx])
                     print(f"  {i+1:2d}. '{token}' ({prob.item():.6f})")
@@ -203,21 +272,32 @@ def run_experiment_for_model(model_id):
                             # Apply the LayerNorm that the next block would use
                             resid = apply_norm_or_skip(resid, model.blocks[layer + 1].ln1, f"layer {layer + 1} (block {layer + 1} ln1)")
                         else:
-                            # For the final layer, apply the final LayerNorm
-                            resid = apply_norm_or_skip(resid, model.ln_final, f"layer {layer + 1} (final ln)")
+                            # For the final layer, apply the final LayerNorm if it exists
+                            final_ln = getattr(model, 'ln_final', None)
+                            if final_ln is not None:
+                                resid = apply_norm_or_skip(resid, final_ln, f"layer {layer + 1} (final ln)")
                     
-                    # Apply the unembedding to get logits (resid is [1, 1, d_model], cast to float32 for entropy stability)
-                    layer_logits = model.unembed(resid[0, 0, :]).float()
+                    # Apply the unembedding to get logits (resid is [1, 1, d_model], cast to float32 for stability)
+                    # Get weight dtype safely (TransformerLens Unembed uses .W_U)
+                    weight_dtype = getattr(model.unembed, "weight", model.unembed.W_U).dtype
+                    if USE_FP32_UNEMBED:
+                        # Use float32 throughout for research-grade precision (weights already promoted)
+                        layer_logits = model.unembed(resid[0, 0, :].float())
+                    else:
+                        # Cast to weight dtype for matmul, then to float32 for calculations
+                        layer_logits = model.unembed(resid[0, 0, :].to(weight_dtype)).float()
                     
-                    # More efficient: get top-k on logits first, then softmax
-                    top_logits, top_indices = torch.topk(layer_logits, 20, largest=True, sorted=True)
-                    top_probs = torch.softmax(top_logits, dim=0)
+                    # Get top-k indices, then compute calibrated probabilities from full softmax
+                    _, top_indices = torch.topk(layer_logits, 20, largest=True, sorted=True)
+                    full_probs = torch.softmax(layer_logits, dim=0)
+                    top_probs = full_probs[top_indices]
                     
-                    # Calculate entropy efficiently using log_softmax  
+                    # Calculate entropy efficiently using log_softmax (convert to bits)
                     log_probs = torch.log_softmax(layer_logits, dim=0)
-                    entropy = -torch.sum(torch.exp(log_probs) * log_probs)
+                    entropy_nats = -torch.sum(torch.exp(log_probs) * log_probs)
+                    entropy_bits = entropy_nats.item() / math.log(2)
                     
-                    print(f"Layer {layer + 1:2d} (after block {layer}) (entropy: {entropy.item():.3f}):")
+                    print(f"Layer {layer + 1:2d} (after transformer block {layer}) (entropy: {entropy_bits:.3f} bits):")
                     for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
                         token = model.tokenizer.decode([idx])
                         print(f"  {i+1:2d}. '{token}' ({prob.item():.6f})")
@@ -236,14 +316,19 @@ def run_experiment_for_model(model_id):
             print("=" * 60)
             print("ACTUAL MODEL PREDICTION (for comparison):")
             final_logits = logits[0, -1, :]
-            final_top_logits, final_top_indices = torch.topk(final_logits, 20, largest=True, sorted=True)
-            final_top_probs = torch.softmax(final_top_logits, dim=0)
+            if USE_FP32_UNEMBED:
+                # Ensure consistent precision for final prediction
+                final_logits = final_logits.float()
+            _, final_top_indices = torch.topk(final_logits, 20, largest=True, sorted=True)
+            final_full_probs = torch.softmax(final_logits, dim=0)
+            final_top_probs = final_full_probs[final_top_indices]
             
-            # Calculate final entropy efficiently
+            # Calculate final entropy efficiently (convert to bits)
             final_log_probs = torch.log_softmax(final_logits, dim=0)
-            final_entropy = -torch.sum(torch.exp(final_log_probs) * final_log_probs)
+            final_entropy_nats = -torch.sum(torch.exp(final_log_probs) * final_log_probs)
+            final_entropy_bits = final_entropy_nats.item() / math.log(2)
             
-            print(f"Model's final prediction (entropy: {final_entropy.item():.3f}):")
+            print(f"Model's final prediction (entropy: {final_entropy_bits:.3f} bits):")
             for i, (prob, idx) in enumerate(zip(final_top_probs, final_top_indices)):
                 token = model.tokenizer.decode([idx])
                 print(f"  {i+1:2d}. '{token}' ({prob.item():.6f})")
@@ -265,13 +350,15 @@ def run_experiment_for_model(model_id):
                 test_tokens = test_tokens_cache[test_prompt]
                 
                 test_logits = model(test_tokens)
-                test_top_logits, test_top_indices = torch.topk(test_logits[0, -1, :], 10, largest=True, sorted=True)
-                test_top_probs = torch.softmax(test_top_logits, dim=0)
+                _, test_top_indices = torch.topk(test_logits[0, -1, :], 10, largest=True, sorted=True)
+                test_full_probs = torch.softmax(test_logits[0, -1, :], dim=0)
+                test_top_probs = test_full_probs[test_top_indices]
                 
-                # Calculate entropy for this prompt efficiently
+                # Calculate entropy for this prompt efficiently (convert to bits)
                 test_log_probs = torch.log_softmax(test_logits[0, -1, :], dim=0)
-                test_entropy = -torch.sum(torch.exp(test_log_probs) * test_log_probs)
-                print(f"  (entropy: {test_entropy.item():.3f})")
+                test_entropy_nats = -torch.sum(torch.exp(test_log_probs) * test_log_probs)
+                test_entropy_bits = test_entropy_nats.item() / math.log(2)
+                print(f"  (entropy: {test_entropy_bits:.3f} bits)")
                 
                 for i, (prob, idx) in enumerate(zip(test_top_probs, test_top_indices)):
                     token = model.tokenizer.decode([idx])
@@ -298,13 +385,15 @@ def run_experiment_for_model(model_id):
                 
                 # Rescale existing logits instead of new forward pass (cast to float32 for numerical stability)
                 scaled_logits = (base_logits / temp).float()
-                temp_top_logits, temp_top_indices = torch.topk(scaled_logits, 15, largest=True, sorted=True)
-                temp_top_probs = torch.softmax(temp_top_logits, dim=0)
+                _, temp_top_indices = torch.topk(scaled_logits, 15, largest=True, sorted=True)
+                temp_full_probs = torch.softmax(scaled_logits, dim=0)
+                temp_top_probs = temp_full_probs[temp_top_indices]
                 
-                # Calculate entropy at this temperature efficiently
+                # Calculate entropy at this temperature efficiently (convert to bits)
                 temp_log_probs = torch.log_softmax(scaled_logits, dim=0)
-                temp_entropy = -torch.sum(torch.exp(temp_log_probs) * temp_log_probs)
-                print(f"  (entropy: {temp_entropy.item():.3f})")
+                temp_entropy_nats = -torch.sum(torch.exp(temp_log_probs) * temp_log_probs)
+                temp_entropy_bits = temp_entropy_nats.item() / math.log(2)
+                print(f"  (entropy: {temp_entropy_bits:.3f} bits)")
                 
                 for i, (prob, idx) in enumerate(zip(temp_top_probs, temp_top_indices)):
                     token = model.tokenizer.decode([idx])

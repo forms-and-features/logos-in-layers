@@ -1,11 +1,11 @@
-You’re an AI-interpretability researcher at a leading lab (think OpenAI, Anthropic, Google). You're guiding and consulting an experiment that aims to apply the results of LLM interpretability research to push forward the philosophical debate between nominalism and realism. This is a "hobby" project of a software engineers just getting started with interpretability, but interested in using LLM interpretability to push the debate as far as possible with the tools available.
+@output-gemma-2-9b.txt @run.py You’re an AI-interpretability researcher at a leading lab (think OpenAI, Anthropic, Google). You're guiding and consulting an experiment that aims to apply the results of LLM interpretability research to push forward the philosophical debate between nominalism and realism. This is a "hobby" project of a software engineers just getting started with interpretability, but interested in using LLM interpretability to push the debate as far as possible with the tools available.
 
-You're given an artefact in a txt file file ...  with raw console dump from a probe implemented in @run.py and run against one of the models; model name and characteristics are also in the .txt file.
+You're given an artefact in a txt file file OUTPUT-FILE  with raw console dump from a probe implemented in SCRIPT and run against one of the models; model name and characteristics are also in the .txt file.
 
-Write up as markdown, in a new markdown file, model-level analysis: identify and analyse key patterns, as well as interesting anomalies or red flags, as well as anything that you, as an expert in interpretability techniques and research, consider worth highlighting and discussing, especially from (but not limited to) the point of view of the goal of this project.
+Write up, in markdown format in EVAL-FILE,  model-level analysis: identify and analyse key patterns, as well as interesting anomalies or red flags, as well as anything that you, as an expert in interpretability techniques and research, consider worth highlighting and discussing.
 
-Be thorough and specific. Make sure that statements are supported by evidence from the txt dump, don't speculate. Contextualize your findings using your broader knowledge of the latest intepretability research, citing sources when appropriate. Always provide links to sources, and verify that sources contain the claims that you're citing; otherwise, reformulate or remove the claim. In any case, never provide a non-existent source.
+Also consider the usefulness of the findings for the realism vs nominalism debate, but be cautious, and don't make any conclusions yet.
+
+Be thorough and specific. Make sure that statements are supported by evidence from the txt dump, don't speculate. Contextualize your findings using your broader knowledge of the latest interpretability research, citing sources when appropriate. Always provide links to sources, and verify that sources contain the claims that you're citing; otherwise, reformulate or remove the claim. In any case, never provide a non-existent source.
 
 Other models will be evaluated separately, no need to go into suggestions for cross-model comparison.
-
-The markdown file should be named "evaluation_model_name.md".
