@@ -1,6 +1,6 @@
-# LLM Interpretability Project
+# Iterative LLM probing
 
-- Systematic probes of open-weight LLMs to track **where** and **how** concepts crystallise inside transformer layers — informing a long-term study of nominalism ↔ realism.
+Systematic probes of open-weight LLMs to track **where** and **how** concepts crystallise inside transformer layers — informing a long-term study of nominalism ↔ realism.
 
 ## Overview
 
