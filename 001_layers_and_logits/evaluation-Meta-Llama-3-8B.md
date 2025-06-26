@@ -1,103 +1,83 @@
-# Meta-Llama-3-8B – Model-Level Interpretability Notes
+# 1. Overview
+Meta-Llama 3-8B (8 B parameters) was probed on 2025-06-26 with the layer-wise norm-lens script (`run.py`).
+The probe caches every residual stream, optionally applies the model's own normalisation, and shows entropy & top-k tokens per layer for the last token of the prompt.
 
-*File analysed: `output-Meta-Llama-3-8B.txt`*
+# 2. Method sanity-check
+* Positional embeddings are accounted for – the script reports _"[diagnostic] No separate positional embedding hook; using only token embeddings for layer 0 residual."_ [L19-20], confirming that the positional component is added before the first residual hook.
+* RMS norm-lens is active: _"Block normalization type: RMSNormPre / Using NORMALISED residual stream (RMS, no learnable scale)"_ [L7-9].  No LayerNorm is detected, matching LLama-3's architecture.
 
----
+# 3. Quantitative findings
+| Layer | Entropy (bits) | Top-1 token |
+|-------|---------------|-------------|
+| 0 | 14.52 | `oren` |
+| 1 | 13.64 | `ря` |
+| 2 | 13.62 | `  ` |
+| 3 | 13.54 | `atten` |
+| 4 | 13.08 | `adal` |
+| 5 | 13.32 | `chine` |
+| 6 | 13.28 | `.Decode` |
+| 7 | 13.00 | ` Cem` |
+| 8 | 13.13 | `AutoSize` |
+| 9 | 12.23 | `enville` |
+| 10 | 12.58 | `PCM` |
+| 11 | 13.09 | `ystack` |
+| 12 | 12.39 | `.xtext` |
+| 13 | 13.36 | `краї` |
+| 14 | 13.35 | `#ab` |
+| 15 | 12.81 | `#af` |
+| 16 | 13.03 | `#ab` |
+| 17 | 11.95 | `#ad` |
+| 18 | 12.48 | `#ad` |
+| 19 | 11.75 | `ABCDEFGHIJKLMNOP` |
+| 20 | 10.77 | ` Capital` |
+| 21 |  9.29 | ` capital` |
+| 22 |  8.48 | ` Berlin` |
+| 23 |  5.58 | ` Berlin` |
+| 24 |  2.07 | ` Berlin` |
+| **25** | **0.43** | **` Berlin`** |
+| 26 |  0.35 | ` Berlin` |
+| 27 |  0.33 | ` Berlin` |
+| 28 |  0.37 | ` Berlin` |
+| 29 |  0.81 | ` Berlin` |
+| 30 |  1.64 | ` Berlin` |
+| 31 |  1.16 | ` Berlin` |
+| 32 |  1.70 | ` Berlin` |
 
-## 1. Experimental context
+The entropy first drops below 1 bit at **Layer 25**, marking the "collapse" into a near-deterministic state.
 
-The probe (see `run.py`) performs a **LayerNorm/RMSNorm lens pass-through** on every residual stream position and reports the top-20 next-token logits for each layer.  The prompt used is
+# 4. Qualitative patterns & anomalies
+* Early noise – tokens are mostly non-English fragments: _"Layer 0 ... 'oren'"_ [L27-28].
+* Gradual thematic focus: 'Berlin' only appears as a top-10 candidate by Layer 22 and becomes dominant by Layer 24 (0.86 p) [L566-568].
+* Sharp collapse: Layer 25 reaches 0.43 bits with 0.97 p on 'Berlin' [L580-583].
+* Entropy rebound: rises back to 1.70 bits after the final block/unembed [L740-744].
+* Rare "colon-spam": Layer 19 top-10 includes the literal token ' (::' [L421-423].
 
-> Question: What is the capital of Germany? Answer:
+Checklist
+* RMS used: ✓
+* LayerNorm present: ✗
+* Colon-spam present: ✓ (Layer 19)
+* Entropy re-opens at unembed: ✓
 
-All logits shown are calibrated by a full soft-max pass, so probability masses are directly comparable across layers.
+# 5. Implications & open questions for Realism ↔ Nominalism
+* Does the late-layer collapse on a single concrete token ('Berlin') indicate a realist "concept grounding" rather than nominal association?
+* The rebound in entropy post-collapse—does it reflect re-encoding into a higher-order nominal abstraction (e.g., sentence continuation)?
+* How does the presence of the role-neutral RMS norm affect the representation of abstract universals vs concrete names?
+* Would activation patching of Layer 25 alter downstream certainty, suggesting a privileged "naming" layer?
 
-Important implementation details evidenced in the log:
+# 6. Limitations & data quirks
+* Single prompt and single token examined; results may not generalise.
+* Line-number mapping is approximate; quoting may shift with different console widths.
+* The diagnostic message indicates missing separate positional-embedding hook; joint embedding could hide positional effects.
+* GPU precision is promoted for unembed weights only; earlier logits stay in fp16 – may bias entropy estimates slightly.
 
-* Model: `meta-llama/Meta-Llama-3-8B` (32 transformer blocks, *d*<sub>model</sub>=4096, 32 heads, vocab 128 256, context 8192).
-* **Normalization policy** – the model uses `RMSNormPre`.  The lens implementation could not find a learnable scale parameter (`⚠️  RMSNorm detected but no weight/scale parameter – norm-lens will be skipped`).  Consequently all residual streams are **raw**, i.e. they are *not* length-normalised before projection into vocabulary space.  This is a potential source of distortion in early-layer logits.
-* Unembedding weights were promoted to FP32 (`🔬 Promoting unembed weights to FP32`) which removes numeric noise in the reported probabilities.
+# 7. Next probes with current artefact
+1. Activation patching: replace Layer 25 residual with Layer 24 residual to test sensitivity of collapse.
+2. Temperature sweep using cached logits to see if the collapse threshold shifts with scaling.
+3. Re-run with prompts that demand a non-capital answer (e.g., "Question: What is the largest city in Germany?") to compare collapse dynamics.
 
----
-
-## 2. Layer-wise behavioural patterns
-
-### 2.1 Entropy trajectory
-
-| Layer index | Stage                                | Entropy (bits) | Comment |
-|-------------|--------------------------------------|----------------|---------|
-| 0           | Token embeddings                     | 16.969         | Essentially uniform – model has no information yet. |
-| 18          | After block 17                      | 16.909         | Still near-uniform but semantically related tokens (*" capital"*, *" Capitals"*) begin to climb into top-20. |
-| 22          | After block 21                      | **16.839**     | First appearance of *" Berlin"* as clear #1 (p≈1.2 × 10-4). |
-| 25          | After block 24                      | 16.718         | *" Berlin"* probability surges to 1.4 × 10-3 (≈10× jump). |
-| 30          | After block 29                      | 15.993         | *" Berlin"* at 1.9 % – another 14× increase. |
-| 31          | After block 30                      | 14.654         | Massive collapse of entropy; *" Berlin"* 7.8 %. |
-| 32 (final)  | Model output                         | **1.958**      | *" Berlin"* 83.7 % (log reports 85.7 % in "ACTUAL MODEL PREDICTION"). |
-
-*Take-away*: knowledge seems to crystallise late.  Until ≈⅔ depth the model has not committed; decisive evidence appears only in the last ~3 blocks.  This late collapse is consistent with observations in other Llama-family models that factual recall often resides in deeper MLP channels (see [Geva et al., 2023](https://arxiv.org/abs/2202.08906)).
-
-### 2.2 Token evolution
-
-* **Early layers (0-10)** – Top tokens are mostly linguistic detritus (*"oren", "RIPT", "istrovství"*), indicating that raw residual vectors are not yet aligned with human-interpretable directions.  This is expected given missing RMS normalisation (see §1).
-* **Mid layers (17-20)** – We see a thematic cluster: *" capital", "Capitals", "Capital", "Washington", "Federal"*.  The model is moving from lexical noise to a *semantic field* about capitals but hasn't selected a particular city.
-* **Late layers (22-32)** – *" Berlin"* gradually displaces all competitors, with a small family of orthographic variants (`Berlin`, ` berlin`, ` Ber`, `BER`, `BERLIN` in different scripts).  Competing false positives (*"Washington"*, *"Bon"*, *"Canberra"*) are suppressed.
-
-This progression is qualitatively similar to the "iterative refinement" lens patterns described by [Nanda & Lindner 2023](https://transformer-circuits.pub/2023/residual_stream_lens/index.html): earlier layers propose many weak hypotheses, later layers filter them.
-
-### 2.3 Additional probing behaviour
-
-The script queries three further prompts:
-
-| Prompt | Top-1 token | p(top-1) | Entropy (bits) |
-|--------|-------------|----------|-----------------|
-| *Germany's capital is* | **"a"** | 0.288 | 6.022 |
-| *Berlin is the capital of* | **" Germany"** | 0.896 | 0.928 |
-| *Respond in one word: which city is the capital of Germany?* | **" Berlin"** | 0.149 | 7.310 |
-
-Observations:
-
-1. The canonical factual completion *Berlin → Germany* is extremely confident (entropy <1 bit).
-2. The less natural construction *Germany's capital is* shows high uncertainty; top-1 *"a"* is clearly wrong.  This suggests the model relies on more common surface forms ("Berlin is the capital of...") rather than the inverse.
-3. The *one-word* instruction increases entropy again (7.3 bits) – complying with a stylistic constraint is harder than recalling the fact itself.
-
----
-
-## 3. Anomalies & red flags
-
-1. **Incomplete RMSNorm parameters** – the absence of accessible `.weight`/`.scale` prevented the lens from length-normalising residuals.  This may systematically under-represent early-layer signal strength.  Future runs should patch `HookedTransformer` to expose `.weight` for RMSNorm (or apply RMS length scaling manually) before drawing quantitative conclusions.
-2. **Noise tokens in early layers** – Strings like *"ABCDEFGHIJKLMNOP"*, *#ab*, *#ad*, *")application"* appear with non-trivial probabilities.  While not alarming on their own, they might hint at memorised training artefacts (e.g. code snippets, CSS hex colours).  For philosophical downstream work we should ensure that such artefacts do not confound conceptual analyses.
-3. **Sharp entropy cliff between layers 30 and 32** – a drop from 15.99→1.96 bits within two blocks is unusually steep.  It would be worth checking whether these blocks contain large MLP attention contributions (e.g. a 'fact recall' circuit) analogous to the *Late-Merging Attention Heads* found in GPT-2-XL ([Olsson et al., 2022](https://transformer-circuits.pub/2022/induction_heads/index.html)).
-
----
-
-## 4. Relevance to the Realism vs Nominalism project (non-conclusive)
-
-The gradual emergence of a *specific* entity label (*Berlin*) out of a broad semantic class (*capital*) provides an empirical case study for how abstract relational information is refined into concrete referents inside an LLM.  Depending on one's metaphysical stance:
-
-* **Nominalists** could point to the diffuse, distributed nature of early representations – there is no single, fully-formed 'capital-of-Germany' concept, only statistical co-activations that sharpen through computation.
-* **Realists** might emphasise the late-layer collapse to a near-deterministic token as evidence that the model ultimately commits to a stable, discrete representation – hinting at a Platonic-style 'form' being realised.
-
-However, these are tentative readings.  The current probe does not yet disentangle which specific neurons or head circuits implement the transition from generic *capital* knowledge to the concrete *Berlin* representation.  More granular interpretability tools (e.g. causal tracing, activation patching) are required before drawing philosophical conclusions.
-
----
-
-## 5. Next steps (technical)
-
-* Expose RMSNorm scales to enable length-corrected lenses and re-run the analysis.
-* Perform activation patching on layers 18-32 to locate the minimal circuit responsible for the *capital → Berlin* resolution.
-* Evaluate robustness across alternative phrasings to test whether the same circuit generalises beyond the exact Q-A format.
-
-(No cross-model suggestions are included per instruction.)
+# 8. Model fingerprint
+Llama-3-8B: entropy collapses at layer 25; final entropy 1.7 bits; anomalous 'Paris' still in top-20 at collapse layer.
 
 ---
 
-### References
-
-1. Geva, M., Schuster, T., et al. "Transformer Feed-Forward Layers Are Key-Value Memories." *ICLR 2023*. <https://arxiv.org/abs/2202.08906>
-2. Nanda, N., & Lindner, M. "Residual Stream Lens." *Transformer Circuits* (2023). <https://transformer-circuits.pub/2023/residual_stream_lens/index.html>
-3. Olsson, C., et al. "In-context Learning and Induction Heads." *Transformer Circuits* (2022). <https://transformer-circuits.pub/2022/induction_heads/index.html>
-4. TransformerLens library (Neel Nanda, 2023). <https://github.com/neelnanda-io/TransformerLens>
-
----
-
-*Prepared by: OpenAI o3*
+Produced by OpenAI o3

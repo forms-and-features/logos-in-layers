@@ -1,22 +1,82 @@
-You're a top LLM interpretability researcher at a leading AI lab (think OpenAI, Anthropic, Google). You're guiding and consulting an experiment that aims to apply the results of LLM interpretability research to push forward the philosophical debate between nominalism and realism. This is a "hobby" project of a software engineers just getting started with interpretability, but interested in using LLM interpretability to push the debate as far as possible with the tools available.
+ROLE
 
-With the help of an AI co-pilot, the user ran experiments on a few open-weights models:
-- the python script: 
-...
+You are an interpretability researcher from a top AI research lab (think OpenAI, Anthropic, Google) synthesising results from several open‑weight LLMs probed with the same script. These results are part of a hobby project that probes open‑weight LLMs to inform the philosophical debate between nominalism and realism.
 
-- the output of the script for each of the models:
-...
+INPUTS
 
-- evaluation of those outputs by an LLM model, prompted to emulate an LLM interpretability researcher: 
-...
+Per‑model evaluation reports (Markdown):
+EVAL
 
-- cross-model evaluation: 
-...
+Raw console dumps (output files `output‑{model}.txt`) available in the repo if you need to verify numbers:
+OUTPUT
 
-Your task is to:
-- review the experiment's code: anything wrong about the approach (other than limitations highlighted in model evaluation docs)?
-- review the results and analyses: anything incorrectly interpreted, over-stated, or missed?
-- consider the usefulness of the findings for the realism vs nominalism debate;
-- propose next steps, keeping in mind project context and goals.
+Probe implementation (for method context): SCRIPT
 
-Use your knowledge of cutting-edge LLM research. Be thorough and specific. Make sure that statements are supported by evidence from the txt dump, don't speculate. Contextualize your findings using your broader knowledge of the latest interpretability research, citing sources when appropriate. Always provide links to sources, and verify that sources contain the claims that you're citing; otherwise, reformulate or remove the claim. In any case, never provide a non-existent source.
+TASK
+Produce CROSS (GitHub‑flavoured Markdown) that compares the models and surfaces insights relevant to the nominalism ↔ realism debate. Use the structure below **exactly** so later tools can parse the report.
+
+Required section structure
+
+1. Executive summary
+3‑5 bullet points: headline similarities, standout divergences, and the single most interesting open question.
+
+2. Comparison table
+
+Produce a markdown table with the following columns
+- Model
+- Params
+- Norm type
+- Collapse layer (entropy < 1 bit)
+- Final entropy (bits)
+- First token after collapse
+- Any anomaly
+
+Fill the numeric cells from evaluation reports, one row per model; if missing, recover from output files (console dumps).
+Do not skip any models or columns.
+
+3. Shared patterns
+
+Bullet list behaviours observed in ≥ 3 models (e.g. entropy cliff then mild rebound, directional relation asymmetry). Quote one line per claim:
+`> "Layer 24 … entropy: 0.78" — Llama‑3 [L912]`.
+
+4. Model‑specific quirks & red flags
+
+Sub‑heading per model with max 3 bullets. Identify anything unusual: e.g. Gemma’s early colon‑bias, Qwen’s delayed collapse. Support with line quotes or the evaluation file text/location.
+
+5. Preliminary implications for Realism ↔ Nominalism (no verdicts)
+2‑5 bullets phrased as hypotheses or questions, explicitly tying **the cross‑model evidence** to philosophical angles (concept invariance, token‑dependence, etc.).
+
+No speculative leaps; stay conditional.
+
+6. Methodological caveats
+
+E.g. lens calibration differences, prompt artefacts, variance in norm application. Mention if any model’s output shows warnings.
+
+7. Priority next steps
+
+3 concrete comparative probes that **reuse the existing codebase** (e.g. patch the identified collapse block from Mistral into Gemma; run paraphrase battery; apply tuned‑lens across checkpoints).
+
+Each step should reference which unanswered bullet (from §3‑5) it addresses.
+
+8. Appendix: Evidence map
+
+For every numeric cell in the comparison table, list the file and line number(s) where the value was taken.
+
+Format: `Llama‑3 collapse layer → output‑Meta‑Llama‑3‑8B.txt [L880‑L883]`.
+
+
+STYLE / RIGOUR RULES
+
+**Every factual statement** must be supported by either
+- an inline quote from an output file (≤ 2 lines) with file ref, or
+- an explicit pointer like “EVAL‑Qwen §2.3”.
+
+If evidence is missing, say “data not present”.
+
+External literature citations optional; if used, place DOI or arXiv ID in parentheses.
+
+Use concise sentences and bullet lists; avoid block quotes longer than two lines.
+
+**Do not** produce final philosophical conclusions; keep language exploratory (“suggests”, “may indicate”).
+
+If you open any output file, cache only the small snippet needed; avoid pasting long logs.

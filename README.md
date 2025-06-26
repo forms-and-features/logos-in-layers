@@ -1,10 +1,11 @@
 # LLM Interpretability Project
 
-Exploring how transformer models process information layer-by-layer, using TransformerLens to analyze how predictions evolve through the network.
+- Systematic probes of open-weight LLMs to track **where** and **how** concepts crystallise inside transformer layers — informing a long-term study of nominalism ↔ realism.
 
 ## Overview
 
-This project examines how predictions change through different layers of transformer models. We analyze how several models handle a factual question to understand their internal processing patterns.
+This project runs **iterative, self-contained experiments** (see the `000_`, `001_`, … directories) that dissect transformer behaviour from multiple angles.  
+The first published iteration (`001_layers_and_logits/`) introduces a memory-efficient logit-lens to measure token-level entropy across layers. It examines four models — Gemma-2-9B, Qwen-3-8B, Mistral-7B-v0.1 and Llama-3-8B — revealing a shared entropy **collapse → rebound** signature around factual recall. 
 
 ## Experiments
 
@@ -27,10 +28,10 @@ Layer-by-layer analysis of how the prediction for "What is the capital of German
 
 
 **Cross-Model Findings**: 
-- All models converge on the correct answer around 75-85% through their layers
-- Consistent "category-before-instance" pattern (generic "capital" before specific "Berlin")
-- Model-specific anomalies reveal spurious features and template biases
-- Asymmetric factual recall (reverse relations easier than forward)
+- All four models exhibit a sharp entropy **collapse** to near-deterministic predictions roughly 75-85 % into their layer stack. Gemma collapses twice: an early syntactic ':' placeholder, then a later semantic collapse onto "Berlin" (≈ 83 %).
+- A consistent 1–2 bit **entropy rebound** appears at the final unembedding layer in every model.
+- Mid-stack **meta-token fixation** (e.g. "Answer"/"answer") shows up in three models, hinting at a symbolic slot-filling stage before concrete entity resolution.
+- Model-specific quirks—Gemma's colon-spam, Qwen's underscore phase, Mistral's late Washington distraction—highlight spurious template biases.
 
 ## Setup
 
@@ -84,27 +85,12 @@ python run.py
 ## Key Insights
 
 ### Interpretability Patterns
+- **Entropy collapse & rebound**: Near-zero entropy collapse followed by a modest (≈ 1–2 bit) rebound at the unembedding step.
+- **Mid-stack meta tokens**: "Answer"-style labels frequently dominate before the model commits to the factual entity.
 - **Late-binding factual knowledge**: Correct answers emerge consistently at 75-85% network depth
 - **Hierarchical processing**: Abstract categories ("capital") before specific instances ("Berlin")
 - **Model-specific artifacts**: Each architecture shows unique spurious features and biases
 - **Surface-form sensitivity**: Strong dependence on prompt formatting and direction
-
-## Technical Implementation
-
-### Normalization Handling
-- **Automatic detection**: Script identifies RMSNorm vs LayerNorm architectures
-- **Safe application**: Only applies normalization lens to vanilla LayerNorm to avoid distortion
-- **Raw mode fallback**: Maintains interpretability for non-vanilla architectures
-
-### Memory Management
-- **Targeted caching**: Only stores required residual streams instead of full activations
-- **Device optimization**: Automatic GPU/CPU management with appropriate precision
-- **Efficient computation**: Top-k selection before softmax for performance
-
-### Analysis Pipeline
-- **Individual evaluation**: Detailed per-model analysis with anomaly detection
-- **Cross-model comparison**: Systematic comparison identifying universal patterns
-- **AI-assisted insights**: Expert-level evaluation using specialized interpretability prompts
 
 ## File Structure
 
@@ -131,4 +117,8 @@ MIT License - see LICENSE file for details.
 - **Apple** for Metal GPU acceleration
 
 ### AI-Assisted Development
-Research guided by **OpenAI o3** for conceptual direction, implemented with **Anthropic Claude 4 Sonnet** via **Cursor IDE** for code development and analysis. Individual model evaluations and cross-model analysis generated using OpenAI o3. 
+Research guided by **OpenAI o3** for conceptual direction, implemented with **Anthropic Claude 4 Sonnet** via **Cursor IDE** for code development and analysis. Individual model evaluations and cross-model analysis generated using OpenAI o3.
+
+## Further Reading
+
+For implementation details, developer-focused toggles, and methodology notes, see `PROJECT_NOTES.md`. 

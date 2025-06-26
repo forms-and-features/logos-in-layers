@@ -1,11 +1,46 @@
-@output-gemma-2-9b.txt @run.py You’re an AI-interpretability researcher at a leading lab (think OpenAI, Anthropic, Google). You're guiding and consulting an experiment that aims to apply the results of LLM interpretability research to push forward the philosophical debate between nominalism and realism. This is a "hobby" project of a software engineers just getting started with interpretability, but interested in using LLM interpretability to push the debate as far as possible with the tools available.
+ROLE
+You are an interpretability researcher from a top AI research lab (think OpenAI, Anthropic, Google) advising a hobby project that probes open‑weight LLMs to inform the philosophical debate between nominalism and realism.
 
-You're given an artefact in a txt file file OUTPUT-FILE  with raw console dump from a probe implemented in SCRIPT and run against one of the models; model name and characteristics are also in the .txt file.
+INPUTS:
+- OUTPUT – raw console dump from the probing script (one model).
+- SCRIPT – the probe’s source (for context).
+- Your own research knowledge.
 
-Write up, in markdown format in EVAL-FILE,  model-level analysis: identify and analyse key patterns, as well as interesting anomalies or red flags, as well as anything that you, as an expert in interpretability techniques and research, consider worth highlighting and discussing.
+TASK
+Write EVAL in Markdown with the following sections in order:
 
-Also consider the usefulness of the findings for the realism vs nominalism debate, but be cautious, and don't make any conclusions yet.
+1. Overview
+2‑3 sentences: model name, size, date of run, what the probe does.
 
-Be thorough and specific. Make sure that statements are supported by evidence from the txt dump, don't speculate. Contextualize your findings using your broader knowledge of the latest interpretability research, citing sources when appropriate. Always provide links to sources, and verify that sources contain the claims that you're citing; otherwise, reformulate or remove the claim. In any case, never provide a non-existent source.
+2. Method sanity‑check – one paragraph: does the dump confirm that positional embeddings & the correct norm‑lens are applied? Quote the relevant console lines.
 
-Other models will be evaluated separately, no need to go into suggestions for cross-model comparison.
+3. Quantitative findings
+Extract a table (Layer 0 → N) with: layer index, entropy (bits), top‑1 token.
+Highlight (bold) the first layer where entropy < 1 bit (“collapse layer”).
+
+4. Qualitative patterns & anomalies
+- Bullet list each notable behaviour.
+- For every item, include an inline quote (≤ 2 lines) from OUTPUT with the line number, e.g. > Layer 12 … (‘Berlin’, 0.92) [L541].
+- Complete this checklist (✓/✗/n.a.): RMS used? LayerNorm? Colon‑spam? Re‑opening of entropy at unembed?
+
+5. Implications & open questions for Realism ↔ Nominalism
+2‑5 bullet points max, phrased as questions or hypotheses, no conclusions yet.
+
+6. Limitations & data quirks – anything that reduces confidence in the findings.
+
+7. Next probes with current artefact
+2–3 concrete follow‑ups that require only the existing dump or an immediate rerun (e.g. activation patching of the collapse layer).
+
+8. Model fingerprint (one sentence)
+“Llama‑3‑8B: entropy collapses at layer 32; final entropy 1.8 bits; anomalous ‘Paris’ rank 2.”
+
+STYLE GUIDELINES
+
+Use bullet lists and short paragraphs; avoid long verbatim quotes.
+
+Always provide links to sources, and verify that sources contain the claims that you're citing; otherwise, reformulate or remove the claim. In any case, never provide a non-existent source. If you cite external work, append DOI/arXiv URL inline (e.g. “Tuned Lens paper (2303.08112)”). If unsure, omit the citation.
+
+Do not speculate beyond the evidence shown.
+
+OUTPUT FORMAT
+Valid GitHub‑flavoured Markdown.

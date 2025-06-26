@@ -1,70 +1,80 @@
-# Cross-Model Interpretability Analysis – Capital-of-Germany Probe
+# 1. Executive summary
+- All four open-weight models (Gemma-2-9B, Qwen-3-8B, Mistral-7B-v0.1, Llama-3-8B) apply RMS **pre-norm** and exhibit a sharp entropy "collapse" where the next-token distribution becomes near-deterministic.
+- The collapse consistently locks onto **"Berlin"** except in Gemma, whose first collapse is a trivial ':' placeholder; Gemma only converges on Berlin much later, highlighting divergent abstraction timelines.
+- Entropy **re-opens** after the final block in every model (≈ 1–2 bits), suggesting a common post-decision lexical diversification step.
+- Mid-stack fixation on meta tokens (e.g. *Answer/answer*) appears in three models, hinting at a symbolic "slot-filling" phase before concrete entity resolution.
+- Open question: Does the timing gap between Gemma's early syntactic collapse and later semantic convergence support a nominalist surface-token stage preceding realist concept formation?
 
-*Models inspected:* **Meta-Llama-3-8B**, **Mistral-7B-v0.1**, **Gemma-2-9B**, **Qwen3-8B**  
-*Source artefacts:* `output-*.txt` dumps analysed in the per-model reports.
+# 2. Comparison table
+| Model | Params | Norm type | Collapse layer (< 1 bit) | Final entropy (bits) | First token after collapse | Any anomaly |
+|-------|--------|-----------|--------------------------|----------------------|----------------------------|--------------|
+| Gemma-2-9B | 9 B | RMSNormPre | 0 | 2.003 | ':' | Early colon-spam & dual collapse |
+| Qwen-3-8B  | 8 B | RMSNormPre | 28 | 2.020 | Berlin | Underscore "____" phase before collapse |
+| Mistral-7B-v0.1 | 7 B | RMSNormPre | 25 | 1.800 | Berlin | Late mis-rank: Washington > Berlin at L23 |
+| Llama-3-8B | 8 B | RMSNormPre | 25 | 1.704 | Berlin | Mild colon-spam around L19 |
 
----
+# 3. Shared patterns
+- RMS pre-norm confirmed in all logs:
+  > "Block normalization type: RMSNormPre" — Llama-3 output [L8].
+- Entropy cliff followed by 1–2 bit rebound at unembed:
+  > "Model's final prediction (entropy: 1.704 bits)" — Llama-3 [L764].
+- Collapse locks onto Berlin (or placeholder) and stays stable for several blocks:
+  > "Layer 27 … 'Berlin' 0.99" — Mistral [L615].
+- Mid-stack meta-token fixation (Answer/answer):
+  > "Layer 10 … ' answer' (0.85)" — Gemma [L180].
 
-## 1. Scope & Methodology  
-All runs use the same script (`run.py`) and the same factual prompt:
+# 4. Model-specific quirks & red flags
+### Gemma-2-9B
+- **Zero-entropy colon loop** for first 8 layers: `Layer 0 ':' (1.000000)` — output-Gemma [L31].
+- **Secondary semantic collapse** at Layer 35 onto Berlin after long drift — eval-Gemma §3.
+- Final entropy spike despite near-determinism inside model (`Model's final prediction 2.003 bits`) — output-Gemma [L1022].
 
-> Question: What is the capital of Germany? Answer:
+### Qwen-3-8B
+- **Delayed collapse** (Layer 28) compared with peers — output-Qwen [L662].
+- **Underscore spam** in layers 24-26: `'____' 0.30` — output-Qwen [L613].
+- Re-opening at final layer (2.020 bits) — output-Qwen [L866].
 
-Layer-wise residual streams were projected through the final unembedding matrix.  Where a learnable scale parameter (`weight`/`scale`) for **RMSNorm** was *not* exposed (the default for all four checkpoints), the probe necessarily fell back to the *raw* residual stream (“raw lens”).  Probabilities and entropies from early layers are therefore subject to *scale distortion* (Belrose et al., 2023, §3).  Conclusions below focus on *relative* trends rather than absolute numbers.
+### Mistral-7B-v0.1
+- **Washington distraction** outranks Berlin at Layer 23 (0.51 p) — output-Mistral [L536].
+- Sharpest collapse (0.104 bits) by Layer 27 — output-Mistral [L657].
+- Post-collapse entropy rebounds to 1.8 bits — output-Mistral [L759].
 
----
+### Llama-3-8B
+- **Collapse mirrors Mistral**: Layer 25 entropy 0.43 bits on 'Berlin' — output-Llama [L585].
+- **Colon-spam blip** (`' (::'`) in Layer 19 — eval-Llama §4.
+- Re-open to 1.7 bits at unembed — output-Llama [L764].
 
-## 2. Shared Patterns Across Models
+# 5. Preliminary implications for Realism ↔ Nominalism
+- The universal entropy rebound hints that a realist internal commitment ("Berlin") fans out into multiple lexical tokens—supporting a nominalist surface realisation layer.
+- Gemma's two-stage collapse (syntax then semantics) may indicate an intermediate nominal slot before realist grounding.
+- Mid-stack 'Answer' fixation across models suggests a nominal label phase preceding concrete entity selection.
+- The Washington mis-rank in Mistral shows competing realist candidates can intrude late, challenging a strictly serial realist narrative.
 
-| Phenomenon | Evidence (layers) | Brief explanation |
-|------------|------------------|-------------------|
-| **Late-layer entropy collapse** | Llama: 30→32 (15.99 → 1.96 bits); Mistral: 25→32 (14.84 → 8.25 bits); Qwen: 24→28 (≈0.7 → 0 bits); Gemma: 34 → final (0.01 → 2.0 bits after unembedding) | Factual certainty crystallises close to the output, in line with "tuned-lens" findings that many transformer blocks act as *refiners* rather than *retrievers* (Nanda & Lindner, 2023). |
-| **Meta-token scaffolding** | 'Answer' head dominates mid-layers in Qwen (L12-18) & Mistral (L6-18) | Models first predict *response format* tokens before factual content, echoing Mu & Andreas (2024) on *answer-classification heads*. |
-| **Two-step semantic resolution** | Qwen: **' Germany'** peaks one layer before **' Berlin'** (L25 vs L28) | Suggests compositional pathway "identify topic → resolve entity", consistent with Geva et al. (2022) on feed-forward memory layers. |
-| **Unembedding entropy rebound** | All final logits show ≈2 bits entropy even when internal vectors are quasi-deterministic | The unembedding matrix redistributes probability mass; surface uncertainty can therefore underestimate internal semantic clarity (Elhage et al., 2022). |
-| **RMSNorm scale missing ⇒ lens artefacts** | Warning present in every run; early layers show either uniform noise (Llama, Mistral, Qwen) or deterministic punctuation (Gemma) | Without length normalisation, large-norm embedding directions swamp early projections. |
+# 6. Methodological caveats
+- RMS lens scaling identical across models but hidden fp16 ↔ fp32 differences could skew entropy magnitudes.
+- Prompt tokenisation differs (special `<bos>` vs `<s>`), possibly affecting early layers.
+- Console dumps truncate probabilities; low-precision zeros in Gemma may exaggerate "zero-entropy" claim.
+- Single-prompt probe; no variance estimates. No control for temperature or sampling.
 
----
+# 7. Priority next steps
+1. **Cross-patch collapse residuals** — overwrite Gemma Layer 35 with Mistral Layer 25, re-run to test if semantic collapse transfers (§5 bullet 1).
+2. **Paraphrase battery** — reuse `run.py` on 20 wording variants to quantify collapse-layer variance, addressing caveat on prompt idiosyncrasy (§6).
+3. **Tuned-lens sweep** — apply RMS-lens vs tuned lens across checkpoints to see if rebound persists, probing nominal vs realist layering (§3 bullet 2).
 
-## 3. Model-Specific Anomalies & Red Flags
-
-* **Gemma-2-9B – colon fixation (layers 0-7).** 100 % probability on `':'` points to a raw-lens artefact rather than genuine behaviour; early-layer findings for Gemma are unreliable until ≈ layer 8.
-* **Mistral-7B – transient 'Washington' dominance (layer 23).** A U.S. capital briefly outranks *Berlin*, indicating competing attractors within the *capital-city* concept space.
-* **Qwen3-8B – negative entropy printouts (layers 34-35).** Rounding to –0.000 bits is purely numerical, but highlights near-unit probability before the unembedding step.
-* **Meta-Llama-3-8B – exceptionally steep entropy cliff (layers 30-32).** 14-bit drop within two blocks suggests one or two highly specialised late MLP heads responsible for factual recall.
-
-These anomalies could be productive targets for *causal tracing* or *activation patching* (Meng et al., 2022) to localise the minimal circuits involved.
-
----
-
-## 4. Preliminary Relevance to the Realism ↔ Nominalism Debate  
-(No philosophical conclusions; observations only.)
-
-1. **Gradual abstraction hierarchy.**  All models transition from diffuse token soup → meta-format tokens → concrete entity, providing empirical support for *layered concept formation*.  Realists may point to the late near-deterministic vector as evidence of a "stable" internal form; nominalists can emphasise that earlier layers hold only distributional tendencies.
-2. **Direction-specific relations.**  Gemma (and to lesser extent Llama) recall *Berlin → Germany* more confidently than the inverse *Germany → Berlin*, indicating that relational knowledge is encoded asymmetrically—important for ontological claims about concept individuation.
-3. **Unembedding bottleneck.**  The gap between internal certainty and surface logits shows that lexical tokens are lossy *names* for richer internal states, a point that can be leveraged by both sides of the metaphysical debate.
-
----
-
-## 5. Methodological Recommendations
-
-1. **Implement RMS-aware lens across checkpoints.**  Where `weight`/`scale` is inaccessible, approximate γ via running statistics or patch the model class to expose it, then re-run early-layer probes.
-2. **Causal interventions on anomaly layers.**  Patch activations at (a) Gemma L0-7, (b) Mistral L23, (c) Llama L30-32, (d) Qwen L24-28 to test necessity & sufficiency of candidate circuits.
-3. **Cross-prompt robustness.**  Repeat the experiment with paraphrased queries and cloze formulations to see whether the same layers encode the relation.
-4. **Compare with LayerNorm-based models.**  Including e.g. GPT-2-XL would help disambiguate real phenomena from RMS raw-lens artefacts.
-
----
-
-### References
-
-* Belrose, N., Furman, Z., et al. *Eliciting Latent Predictions from Transformers with the Tuned Lens.* arXiv:2303.08112, 2023.  
-* Elhage, N., et al. *A Mathematical Framework for Transformer Circuits.* arXiv:2104.08696, 2021.  
-* Elhage, N., et al. *Toy Models of Superposition & Feature Bottlenecks.* transformer-circuits.pub, 2022.  
-* Geva, M., Schuster, T., et al. *Transformer Feed-Forward Layers Are Key-Value Memories.* arXiv:2202.10402, 2022.  
-* Meng, K., et al. *Locating and Editing Factual Associations in GPT.* arXiv:2211.00593, 2022.  
-* Mu, J., & Andreas, J. *Internal Monologue Representation in Language Models.* arXiv:2402.06655, 2024.  
-* Nanda, N., & Lindner, M. *Residual Stream Lens.* transformer-circuits.pub/2023, 2023.
-
----
-
-*Prepared by: OpenAI o3*
+# 8. Appendix: Evidence map
+- Gemma params → evaluation-gemma-2-9b.md [L2]
+- Gemma norm → output-gemma-2-9b.txt [L5]
+- Gemma collapse layer → output-gemma-2-9b.txt [L29-31]
+- Gemma final entropy → output-gemma-2-9b.txt [L1022]
+- Qwen params → evaluation-Qwen3-8B.md [L3]
+- Qwen norm → output-Qwen3-8B.txt [L8]
+- Qwen collapse layer → output-Qwen3-8B.txt [L662]
+- Qwen final entropy → output-Qwen3-8B.txt [L866]
+- Mistral params → evaluation-Mistral-7B-v0.1.md [L2]
+- Mistral norm → output-Mistral-7B-v0.1.txt [L6]
+- Mistral collapse layer → output-Mistral-7B-v0.1.txt [L579-584]
+- Mistral final entropy → output-Mistral-7B-v0.1.txt [L759]
+- Llama params → evaluation-Meta-Llama-3-8B.md [L2]
+- Llama norm → output-Meta-Llama-3-8B.txt [L8]
+- Llama collapse layer → output-Meta-Llama-3-8B.txt [L585-590]
+- Llama final entropy → output-Meta-Llama-3-8B.txt [L764]

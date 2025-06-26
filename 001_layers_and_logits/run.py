@@ -23,6 +23,16 @@ CONFIRMED_MODELS = [
     "Qwen/Qwen3-8B"                    # 8B - Qwen3
 ]
 
+# --- helpers ---------------------------------------------------------------
+RMS_ATTR_CANDIDATES = ("w", "weight", "scale", "gamma")
+
+def _get_rms_scale(norm_mod):
+    for attr in RMS_ATTR_CANDIDATES:
+        if hasattr(norm_mod, attr):
+            return getattr(norm_mod, attr)
+    params = list(norm_mod.parameters(recurse=False))
+    return params[0] if len(params) == 1 else None
+
 def is_safe_layernorm(norm_mod):
     """Check if a normalization module is vanilla LayerNorm that's safe to apply"""
     return isinstance(norm_mod, nn.LayerNorm)
@@ -60,33 +70,29 @@ def apply_norm_or_skip(resid, norm_mod, layer_info=""):
     
     Returns:
         Normalized residual stream (or original if skipped)
+    Note: All supported norm types are handled above; fallback below is unreachable.
     """
     # Vanilla LayerNorm - apply as before
     if isinstance(norm_mod, nn.LayerNorm):
         return norm_mod(resid)
     
-    # RMSNorm - use RMS-aware lens if scale parameter is available
+    # RMSNorm - robust scale detection and normalization
     norm_type = type(norm_mod).__name__
-    if 'RMS' in norm_type:
-        # Try to get scale parameter (weight or scale attribute)
-        gamma = getattr(norm_mod, 'weight', getattr(norm_mod, 'scale', None))
-        if gamma is not None:
-            # Try to get epsilon from the norm module, fallback to default
-            eps = getattr(norm_mod, 'eps', 1e-5)
-            return rms_lens(resid, gamma, eps)
-    
-        # RMSNorm without accessible scale parameter - skip with warning
-        else:
-            warnings.warn(f"Skipping RMS lens at {layer_info} - no accessible weight/scale parameter")
-            return resid
-    
-    # Any other normalization type - skip
-    if norm_type != 'LayerNorm':
-        warnings.warn(f"Skipping norm-lens at {layer_info} because {norm_type} "
-                     f"is not supported (only LayerNorm and RMSNorm supported)")
-        return resid
-    
-    # Fallback - this shouldn't happen but be safe
+    if "RMS" in norm_type:
+        # 1. epsilon (HF sometimes calls it variance_epsilon)
+        eps = getattr(norm_mod, "eps", getattr(norm_mod, "variance_epsilon", 1e-5))
+        # 2. scale (may be None for RMSNormPre)
+        gamma = _get_rms_scale(norm_mod)
+        if gamma is None:
+            if (not hasattr(norm_mod, "_lens_ones")
+                or norm_mod._lens_ones.device != resid.device
+                or norm_mod._lens_ones.dtype  != resid.dtype):
+                norm_mod._lens_ones = torch.ones(
+                    resid.shape[-1], device=resid.device, dtype=resid.dtype
+                )
+            gamma = norm_mod._lens_ones
+        return rms_lens(resid, gamma, eps)
+    # Fallback - this shouldn't happen but be safe (unreachable)
     return resid
 
 def clean_model_name(model_id):
@@ -113,6 +119,7 @@ def run_experiment_for_model(model_id):
             device="cuda" if torch.cuda.is_available() else "cpu",
             torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
         )
+        model.eval()  # Hygiene: avoid dropout etc.
         
         # Toggle for using normalized lens (recommended for accurate interpretation)
         USE_NORM_LENS = True
@@ -125,6 +132,11 @@ def run_experiment_for_model(model_id):
         if USE_FP32_UNEMBED and model.unembed.W_U.dtype != torch.float32:
             print(f"🔬 Promoting unembed weights to FP32 for research-grade precision (was {model.unembed.W_U.dtype})")
             model.unembed.W_U = torch.nn.Parameter(model.unembed.W_U.float(), requires_grad=False)
+            if hasattr(model.unembed, 'b_U'):
+                model.unembed.b_U = model.unembed.b_U.float()
+            UNEMBED_DTYPE = torch.float32  # refresh after promotion
+        else:
+            UNEMBED_DTYPE = torch.float32 if USE_FP32_UNEMBED else model.unembed.W_U.dtype
         
         # Diagnostic: Check normalization types in the model
         print("\n=== NORMALIZATION ANALYSIS ========")
@@ -136,12 +148,10 @@ def run_experiment_for_model(model_id):
                 print("✅ LayerNorm detected - standard norm-lens will be applied")
             elif 'RMS' in first_block_ln1_type:
                 first_norm = model.blocks[0].ln1
-                gamma = getattr(first_norm, 'weight', getattr(first_norm, 'scale', None))
-                if gamma is not None:
-                    param_name = 'weight' if hasattr(first_norm, 'weight') else 'scale'
-                    print(f"✅ RMSNorm detected with {param_name} parameter - RMS-aware lens will be applied")
+                if _get_rms_scale(first_norm) is None:
+                    print("Using NORMALISED residual stream (RMS, no learnable scale)")
                 else:
-                    print("⚠️  RMSNorm detected but no weight/scale parameter - norm-lens will be skipped")
+                    print("Using NORMALISED residual stream (RMS + learned scale)")
             else:
                 print(f"⚠️  Unsupported norm type ({first_block_ln1_type}) - norm-lens will be skipped")
         
@@ -175,7 +185,8 @@ def run_experiment_for_model(model_id):
             def make_cache_hook(cache_dict):
                 def cache_residual_hook(tensor, hook):
                     # Only store the tensor we need, detached from computation graph
-                    # Store only last token position on CPU to save VRAM (keep original dtype to avoid mismatches)
+                    # Store only last token position (see TODO below for GPU cache option)
+                    # TODO: For batch runs, consider storing cache on GPU to avoid repeated .to(device) copies
                     cache_dict[hook.name] = tensor[:, -1:, :].cpu().detach()
                 return cache_residual_hook
             
@@ -188,6 +199,13 @@ def run_experiment_for_model(model_id):
             # Hook for embeddings (layer 0 equivalent)
             embed_hook = model.hook_dict['hook_embed'].add_hook(cache_hook)
             hooks.append(embed_hook)
+            # Conditionally hook for positional embeddings if available
+            if 'hook_pos_embed' in model.hook_dict:
+                pos_hook = model.hook_dict['hook_pos_embed'].add_hook(cache_hook)
+                hooks.append(pos_hook)
+                has_pos_embed = True
+            else:
+                has_pos_embed = False
             
             # Hook for each layer's residual post
             n_layers = model.cfg.n_layers
@@ -209,8 +227,11 @@ def run_experiment_for_model(model_id):
                         
                         if is_safe_layernorm(first_norm):
                             print("Using NORMALIZED residual stream (LayerNorm applied - more accurate)")
-                        elif 'RMS' in norm_type and hasattr(first_norm, 'weight'):
-                            print("Using NORMALIZED residual stream (RMS-aware lens applied - more accurate)")
+                        elif 'RMS' in norm_type:
+                            if _get_rms_scale(first_norm) is None:
+                                print("Using NORMALIZED residual stream (RMS, no learnable scale)")
+                            else:
+                                print("Using NORMALIZED residual stream (RMS + learned scale)")
                         else:
                             print("Using RAW residual stream (unsupported normalization, skipping to avoid distortion)")
                     else:
@@ -220,38 +241,25 @@ def run_experiment_for_model(model_id):
                 print("Note: Shown probabilities are from full softmax (calibrated and comparable)")
                 print("-" * 60)
                 
-                # Look at the last position (after "Answer:")
-                last_pos = -1
-                
-                # Layer indexing scheme: 
-                # Layer 0 = embeddings (before any transformer blocks)
-                # Layer N = after transformer block N-1 (N = 1, 2, ..., n_layers)
-                
-                # Layer 0: embeddings
+                # Layer 0: embeddings (+ positional embeddings if available)
                 print("Layer  0 (embeddings):")
-                resid = residual_cache['hook_embed'].to(model.cfg.device)  # Move from CPU to GPU
-                
+                if has_pos_embed:
+                    resid = (residual_cache['hook_embed'] +
+                             residual_cache['hook_pos_embed']).to(model.cfg.device)
+                else:
+                    resid = residual_cache['hook_embed'].to(model.cfg.device)
+                    print("[diagnostic] No separate positional embedding hook; using only token embeddings for layer 0 residual.")
                 # Apply first block's LayerNorm to embeddings if using norm-lens
                 if USE_NORM_LENS:
                     resid = apply_norm_or_skip(resid, model.blocks[0].ln1, "layer 0 (embeddings + block 0 ln1)")
-                
                 # Apply the unembedding to get logits (resid is now [1, 1, d_model] from caching last token only)
-                # Get weight dtype safely (TransformerLens Unembed uses .W_U)
-                weight_dtype = getattr(model.unembed, "weight", model.unembed.W_U).dtype
-                if USE_FP32_UNEMBED:
-                    # Use float32 throughout for research-grade precision (weights already promoted)
-                    layer_logits = model.unembed(resid[0, 0, :].float())
-                else:
-                    # Cast to weight dtype for matmul, then to float32 for calculations
-                    layer_logits = model.unembed(resid[0, 0, :].to(weight_dtype)).float()
-                
-                # Get top-k indices, then compute calibrated probabilities from full softmax
+                layer_logits = model.unembed(resid[0, 0, :].unsqueeze(0).to(UNEMBED_DTYPE))[0].float()
                 _, top_indices = torch.topk(layer_logits, 20, largest=True, sorted=True)
-                full_probs = torch.softmax(layer_logits, dim=0)
-                top_probs = full_probs[top_indices]
+                top_probs = torch.softmax(layer_logits[top_indices], dim=0)  # note: renormalised over top-k
                 
                 # Calculate entropy efficiently using log_softmax (convert to bits)
-                log_probs = torch.log_softmax(layer_logits, dim=0)
+                # entropy uses full vocab; top_probs are renormalised top-k masses
+                log_probs = torch.log_softmax(layer_logits, dim=0).to(torch.float32)
                 entropy_nats = -torch.sum(torch.exp(log_probs) * log_probs)
                 entropy_bits = entropy_nats.item() / math.log(2)
                 
@@ -268,32 +276,22 @@ def run_experiment_for_model(model_id):
                     
                     # Apply LayerNorm if requested (with safety checks)
                     if USE_NORM_LENS:
-                        if layer < n_layers - 1:
-                            # Apply the LayerNorm that the next block would use
-                            resid = apply_norm_or_skip(resid, model.blocks[layer + 1].ln1, f"layer {layer + 1} (block {layer + 1} ln1)")
-                        else:
-                            # For the final layer, apply the final LayerNorm if it exists
-                            final_ln = getattr(model, 'ln_final', None)
-                            if final_ln is not None:
-                                resid = apply_norm_or_skip(resid, final_ln, f"layer {layer + 1} (final ln)")
+                        # Prefer ln2 if present, else fallback to next block's ln1
+                        norm_mod = getattr(model.blocks[layer], 'ln2', None) or \
+                                   (model.blocks[layer + 1].ln1 if (layer < n_layers - 1 and hasattr(model.blocks[layer + 1], 'ln1')) else None)
+                        # Always apply ln_final to the last layer if present
+                        if layer == n_layers - 1 and hasattr(model, 'ln_final'):
+                            resid = apply_norm_or_skip(resid, model.ln_final, f"layer {layer + 1} (final ln)")
+                        elif norm_mod is not None:
+                            resid = apply_norm_or_skip(resid, norm_mod, f"layer {layer + 1} (block {layer} norm)")
                     
                     # Apply the unembedding to get logits (resid is [1, 1, d_model], cast to float32 for stability)
-                    # Get weight dtype safely (TransformerLens Unembed uses .W_U)
-                    weight_dtype = getattr(model.unembed, "weight", model.unembed.W_U).dtype
-                    if USE_FP32_UNEMBED:
-                        # Use float32 throughout for research-grade precision (weights already promoted)
-                        layer_logits = model.unembed(resid[0, 0, :].float())
-                    else:
-                        # Cast to weight dtype for matmul, then to float32 for calculations
-                        layer_logits = model.unembed(resid[0, 0, :].to(weight_dtype)).float()
-                    
-                    # Get top-k indices, then compute calibrated probabilities from full softmax
+                    layer_logits = model.unembed(resid[0, 0, :].unsqueeze(0).to(UNEMBED_DTYPE))[0].float()
                     _, top_indices = torch.topk(layer_logits, 20, largest=True, sorted=True)
-                    full_probs = torch.softmax(layer_logits, dim=0)
-                    top_probs = full_probs[top_indices]
+                    top_probs = torch.softmax(layer_logits[top_indices], dim=0)
                     
                     # Calculate entropy efficiently using log_softmax (convert to bits)
-                    log_probs = torch.log_softmax(layer_logits, dim=0)
+                    log_probs = torch.log_softmax(layer_logits, dim=0).to(torch.float32)
                     entropy_nats = -torch.sum(torch.exp(log_probs) * log_probs)
                     entropy_bits = entropy_nats.item() / math.log(2)
                     
@@ -306,7 +304,7 @@ def run_experiment_for_model(model_id):
             finally:
                 # Clean up hooks and cache
                 for hook in hooks:
-                    if hook is not None:
+                    if hook is not None and hasattr(hook, 'is_active') and hook.is_active():
                         hook.remove()
                 del residual_cache, hooks
                 if torch.cuda.is_available():
@@ -324,7 +322,7 @@ def run_experiment_for_model(model_id):
             final_top_probs = final_full_probs[final_top_indices]
             
             # Calculate final entropy efficiently (convert to bits)
-            final_log_probs = torch.log_softmax(final_logits, dim=0)
+            final_log_probs = torch.log_softmax(final_logits, dim=0).to(torch.float32)
             final_entropy_nats = -torch.sum(torch.exp(final_log_probs) * final_log_probs)
             final_entropy_bits = final_entropy_nats.item() / math.log(2)
             
@@ -355,7 +353,7 @@ def run_experiment_for_model(model_id):
                 test_top_probs = test_full_probs[test_top_indices]
                 
                 # Calculate entropy for this prompt efficiently (convert to bits)
-                test_log_probs = torch.log_softmax(test_logits[0, -1, :], dim=0)
+                test_log_probs = torch.log_softmax(test_logits[0, -1, :], dim=0).to(torch.float32)
                 test_entropy_nats = -torch.sum(torch.exp(test_log_probs) * test_log_probs)
                 test_entropy_bits = test_entropy_nats.item() / math.log(2)
                 print(f"  (entropy: {test_entropy_bits:.3f} bits)")
@@ -390,7 +388,7 @@ def run_experiment_for_model(model_id):
                 temp_top_probs = temp_full_probs[temp_top_indices]
                 
                 # Calculate entropy at this temperature efficiently (convert to bits)
-                temp_log_probs = torch.log_softmax(scaled_logits, dim=0)
+                temp_log_probs = torch.log_softmax(scaled_logits, dim=0).to(torch.float32)
                 temp_entropy_nats = -torch.sum(torch.exp(temp_log_probs) * temp_log_probs)
                 temp_entropy_bits = temp_entropy_nats.item() / math.log(2)
                 print(f"  (entropy: {temp_entropy_bits:.3f} bits)")

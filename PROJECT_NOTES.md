@@ -99,6 +99,25 @@ USE_NORM_LENS = True  # Keep for backward compatibility
 # Raw mode still needed for activation patching
 ```
 
+### Experiment Toggles & Options
+
+The main experiment script (`001_layers_and_logits/run.py`) exposes several research switches that influence interpretability accuracy versus memory-footprint:
+
+- `USE_NORM_LENS` *(bool, default **True**)* – apply the **normalization lens** before unembedding. Falls back gracefully for RMSNorm-only checkpoints via `apply_norm_or_skip`.
+- `USE_FP32_UNEMBED` *(bool, default **True**)* – cast the unembedding matrix (and optional bias) to **float32** so we can resolve logit gaps < 1 e-5 that would vanish in fp16.
+- **Residual cache device** – the `cache_residual_hook` currently `.cpu()`s the last-token residual to save GPU RAM. For large-batch / multi-prompt sweeps comment that line out to keep everything on-device.
+
+These flags live near the top of `evaluate_model()` – keep them there so downstream notebooks can `sed`/patch without parsing the full file.
+
+### Analysis Pipeline
+
+1. `run.py` (per-model) → console dump saved to `output-{model}.txt`.
+2. `prompt-single-model-evaluation.txt` → **LLM** summarises each run into `evaluation-{model}.md`.
+3. `prompt-cross-model-evaluation.txt` consumes the per-model markdown and outputs `interpretability/001_layers_and_logits/evaluation-cross-model.md`.
+4. The meta prompt (`prompt-meta-evaluation.txt`) critiques methodology and suggests next probes; results stored next to the cross-model report.
+
+Keep all artefacts in‐repo for provenance – the evaluation markdown is machine-read by later automation so headings must remain stable.
+
 ## AI Evaluation System
 
 ### Prompt Templates
