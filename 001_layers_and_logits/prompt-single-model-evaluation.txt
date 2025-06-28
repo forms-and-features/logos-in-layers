@@ -49,3 +49,8 @@ STYLE GUIDELINES
 - Quotes ≤ 2 lines, include line numbers.  
 - Cite outside research only if you have the DOI/arXiv number handy (e.g. “Tuned‑Lens 2303.08112”); otherwise omit.  
 - Do not speculate beyond JSON and CSV.  
+
+At the end of the markdown file, add the following:
+
+---
+Produced by OpenAI o3

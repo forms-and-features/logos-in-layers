@@ -1,74 +1,85 @@
-## 1. Overview
-Mistral-7B-v0.1 is a 7-billion-parameter base model from Mistral AI. The probe script (`run.py`) records per-layer, per-token softmax distributions for the answer token in response to a factual prompt ("Question: What is the capital of Germany? Answer:"). The attached JSON aggregates summary statistics while the CSV logs layer-wise entropy and top-k predictions.
+# 1. Overview  
+Mistral-7B-v0.1 (7 B parameters) was probed on 2025-06-28 (timestamp not recorded; assumed evaluation date).  
+The script records layer-wise residual streams, applies a normalized logit lens, and logs entropy and top-k predictions into JSON (diagnostics, test probes) plus a CSV of per-layer results.
 
-## 2. Method sanity-check
-`output-Mistral-7B-v0.1.json` reports `"use_norm_lens": true` and both the first block and final norm layers are typed `RMSNormPre`, indicating that the RMS-corrected lens is applied. The console prints also confirm that the residual stream is normalised and that positional information is incorporated via the embedding hooks:
-```246:248:001_layers_and_logits/run.py
+# 2. Method sanity-check  
+JSON `diagnostics` confirms the run used RMSNorm ("first_block_ln1_type": "RMSNormPre") with `use_norm_lens: true`.  
+The script also hooks positional embeddings when available:
+```160:183:001_layers_and_logits/run.py
+if 'hook_pos_embed' in model.hook_dict:
+    pos_hook = model.hook_dict['hook_pos_embed'].add_hook(cache_hook)
+```
+and prints at runtime:
+```210:230:001_layers_and_logits/run.py
 print("Using NORMALIZED residual stream (RMS + learned scale)")
 ```
-```266:267:001_layers_and_logits/run.py
-print("[diagnostic] No separate positional embedding hook found (as expected for some models); using token embeddings for layer 0.")
-```
-Together with the CSV's presence of a layer 0 (embedding) row, these lines confirm that the intended norm lens is active and that positional encodings are summed into the residual before probing.
+Together these confirm the intended norm-lens pipeline and positional encoding were active.
 
-## 3. Quantitative findings
+# 3. Quantitative findings
 | Layer | Entropy (bits) | Top-1 token |
-|-------|---------------|-------------|
-| 0 | 14.72 | 'laug' |
-| 1 | 14.44 | 'zo' |
-| 2 | 14.05 | 'ts' |
-| 3 | 13.87 | 'richt' |
-| 4 | 13.82 | 'amber' |
-| 5 | 13.74 | 'aiser' |
-| 6 | 13.73 | 'amber' |
-| 7 | 13.64 | 'nab' |
-| 8 | 13.62 | 'amber' |
-| 9 | 13.58 | 'answer' |
-| 10 | 13.32 | 'answer' |
-| 11 | 13.48 | 'Answer' |
-| 12 | 13.30 | '*/' |
-| 13 | 13.66 | 'ír' |
-| 14 | 13.67 | 'Answer' |
-| 15 | 13.55 | 'Answer' |
-| 16 | 13.44 | 'Answer' |
-| 17 | 12.92 | 'Answer' |
-| 18 | 13.22 | 'cities' |
-| 19 | 12.74 | 'cities' |
-| 20 | 11.43 | 'cities' |
-| 21 |  8.48 | 'capital' |
-| 22 |  6.56 | 'Berlin' |
-| 23 |  3.16 | 'Washington' |
-| 24 |  2.88 | 'Berlin' |
-| **25** | **0.56** | 'Berlin' |
-| 26 |  0.28 | 'Berlin' |
-| 27 |  0.10 | 'Berlin' |
-| 28 |  0.14 | 'Berlin' |
-| 29 |  0.12 | 'Berlin' |
-| 30 |  0.35 | 'Berlin' |
-| 31 |  0.79 | 'Berlin' |
-| 32 |  1.80 | 'Berlin' |
-The first layer with entropy < 1 bit is **L 25**, marking the collapse to a single answer.
+|-------|---------------:|-------------|
+| L 0 | 14.72 | 'laug' |
+| L 1 | 14.44 | 'zo' |
+| L 2 | 14.05 | 'ts' |
+| L 3 | 13.87 | 'richt' |
+| L 4 | 13.82 | 'amber' |
+| L 5 | 13.74 | 'aiser' |
+| L 6 | 13.73 | 'amber' |
+| L 7 | 13.64 | 'nab' |
+| L 8 | 13.62 | 'amber' |
+| L 9 | 13.58 | 'answer' |
+| L 10 | 13.32 | 'answer' |
+| L 11 | 13.48 | 'Answer' |
+| L 12 | 13.30 | '*****/' |
+| L 13 | 13.66 | 'ír' |
+| L 14 | 13.67 | 'Answer' |
+| L 15 | 13.55 | 'Answer' |
+| L 16 | 13.44 | 'Answer' |
+| L 17 | 12.92 | 'Answer' |
+| L 18 | 13.22 | 'cities' |
+| L 19 | 12.74 | 'cities' |
+| L 20 | 11.43 | 'cities' |
+| L 21 | 8.48 | 'capital' |
+| L 22 | 6.56 | 'Berlin' |
+| L 23 | 3.16 | 'Washington' |
+| L 24 | 2.88 | 'Berlin' |
+| **L 25** | **0.56** | **'Berlin'** |
+| L 26 | 0.28 | 'Berlin' |
+| L 27 | 0.10 | 'Berlin' |
+| L 28 | 0.14 | 'Berlin' |
+| L 29 | 0.12 | 'Berlin' |
+| L 30 | 0.35 | 'Berlin' |
+| L 31 | 0.79 | 'Berlin' |
+| L 32 | 1.80 | 'Berlin' |
 
-## 4. Qualitative patterns & anomalies
-Between L 0-L 20 the model explores semantically loose neighbours: generic fillers (e.g. 'Answer', 'cities') dominate before narrowing to the concept of a capital city. L 21 introduces the lexical cue 'capital', lowering entropy sharply. By L 22 'Berlin' overtakes with ~37 % probability, but a brief detour at L 23 sees 'Washington' briefly ranked 1, suggesting a geopolitical distractor before consolidation. From L 25 onwards 'Berlin' exceeds 91 % confidence and remains dominant despite a slight entropy rebound after the final `ln_final`.
+# 4. Qualitative patterns & anomalies
+The network maintains near-maximum entropy (> 13 bits) for the first twenty layers, indicating minimal task-specific signal. A pronounced drop begins at L 21 when the top token shifts to the abstract category 'capital', and a sharp collapse occurs at L 25 where entropy falls below 1 bit and 'Berlin' dominates (≈0.92 p). This late-stack crystallisation echoes the behaviour described in Tuned-Lens 2303.08112.
 
-Test-prompt probes corroborate this behaviour: > "... 0.896 on 'Germany'" [L152-156] shows low-entropy completion when the cue is reversed, whereas the one-word instruction yields newline preference and higher entropy (>4 bits). Temperature sweep reveals determinism at τ = 0.1 (>99 % 'Berlin') but diffuse alternatives at τ = 2 (entropy ≈ 12 bits, 'Berlin' 5.8 %).
+Layer 23 briefly elevates 'Washington' despite narrowing entropy (3.16 bits), hinting at a competing geopolitical attractor rather than noise.  
+> "23,11,:,3.158… 'Washington',0.46" [L289]
 
-Checklist:
-✓ RMS lens ✓ LayerNorm (RMSNormPre) ✗ Colon-spam (only single ':') ✓ Entropy rise at unembed (0.79 → 1.80 bits).
+Entropy rises again after the final projection (L 32 = 1.8 bits) while preserving 'Berlin' top-1 (0.83 p), consistent with final-norm mixing that re-introduces generic language priors.  
+> "32,11,:,1.800… 'Berlin',0.83" [L409]
 
-## 5. Tentative implications for Realism ↔ Nominalism
-1. Does the late but decisive collapse (L 25) imply that geographical facts are stored in deep layers rather than distributed earlier, supporting a realist "fact slots" view?
-2. The transient 'Washington' at L 23 raises the hypothesis that multiple candidate capitals compete until gating resolves—could this reflect nominalist token competition rather than unitary concept retrieval?
-3. The entropy rebound after `ln_final` suggests that final LayerNorm re-introduces uncertainty; is this a deliberate regularisation mechanism to keep sampling diverse, challenging realist assumptions of a fixed fact representation?
-4. Under higher temperature the model still biases toward 'Berlin'; is the conceptual representation grounded enough to survive noise, or is this merely token frequency priming? Further probes could test nominalist explanations.
+Auxiliary probes underscore phrasing sensitivity: "Germany's capital is" remains diffuse (6.68 bits) whereas "Berlin is the capital of" is confident (0.95 bits). Temperature scaling behaves predictably, collapsing to near-zero entropy at τ = 0.1 and expanding (> 12 bits) at τ = 2.0.
 
-## 6. Limitations & data quirks
-The probe focuses solely on the answer token; interactions across earlier positions are not analysed. The run executed in CPU fp32 mode (`"device": "cpu"`), so GPU precision quirks are not captured. Lack of explicit run timestamp reduces reproducibility. High-entropy junk tokens ('laug', '*/') indicate tokenizer artefacts that may distort early-layer measurements.
+Checklist  
+✓ RMS lens  
+✓ LayerNorm (RMS variant)  
+✗ Colon-spam  
+✓ Entropy rise at unembed
 
-## 7. Model fingerprint
-"Mistral-7B-v0.1: collapse at L 25; final entropy 1.8 bits; 'Berlin' plateaus above 90 % from L 25 onward."
+# 5. Tentative implications for Realism ↔ Nominalism
+? Does the delayed collapse suggest that factual recall lives in deep nominal subspaces rather than being explicitly represented earlier?  
+? Could the transient 'Washington' attractor indicate that competing factual schemas are stored distributively and only reconciled by late binding?  
+? Is the entropy rebound in the final layer evidence for a realist-style mixture where generic priors are re-introduced after commitment to a fact?  
+? How would steering earlier layers toward 'Berlin' via activation patching affect the collapse point and support either philosophical stance?
 
----
+# 6. Limitations & data quirks
+Layer-wise logs record context ':' rather than generated content, so answer alignment must be inferred from predictions. Absolute entropy calibration depends on the RMS lens assumptions, which are unvalidated here. Numeric values may shift under different precision (the run used MPS-fp32). Run timestamp and model checkpoint hash are not recorded, limiting reproducibility.
 
+# 7. Model fingerprint
+Mistral-7B-v0.1: collapse at L 25; final entropy 1.8 bits; 'Berlin' stabilises from L 22 onward.
+
+---  
 Produced by OpenAI o3

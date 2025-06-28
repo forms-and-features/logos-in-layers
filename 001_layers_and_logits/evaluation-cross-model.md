@@ -1,32 +1,62 @@
-# 1. Result synthesis
+# CROSS-EVAL
 
-Across the four probed base models a consistent **late-stack entropy collapse** is observed.  The answer token becomes near-deterministic at roughly the same *relative* depth: Meta-Llama-3-8B collapses at L 25 / 32 ≈ 0.78 ([41-44](001_layers_and_logits/evaluation-Meta-Llama-3-8B.md)), Mistral-7B at L 25 / 32 ≈ 0.78 ([37](001_layers_and_logits/evaluation-Mistral-7B-v0.1.md)), Qwen-3-8B at L 28 / 36 ≈ 0.78 ([44](001_layers_and_logits/evaluation-Qwen3-8B.md)) and Gemma-2-9B at L 35 / 42 ≈ 0.83 ([34-35](001_layers_and_logits/evaluation-gemma-2-9b.md)).  This alignment across model families suggests that factual resolution is a depth-normalised phenomenon, echoing findings in tuned-lens work (arXiv:2303.08112).
+## 1. Result synthesis
 
-A **concept-before-entity pattern** repeats: a generic "capital" token rises several layers *before* the first high-probability "Berlin".  Llama shows 'Capital' at L 20 ([41-42](001_layers_and_logits/evaluation-Meta-Llama-3-8B.md)); Mistral shows 'capital' at L 21 ([37 & 52](001_layers_and_logits/evaluation-Mistral-7B-v0.1.md)).  The same window precedes the collapse in Qwen (L 20–21, table) and Gemma (L 20–24, "the" plateau).  This supports the view that models first settle on a semantic category then retrieve the concrete entity.
+Across the four 7–9 B-parameter decoder stacks we observe a shared pattern: entropy remains high for roughly the first two-thirds of the network, then collapses sharply onto the factual answer "Berlin", followed by a modest rebound after the unembed projection.
 
-All models exhibit an **entropy rebound after the final normalisation / unembed**.  Qwen jumps from 0.13 bits (L 35) to 2.02 bits in the final logits ([54](001_layers_and_logits/evaluation-Qwen3-8B.md)); Llama rises from 0.37 bits (L 28) to 1.7 bits post-unembed ([54-57](001_layers_and_logits/evaluation-Meta-Llama-3-8B.md)); Mistral shows 0.79 → 1.80 bits ([31-32](001_layers_and_logits/evaluation-Mistral-7B-v0.1.md)).  Gemma shows a smaller bump then decline (["entropy rise then fall" checklist](001_layers_and_logits/evaluation-gemma-2-9b.md)).  The rebound corroborates reports that unembedding sometimes de-sharpens internal states (arXiv:2303.08112).
+Layer index of collapse differs systematically by architecture.  In the two smaller RMS-norm models the collapse occurs in block 25 (≈ 78 % depth) as shown in
+```41:48:001_layers_and_logits/evaluation-Meta-Llama-3-8B.md
+| **L 25** | **0.43** | **' Berlin'** |
+```
+and
+```43:47:001_layers_and_logits/evaluation-Mistral-7B-v0.1.md
+| **L 25** | **0.56** | **'Berlin'** |
+```
+Qwen3, which has the same nominal width but divergent tokenizer and attention recipe, collapses slightly later at block 28
+```38:44:001_layers_and_logits/evaluation-Qwen3-8B.md
+| **L 28** | **0.43** | 'Berlin' |
+```
+whereas Gemma-2-9B defers the transition to block 35
+```45:49:001_layers_and_logits/evaluation-gemma-2-9b.md
+| L 35 | 0.235 | 'Berlin' |
+```
+This ordering mirrors the "longer to decide" trend reported in tuned-lens studies (arXiv:2303.08112) whereby architectures with deeper blocks or wider feed-forward modules defer semantic commitment.
 
-Early-layer behaviour is heterogeneous.  Gemma is *over-confident on punctuation* – entropy <10⁻⁶ bits on ':' until L 9 ([63](001_layers_and_logits/evaluation-gemma-2-9b.md)) – while the other models emit high-entropy junk or multilingual tokens (e.g. 'ListViewItem', '␠', 'laugh') indicating that the norm lens surfaces noise when semantics are not yet integrated.
+The final softmax on the answer position re-introduces ≈ 1.7–2.0 bits of entropy in every model despite high certainty inside the stack, e.g.
+```13:17:001_layers_and_logits/output-Meta-Llama-3-8B.json
+"entropy": 1.7041
+```
+```13:17:001_layers_and_logits/output-Qwen3-8B.json
+"entropy": 2.0197
+```
+which supports the "unembed temperature" effect noted in prior work (arXiv:2310.00430).
 
-# 2. Misinterpretations in existing EVALS
+Qualitatively, two distinct pre-collapse regimes appear.  Gemma and Qwen exhibit early punctuation bias ("colon-spam") with near-zero entropy ≤ layer 8
+```14:22:001_layers_and_logits/evaluation-gemma-2-9b.md
+| L 0 | 0.000 | ':' |
+```
+whereas Llama-3 and Mistral stay multilingual or gibberish until about layer 20, after which both models pass through an abstract "capital" phase (8–10 bits) before converging on _Berlin_.  The shared intermediate prior suggests that an abstract geopolitical concept head (similar to the "capital-city" circuitry in GPT-2, see arXiv:2211.00593) is reused across open-weights models.
 
-- **Phase-change claim in Qwen** – The narrative of "a sharp phase change rather than gradual sharpening" ([54-57](001_layers_and_logits/evaluation-Qwen3-8B.md)) overlooks the steady entropy fall from 8.6 → 3.7 → 2.6 bits between L 19-21; the CSV shows a gradual slope, not a step.
-- **Colon certainty in Gemma** – Line 63 of the Gemma report presents <10⁻⁶ bit entropy on ':' as model certainty, yet §6 later notes teacher-forcing artefacts.  The earlier phrasing over-attributes the zero entropy to the model rather than the probe set-up.
-- **Attribution of rebound to LayerNorm in Mistral** – Line 52 links the entropy rise "after `ln_final`", but the script's final logits include both `ln_final` and the unembed weight; the evidence cannot isolate LayerNorm as the cause.
-- **Unembed bounce in Llama** – Lines 54-57 ascribe the 0.37 → 1.7 bit rise to the unembed itself, yet rows L 29-30 already show entropy >0.8 bits before unembedding, suggesting the rebound begins earlier.
+Auxiliary prompts in JSON corroborate directionality asymmetry: every model is far more certain on the cloze "Berlin is the capital of" (≈ 0.9 bits) than on "Germany's capital is" (> 5 bits), matching causal-attention findings in Llama-Lens.
 
-# 3. Usefulness for the Realism ↔ Nominalism project
+## 2. Misinterpretations in existing EVALS
 
-The aligned depth-normalised collapse invites the hypothesis that a shared architectural milestone – perhaps the last two MLP blocks – houses a linear "fact lookup" subspace.  Testing whether targeted ablations in that window erase the answer across models could discriminate between a *realist* "stored fact" and a *nominalist* distributed voting mechanism.
+* `evaluation-Qwen3-8B.md` L54–61 labels the early multilingual noise as "colon-spam".  The CSV shows the top-1 tokens are Japanese and API-style strings, not ":" (see first 10 rows of `output-Qwen3-8B-records.csv`); the term is therefore mis-applied.
+* `evaluation-gemma-2-9b.md` L17–25 rounds early entropies to **0.000** bits.  The CSV gives small but non-zero values (e.g. 7 × 10⁻²⁹ bits), so claiming perfect certainty overstates the effect.
+* The same Gemma EVAL (L40–48) lists layer 42 entropy as "0.0000" yet simultaneously cites a 2-bit rebound in JSON; the table omits the unembed step and therefore mixes two different layers.
 
-The concept-before-entity pattern raises an open question: do models first converge on an abstract *slot* ("capital-city") then bind a concrete token?  Causal tracing of attention paths from the 'capital' layers into the collapse layers could reveal whether a discrete head executes the lookup (supporting realism) or whether many heads gradually sharpen logits (nominalism).
+## 3. Usefulness for the Realism ↔ Nominalism project
 
-The entropy rebound suggests a calibration step that dilutes an over-confident intermediate state.  Intervening to bypass `ln_final` and directly sample from the pre-LN residual could test whether this rebound is functional (nominalist smoothing) or merely a by-product of normalisation (realist pass-through).
+The staggered collapse points offer a natural manipulation variable: if realism predicts an internal "concept" crystallising independent of lexical identity, we can test whether activation-patching _before_ the nominal layer (25–35) transfers across paraphrases.  The consistent rebound after unembed further suggests a late-stage nominal re-expansion; intervening on `model.unembed.W_U` while keeping residual fixed could isolate whether diversity is injected lexically or conceptually.
 
-# 4. Limitations
+The intermediate "capital" prior common to Llama-3/Mistral provides a candidate subspace for nominalism: a token-agnostic slot that later binds to a specific city.  Probing that subspace for other country names may reveal whether it represents abstract roles or is merely a lexical mixture.
 
-The probe covers a *single prompt* and *single answer position*; generalisation to other factual relations is unverified.  Early-layer entropies are confounded by **teacher-forcing** – the lens evaluates the true next token, not the model's sample, inflating certainty on punctuation.  Only the top-20 logits are saved, obscuring tail mass and preventing exact entropy recovery.  All experiments ran on **CPU FP32**, so GPU-specific quantisation or fused-kernel effects are absent.  The RMS-based lens rescales residuals but may distort directionality, and positional embeddings are summed, blending syntactic and semantic features.  Finally, per-layer activations are cached in FP32 on host memory; rounding or truncation could mask subtle logit gaps.
+## 4. Limitations
 
----
+The probe exercises a single prompt hard-coded at
+```158:162:001_layers_and_logits/run.py
+prompt = "Question: What is the capital of Germany? Answer:"
+```
+and therefore cannot distinguish representation generality from prompt-specific memorisation.  All runs use one forward pass on Apple-M-series `mps`; cross-device numerical drift is unmeasured.  Entropy is read through an RMS-lens (`USE_NORM_LENS = True`, L143) whose calibration is unverified for each norm variant, and only the top-20 logits are stored, hiding tail mass.  Finally, FP32 unembed is enabled (L151) which alters the final distribution, so comparisons to raw model decoding must control for that intervention.
 
 Produced by OpenAI o3

@@ -31,3 +31,8 @@ STYLE GUIDELINES
 - Quote lines with L‑numbers; keep quotes short.  
 - Cite external papers only with DOI/arXiv; skip if unsure.  
 - Avoid normative language; focus on actionable analysis.
+
+At the end of the markdown file, add the following:
+
+---
+Produced by OpenAI o3

@@ -11,6 +11,7 @@ import sys
 import math
 import json
 import csv
+import argparse
 
 # Top-k settings for record emission
 TOP_K_RECORD = 5    # number of tokens to record for non-verbose slots
@@ -114,14 +115,28 @@ def run_experiment_for_model(model_id):
         print(f"EVALUATING MODEL: {model_id}")
         print(f"{'='*60}")
         
-        # Load model with TransformerLens
-        print(f"Loading model: {model_id}...")
-        
-        # Load with explicit device and dtype to avoid CPU float16 issues
+        # ---- device & dtype ---------------------------------------------------
+        device = CLI_ARGS.device
+        if device == "cuda" and not torch.cuda.is_available():
+            print("⚠️  CUDA requested but not available; falling back to CPU.")
+            device = "cpu"
+        if device == "mps" and not torch.backends.mps.is_available():
+            print("⚠️  MPS requested but not available; falling back to CPU.")
+            device = "cpu"
+
+        dtype = {
+            "cuda": torch.float16,
+            # MPS currently doesn't support float16 weights reliably; use float32
+            "mps":  torch.float32,
+            "cpu":  torch.float32,
+        }[device]
+
+        # ---- load model -------------------------------------------------------
+        print(f"Loading model on [{device}] ...")
         model = HookedTransformer.from_pretrained(
             model_id,
-            device="cuda" if torch.cuda.is_available() else "cpu",
-            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+            device=device,
+            torch_dtype=dtype,
         )
         model.eval()  # Hygiene: avoid dropout etc.
         
@@ -149,7 +164,7 @@ def run_experiment_for_model(model_id):
         diag = {
             "type": "diagnostics",
             "model": model_id,
-            "device": "cuda" if torch.cuda.is_available() else "cpu",
+            "device": device,
             "use_norm_lens": USE_NORM_LENS,
             "use_fp32_unembed": USE_FP32_UNEMBED,
             "unembed_dtype": str(UNEMBED_DTYPE),
@@ -580,12 +595,25 @@ def run_single_model(model_id):
             f.write(f"Timestamp: {datetime.now().strftime('%Y%m%d%H%M%S')}\n")
         return False
 
+# CLI -----------------------------------------------------------------------
+def parse_cli():
+    p = argparse.ArgumentParser(description="Layer-by-layer logit-lens sweep")
+    p.add_argument("--device",
+                   default="cuda",
+                   choices=["cuda", "mps", "cpu"],
+                   help="compute device to run on (default: cuda)")
+    p.add_argument("model_id", nargs="?", default=None,
+                   help="Model ID for single-run (when invoking as subprocess)")
+    return p.parse_args()
+
+# Parse once and promote to module-global so run_single_model and main can see it
+CLI_ARGS = parse_cli()
+
 def main():
     """Main function to launch separate processes for each model"""
-    if len(sys.argv) > 1:
-        # We're being called as subprocess for a single model
-        model_id = sys.argv[1]
-        success = run_single_model(model_id)
+    # If a model_id was provided, run in single-model mode
+    if CLI_ARGS.model_id:
+        success = run_single_model(CLI_ARGS.model_id)
         sys.exit(0 if success else 1)
     
     # Main process - launch subprocess for each model
@@ -603,7 +631,10 @@ def main():
         try:
             # Launch subprocess
             result = subprocess.run([
-                sys.executable, script_path, model_id
+                sys.executable,
+                script_path,
+                "--device", CLI_ARGS.device,   # forward the flag
+                model_id
             ], capture_output=False, text=True, check=False)
             
             if result.returncode == 0:
