@@ -59,8 +59,6 @@ weights/
 # Data files
 data/
 datasets/
-*.csv
-*.json
 *.parquet
 *.h5
 *.hdf5

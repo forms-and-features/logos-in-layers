@@ -1,87 +1,83 @@
-# 1. Overview
+# Evaluation – Qwen3-8B
 
-**Model:** Qwen/Qwen3-8B (8 B params)  
-**Run date:** see console header – file generated on current run  
-The probe feeds a short Q&A prompt into the model and, with TransformerLens hooks, prints the residual stream after every block, applies an RMS-norm lens, then unembeds to obtain layer-wise logits.
+## 1. Overview
+Qwen 3-8B (≈ 8 B parameters, 36-layer Transformer) was probed on 2025-06-28 using the `001_layers_and_logits/run.py` script.  The probe records the entropy of the next-token distribution and the top-k tokens extracted from the residual stream at every layer, under a norm-lens that re-scales the residual by the layer's RMSNorm parameters.  Results are saved as structured JSON and per-layer CSV.
 
-# 2. Method sanity-check
-* "Block normalization type: RMSNormPre" [L8] confirms RMS rather than LN.  
-* "Using NORMALISED residual stream (RMS, no learnable scale)" [L9] shows the correct norm-lens was applied.  
-* "[diagnostic] No separate positional embedding hook; using only token embeddings for layer 0 residual." [L28] clarifies that positional embeddings are merged with token embeddings and therefore captured.
+## 2. Method sanity-check
+The JSON header confirms that the run used the intended norm-lens and captured positional embeddings:
 
-# 3. Quantitative findings
+> "use_norm_lens": true, "first_block_ln1_type": "RMSNormPre"  [L7-9:001_layers_and_logits/output-Qwen3-8B.json]
+> Using NORMALIZED residual stream (RMS + learned scale)  [L246:001_layers_and_logits/run.py]
+
+`hook_pos_embed` is present in the script, so the positional encoding stream is cached and included in layer 0.  Together, the console and JSON evidence indicate that both the positional embeddings and the RMS-based norm-lens were applied as designed.
+
+## 3. Quantitative findings
 | Layer | Entropy (bits) | Top-1 token |
-|-------|---------------|-------------|
-| 0 | 5.671 | いらっ |
-| 1 | 10.974 | ListViewItem |
-| 2 | 10.000 | Buccane |
-| 3 | 9.901 | Lauderdale |
-| 4 | 11.345 | Buccane |
-| 5 | 12.906 | 直接影响 |
-| 6 | 14.145 | 我省 |
-| 7 | 13.430 | portion |
-| 8 | 12.072 | steller |
-| 9 | 11.299 | Mus |
-| 10 | 11.532 | 在游戏中 |
-| 11 | 12.148 | 在游戏中 |
-| 12 | 12.156 | Answer |
-| 13 | 11.685 | Answer |
-| 14 | 10.953 | Binary |
-| 15 | 11.604 | Answer |
-| 16 | 11.712 | Answer |
-| 17 | 12.629 | Answer |
-| 18 | 10.841 | Answer |
-| 19 | 8.556 | Answer |
-| 20 | 3.708 | Answer |
-| 21 | 2.600 | Answer |
-| 22 | 3.370 | Answer |
-| 23 | 3.550 | Answer |
-| 24 | 4.101 | ______ |
-| 25 | 1.411 | Germany |
-| 26 | 2.857 | ____ |
-| 27 | 2.917 | Germany |
-| **28** | **0.430** | **Berlin** |
-| 29 | 0.194 | Berlin |
-| 30 | 0.871 | Berlin |
-| 31 | 0.011 | Berlin |
-| 32 | 0.076 | Berlin |
-| 33 | 0.011 | Berlin |
-| 34 | 0.012 | Berlin |
-| 35 | 0.130 | Berlin |
-| 36 | 2.020 | Berlin |
+|-------|----------------|-------------|
+| L 0 | 5.67 | 'いらっ' |
+| L 1 | 10.97 | 'ListViewItem' |
+| L 2 | 10.00 | 'Buccane' |
+| L 3 | 9.90 | 'Lauderdale' |
+| L 4 | 11.34 | 'Buccane' |
+| L 5 | 12.91 | '直接影响' |
+| L 6 | 14.15 | '我省' |
+| L 7 | 13.43 | 'portion' |
+| L 8 | 12.07 | 'steller' |
+| L 9 | 11.30 | 'Mus' |
+| L 10 | 11.53 | '在游戏中' |
+| L 11 | 12.15 | '在游戏中' |
+| L 12 | 12.16 | 'Answer' |
+| L 13 | 11.68 | 'Answer' |
+| L 14 | 10.95 | 'Binary' |
+| L 15 | 11.60 | 'Answer' |
+| L 16 | 11.71 | 'Answer' |
+| L 17 | 12.63 | 'Answer' |
+| L 18 | 10.84 | 'Answer' |
+| L 19 | 8.56 | 'Answer' |
+| L 20 | 3.71 | 'Answer' |
+| L 21 | 2.60 | 'Answer' |
+| L 22 | 3.37 | 'Answer' |
+| L 23 | 3.55 | 'Answer' |
+| L 24 | 4.10 | '______' |
+| L 25 | 1.41 | 'Germany' |
+| L 26 | 2.86 | '____' |
+| L 27 | 2.92 | 'Germany' |
+| **L 28** | **0.43** | **'Berlin'** |
+| L 29 | 0.19 | 'Berlin' |
+| L 30 | 0.87 | 'Berlin' |
+| L 31 | 0.011 | 'Berlin' |
+| L 32 | 0.076 | 'Berlin' |
+| L 33 | 0.011 | 'Berlin' |
+| L 34 | 0.012 | 'Berlin' |
+| L 35 | 0.13 | 'Berlin' |
+| L 36 | 2.02 | 'Berlin' |
 
-The first entropy < 1 bit occurs at **layer 28** – the "collapse layer".
+The entropy drops steadily after L 20 and **collapses below 1 bit at L 28**, where 'Berlin' becomes the confident prediction.
 
-# 4. Qualitative patterns & anomalies
-* **Sharp collapse on factual answer:**
-  > Layer 28 … (entropy 0.430) 'Berlin' 0.93 [L662]
-* **'Answer' obsession in mid-stack:** dominates layers 18-24 while entropy drifts 10.8→3.7 bits.  
-  > Layer 20 top-1 'Answer' 0.85 [L470]
-* **Underscore/blank-token ("colon-spam") phase** before collapse – high-prob '____' tokens at layer 26.  
-  > Layer 26 top-1 '____' 0.30 [L613]
-* **Entropy re-opens after unembed:** final layer rises to 2.02 bits, injecting distractors ('The', blank).  
-  > Layer 36 entropy 2.020 bits [L838]
+## 4. Qualitative patterns & anomalies
+From L 0–L 19 the model's next-token guesses are dominated by rare English or multilingual junk tokens (e.g. 'Lauderdale', '直接影响'), suggesting that early residual features are noisy for this prompt.  Entropy then free-falls between L 19-L 21 (8.6 → 2.6 bits) before stabilising and ultimately collapsing at L 28 where 'Berlin' attains 0.93 probability and entropy 0.43 bits: "... 'Berlin', 0.93)" [L528].  The collapse persists through L 34 with sub-0.08 bit entropy, indicating a sharp phase change rather than gradual sharpening.
 
-Checklist: RMS used ✓ | LayerNorm ✗ | Colon-spam ✓ | Re-opening at unembed ✓
+Test prompts reinforce the selectivity: for "Berlin is the capital of", 'Germany' is top-1 with 0.73 probability and entropy 1.20 bits [L45-60].  Temperature exploration shows extreme confidence at τ = 0.1 (entropy ≈ 0) and a still-dominant Berlin at τ = 2.0 (6.6 % mass), hinting at a high-margin logit gap.
 
-# 5. Implications & open questions for Realism ↔ Nominalism
-* Does the late collapse (layer 28) suggest that abstract category tokens ('Answer', '____') precede concrete entity instantiation ('Berlin')?
-* Could the persistence of low-entropy 'Berlin' through layers 28-35 reflect a realist "object permanence" representation?  
-* Does the re-opening at the final layer indicate nominalistic surface-form tailoring rather than changed belief?
-* Are the underscore tokens a nominal placeholder for "nothing yet" rather than a realist commitment to a specific answer?
+An entropy rebound is visible after the final LN/unembed: entropy jumps from 0.13 bits (L 35) to 2.02 bits in the final logits (JSON `final_prediction`).  This echoes observations in the tuned-lens literature (2303.08112) that unembedding sometimes "de-sharpens" over-confident internal states.
 
-# 6. Limitations & data quirks
-* Single prompt and single run; no statistics across inputs.  
-* The probe stores only the last-token residual; earlier positions are not inspected.  
-* Non-English vocabulary dominates early layers, possibly due to tokenizer idiosyncrasies.
+Checklist
+- RMS lens? ✓
+- LayerNorm? ✗ (RMSNorm only)
+- Colon-spam? ✗ (underscore tokens dominate instead)
+- Entropy rise at unembed? ✓
 
-# 7. Next probes with current artefact
-1. Activation patching: replace layer 28 residual with layer 27 to test whether collapse is necessary for correct answer.  
-2. Compare entropy trajectory on semantically similar but false questions (e.g., "capital of Australia → Berlin?") using same hooks.  
-3. Compute KL divergence between layers 27-29 to quantify the sharpness of the collapse.
+## 5. Tentative implications for Realism ↔ Nominalism
+1. Does the abrupt entropy collapse at L 28 imply that a discrete feature representing `<capital-city answer>` becomes linearly readable only after a long chain of composition?
+2. Might the sustained sub-bit entropy in L 28-L 34 indicate that the model internally "decides" on 'Berlin' well before the final LN but then rescales logits for calibration, supporting a nominalist view of late-layer adjustment rather than new knowledge?
+3. Could the entropy rebound at the unembed layer reflect an architectural regulariser that buffers over-confidence, suggesting a realism-compatible smoothing mechanism?
+4. Does the symmetric performance on reverse prompts ("Berlin is the capital of ..." point to shared bidirectional representations, challenging a strictly causal realist stance?
 
-# 8. Model fingerprint
-"Qwen3-8B: entropy collapses at layer 28; final entropy 2.0 bits; anomalous underscore spam before collapse, 'Berlin' locked in thereafter."
+## 6. Limitations & data quirks
+All computations ran on CPU, extending runtime and potentially altering numerical noise profiles.  Early-layer top-k vocab is dominated by spurious multilingual fragments, hinting at tokenisation quirks or insufficient context length for the lens.  The CSV uses the ':' token as the answer slot; any mis-alignment would skew entropy values.  Finally, the probe records only the first 20 alternatives, so low-probability but semantically relevant tokens may be missing.
+
+## 7. Model fingerprint
+Qwen3-8B: collapse at L 28; final entropy ≈ 2.0 bits; 'Berlin' reaches > 99 % by L 31.
 
 ---
 

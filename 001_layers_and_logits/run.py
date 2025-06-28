@@ -1,4 +1,3 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM
 import transformer_lens
 from transformer_lens import HookedTransformer
 import torch
@@ -9,8 +8,13 @@ from datetime import datetime
 import os
 import subprocess
 import sys
-import warnings
 import math
+import json
+import csv
+
+# Top-k settings for record emission
+TOP_K_RECORD = 5    # number of tokens to record for non-verbose slots
+TOP_K_VERBOSE = 20  # number of tokens to record for verbose slots and answer position
 
 # Layer-by-layer prediction analysis with LayerNorm lens correction
 # Toggle USE_NORM_LENS for raw vs normalized residual stream analysis
@@ -138,46 +142,55 @@ def run_experiment_for_model(model_id):
         else:
             UNEMBED_DTYPE = torch.float32 if USE_FP32_UNEMBED else model.unembed.W_U.dtype
         
-        # Diagnostic: Check normalization types in the model
-        print("\n=== NORMALIZATION ANALYSIS ========")
-        if hasattr(model, 'blocks') and len(model.blocks) > 0:
-            first_block_ln1_type = type(model.blocks[0].ln1).__name__
-            print(f"Block normalization type: {first_block_ln1_type}")
-            
-            if is_safe_layernorm(model.blocks[0].ln1):
-                print("✅ LayerNorm detected - standard norm-lens will be applied")
-            elif 'RMS' in first_block_ln1_type:
-                first_norm = model.blocks[0].ln1
-                if _get_rms_scale(first_norm) is None:
-                    print("Using NORMALISED residual stream (RMS, no learnable scale)")
-                else:
-                    print("Using NORMALISED residual stream (RMS + learned scale)")
-            else:
-                print(f"⚠️  Unsupported norm type ({first_block_ln1_type}) - norm-lens will be skipped")
-        
-        if hasattr(model, 'ln_final'):
-            final_ln_type = type(model.ln_final).__name__
-            print(f"Final normalization type: {final_ln_type}")
-        print("=== END NORMALIZATION ANALYSIS ====\n")
-        
-        # Inspect a short prompt - using Q&A format that works best across models
+        # Assemble prompt and normalization diagnostics
         prompt = "Question: What is the capital of Germany? Answer:"
-        
-        print("\n=== PROMPT =========================")
-        print(prompt)
-        print("=== END OF PROMPT =================\n")
-        
-        print("\n=== INSPECTING ====================")
+        first_block_ln1_type = type(model.blocks[0].ln1).__name__ if hasattr(model, 'blocks') and len(model.blocks) > 0 else None
+        final_ln_type = type(model.ln_final).__name__ if hasattr(model, 'ln_final') else None
+        diag = {
+            "type": "diagnostics",
+            "model": model_id,
+            "device": "cuda" if torch.cuda.is_available() else "cpu",
+            "use_norm_lens": USE_NORM_LENS,
+            "use_fp32_unembed": USE_FP32_UNEMBED,
+            "unembed_dtype": str(UNEMBED_DTYPE),
+            "first_block_ln1_type": first_block_ln1_type,
+            "final_ln_type": final_ln_type,
+            "prompt": prompt
+        }
+        print(json.dumps(diag, ensure_ascii=False))
+        # Emit prompt record
+        print(json.dumps({"type": "prompt", "prompt": prompt}, ensure_ascii=False))
+        IMPORTANT_WORDS = ["Germany", "Berlin", "capital"]
+
+        def is_verbose_position(pos, token_str, seq_len):
+            # Answer slot always verbose
+            if pos == seq_len - 1:
+                return True
+            # Any prompt word in token string
+            for w in IMPORTANT_WORDS:
+                if w.lower() in token_str.lower().strip(".,!?;:"):
+                    return True
+            return False
+
+        def print_summary(layer_idx, pos, token_str, entropy_bits, top_tokens, top_probs):
+            # Emit a JSON Lines record for this layer/position
+            record = {
+                "type": "record",
+                "layer": layer_idx,
+                "pos": pos,
+                "token": token_str,
+                "entropy": entropy_bits,
+                "topk": [[tok, prob.item()] for tok, prob in zip(top_tokens, top_probs)]
+            }
+            print(json.dumps(record, ensure_ascii=False))
         
         # Tokenize the prompt (cache for reuse)
         tokens = model.to_tokens(prompt).to(model.cfg.device)
         
-        print(f"Input tokens: {model.to_str_tokens(prompt)}")
-        
-        # Use no_grad to disable gradient computation for memory efficiency
+        # Begin capturing residual streams
         with torch.no_grad():
             # MEMORY EFFICIENT: Use targeted caching instead of run_with_cache
-            print("Computing layer-wise predictions (memory-efficient targeted caching)...")
+            # (removed human-readable progress print)
             
             # Storage for only the residual streams we need
             residual_cache = {}
@@ -185,9 +198,9 @@ def run_experiment_for_model(model_id):
             def make_cache_hook(cache_dict):
                 def cache_residual_hook(tensor, hook):
                     # Only store the tensor we need, detached from computation graph
-                    # Store only last token position (see TODO below for GPU cache option)
+                    # Store activations in fp32 for numerical stability and full sequence
                     # TODO: For batch runs, consider storing cache on GPU to avoid repeated .to(device) copies
-                    cache_dict[hook.name] = tensor[:, -1:, :].cpu().detach()
+                    cache_dict[hook.name] = tensor.cpu().float().detach()
                 return cache_residual_hook
             
             # Create the hook function with explicit cache reference
@@ -217,8 +230,8 @@ def run_experiment_for_model(model_id):
                 # Run forward pass with targeted hooks
                 logits = model(tokens)
                 
-                # Show top predictions at different layers for the last token position
-                print(f"\nTop predictions for next token after '{prompt}':")
+                # Show top predictions at different layers
+                print(f"\nTop predictions for next token at each position in '{prompt}':")
                 if USE_NORM_LENS:
                     # Check if we'll actually be applying norms
                     if hasattr(model, 'blocks') and len(model.blocks) > 0:
@@ -241,6 +254,9 @@ def run_experiment_for_model(model_id):
                 print("Note: Shown probabilities are from full softmax (calibrated and comparable)")
                 print("-" * 60)
                 
+                # Get string representations of tokens for labeling output
+                str_tokens = model.to_str_tokens(prompt)
+
                 # Layer 0: embeddings (+ positional embeddings if available)
                 print("Layer  0 (embeddings):")
                 if has_pos_embed:
@@ -248,64 +264,103 @@ def run_experiment_for_model(model_id):
                              residual_cache['hook_pos_embed']).to(model.cfg.device)
                 else:
                     resid = residual_cache['hook_embed'].to(model.cfg.device)
-                    print("[diagnostic] No separate positional embedding hook; using only token embeddings for layer 0 residual.")
+                    print("[diagnostic] No separate positional embedding hook found (as expected for some models); using token embeddings for layer 0.")
                 # Apply first block's LayerNorm to embeddings if using norm-lens
                 if USE_NORM_LENS:
-                    resid = apply_norm_or_skip(resid, model.blocks[0].ln1, "layer 0 (embeddings + block 0 ln1)")
-                # Apply the unembedding to get logits (resid is now [1, 1, d_model] from caching last token only)
-                layer_logits = model.unembed(resid[0, 0, :].unsqueeze(0).to(UNEMBED_DTYPE))[0].float()
-                _, top_indices = torch.topk(layer_logits, 20, largest=True, sorted=True)
-                top_probs = torch.softmax(layer_logits[top_indices], dim=0)  # note: renormalised over top-k
+                    resid = rms_lens(
+                        resid,
+                        torch.ones(resid.shape[-1], device=resid.device),
+                        eps=getattr(model.blocks[0].ln1, "eps", 1e-5)
+                    )
                 
-                # Calculate entropy efficiently using log_softmax (convert to bits)
-                # entropy uses full vocab; top_probs are renormalised top-k masses
-                log_probs = torch.log_softmax(layer_logits, dim=0).to(torch.float32)
-                entropy_nats = -torch.sum(torch.exp(log_probs) * log_probs)
-                entropy_bits = entropy_nats.item() / math.log(2)
+                # Vectorized unembedding for all positions
+                logits_all = model.unembed(resid[0].to(UNEMBED_DTYPE)).float()  # [seq, d_vocab]
                 
-                print(f"  (entropy: {entropy_bits:.3f} bits):")
-                for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
-                    token = model.tokenizer.decode([idx])
-                    print(f"  {i+1:2d}. '{token}' ({prob.item():.6f})")
-                print()
-                
-                # Layers 1 to n_layers: after each transformer block
-                for layer in range(n_layers):
-                    # Get residual stream after this layer's block (move from CPU to GPU)
-                    resid = residual_cache[f'blocks.{layer}.hook_resid_post'].to(model.cfg.device)
-                    
-                    # Apply LayerNorm if requested (with safety checks)
-                    if USE_NORM_LENS:
-                        # Prefer ln2 if present, else fallback to next block's ln1
-                        norm_mod = getattr(model.blocks[layer], 'ln2', None) or \
-                                   (model.blocks[layer + 1].ln1 if (layer < n_layers - 1 and hasattr(model.blocks[layer + 1], 'ln1')) else None)
-                        # Always apply ln_final to the last layer if present
-                        if layer == n_layers - 1 and hasattr(model, 'ln_final'):
-                            resid = apply_norm_or_skip(resid, model.ln_final, f"layer {layer + 1} (final ln)")
-                        elif norm_mod is not None:
-                            resid = apply_norm_or_skip(resid, norm_mod, f"layer {layer + 1} (block {layer} norm)")
-                    
-                    # Apply the unembedding to get logits (resid is [1, 1, d_model], cast to float32 for stability)
-                    layer_logits = model.unembed(resid[0, 0, :].unsqueeze(0).to(UNEMBED_DTYPE))[0].float()
-                    _, top_indices = torch.topk(layer_logits, 20, largest=True, sorted=True)
-                    top_probs = torch.softmax(layer_logits[top_indices], dim=0)
-                    
-                    # Calculate entropy efficiently using log_softmax (convert to bits)
+                for pos in range(tokens.shape[1]):
+                    layer_logits = logits_all[pos]
+                    # Compute log-probs for entropy and selective probabilities
                     log_probs = torch.log_softmax(layer_logits, dim=0).to(torch.float32)
                     entropy_nats = -torch.sum(torch.exp(log_probs) * log_probs)
                     entropy_bits = entropy_nats.item() / math.log(2)
+
+                    token_str = str_tokens[pos]
+                    # Decide verbosity for this position
+                    verbose = is_verbose_position(pos, token_str, tokens.shape[1])
+                    # Choose k based on verbosity
+                    k = TOP_K_VERBOSE if verbose else TOP_K_RECORD
+                    # Get top-k indices from raw logits
+                    _, top_indices_k = torch.topk(layer_logits, k, largest=True, sorted=True)
+                    top_probs_k = torch.exp(log_probs[top_indices_k])
+                    top_tokens_k = [model.tokenizer.decode([idx]) for idx in top_indices_k]
+                    print_summary(0, pos, token_str, entropy_bits, top_tokens_k, top_probs_k)
+                    if verbose:
+                        # Print full verbose list (TOP_K_VERBOSE), reusing initial topk when possible
+                        if k == TOP_K_VERBOSE:
+                            verbose_indices = top_indices_k
+                            verbose_probs = top_probs_k
+                        else:
+                            _, verbose_indices = torch.topk(layer_logits, TOP_K_VERBOSE, largest=True, sorted=True)
+                            verbose_probs = torch.exp(log_probs[verbose_indices])
+                        for i, (prob, idx) in enumerate(zip(verbose_probs, verbose_indices)):
+                            tok = model.tokenizer.decode([idx])
+                            print(f"    {i+1:2d}. '{tok}' ({prob.item():.6f})")
+                        print()
+                
+                # Layers 1 to n_layers: after each transformer block
+                for layer in range(n_layers):
+                    print(f"Layer {layer + 1:2d} (after transformer block {layer}):")
+                    # Get residual stream after this layer's block (move from CPU to GPU)
+                    resid = residual_cache[f'blocks.{layer}.hook_resid_post'].to(model.cfg.device)
                     
-                    print(f"Layer {layer + 1:2d} (after transformer block {layer}) (entropy: {entropy_bits:.3f} bits):")
-                    for i, (prob, idx) in enumerate(zip(top_probs, top_indices)):
-                        token = model.tokenizer.decode([idx])
-                        print(f"  {i+1:2d}. '{token}' ({prob.item():.6f})")
-                    print()
+                    # Apply normalization if requested
+                    if USE_NORM_LENS:
+                        # For pre-LN models, apply ln_final on last layer, otherwise a simple RMS lens
+                        if layer == n_layers - 1 and hasattr(model, 'ln_final'):
+                            resid = apply_norm_or_skip(resid, model.ln_final, f"layer {layer + 1} (final ln)")
+                        else:
+                            gamma = _get_rms_scale(model.blocks[layer].ln1) \
+                                    or torch.ones(resid.shape[-1], device=resid.device)
+                            eps = getattr(model.blocks[layer].ln1, "eps", 1e-5)
+                            resid = rms_lens(resid, gamma, eps)
+                    
+                    # Vectorized unembedding for all positions
+                    logits_all = model.unembed(resid[0].to(UNEMBED_DTYPE)).float() # [seq, d_vocab]
+                    
+                    for pos in range(tokens.shape[1]):
+                        layer_logits = logits_all[pos]
+                        # Compute log-probs for entropy and selective probabilities
+                        log_probs = torch.log_softmax(layer_logits, dim=0).to(torch.float32)
+                        entropy_nats = -torch.sum(torch.exp(log_probs) * log_probs)
+                        entropy_bits = entropy_nats.item() / math.log(2)
+
+                        token_str = str_tokens[pos]
+                        # Decide verbosity for this position
+                        verbose = is_verbose_position(pos, token_str, tokens.shape[1])
+                        # Choose k based on verbosity
+                        k = TOP_K_VERBOSE if verbose else TOP_K_RECORD
+                        # Get top-k indices from raw logits
+                        _, top_indices_k = torch.topk(layer_logits, k, largest=True, sorted=True)
+                        top_probs_k = torch.exp(log_probs[top_indices_k])
+                        top_tokens_k = [model.tokenizer.decode([idx]) for idx in top_indices_k]
+                        print_summary(layer + 1, pos, token_str, entropy_bits, top_tokens_k, top_probs_k)
+                        if verbose:
+                            # Print full verbose list (TOP_K_VERBOSE), reusing initial topk when possible
+                            if k == TOP_K_VERBOSE:
+                                verbose_indices = top_indices_k
+                                verbose_probs = top_probs_k
+                            else:
+                                _, verbose_indices = torch.topk(layer_logits, TOP_K_VERBOSE, largest=True, sorted=True)
+                                verbose_probs = torch.exp(log_probs[verbose_indices])
+                            for i, (prob, idx) in enumerate(zip(verbose_probs, verbose_indices)):
+                                tok = model.tokenizer.decode([idx])
+                                print(f"    {i+1:2d}. '{tok}' ({prob.item():.6f})")
+                            print()
                 
             finally:
                 # Clean up hooks and cache
-                for hook in hooks:
-                    if hook is not None and hasattr(hook, 'is_active') and hook.is_active():
-                        hook.remove()
+                for h in hooks:  # HookPoint.add_hook always returns a handle with .remove()
+                    if h is not None:
+                        h.remove()
                 del residual_cache, hooks
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
@@ -326,15 +381,15 @@ def run_experiment_for_model(model_id):
             final_entropy_nats = -torch.sum(torch.exp(final_log_probs) * final_log_probs)
             final_entropy_bits = final_entropy_nats.item() / math.log(2)
             
-            print(f"Model's final prediction (entropy: {final_entropy_bits:.3f} bits):")
-            for i, (prob, idx) in enumerate(zip(final_top_probs, final_top_indices)):
-                token = model.tokenizer.decode([idx])
-                print(f"  {i+1:2d}. '{token}' ({prob.item():.6f})")
+            # Emit final prediction as a JSON Lines record
+            final_record = {
+                "type": "final_prediction",
+                "entropy": final_entropy_bits,
+                "topk": [[model.tokenizer.decode([idx]), prob.item()] for prob, idx in zip(final_top_probs, final_top_indices)]
+            }
+            print(json.dumps(final_record, ensure_ascii=False))
             
-            # Let's probe the model's knowledge a bit more
-            print("=" * 60)
-            print("ADDITIONAL PROBING:")
-            
+            # Emit additional probing records for test prompts
             # Cache tokenized test prompts to avoid redundant tokenization
             test_prompts = [
                 "Germany's capital is", 
@@ -344,7 +399,6 @@ def run_experiment_for_model(model_id):
             test_tokens_cache = {prompt: model.to_tokens(prompt).to(model.cfg.device) for prompt in test_prompts}
             
             for test_prompt in test_prompts:
-                print(f"\nPrompt: '{test_prompt}'")
                 test_tokens = test_tokens_cache[test_prompt]
                 
                 test_logits = model(test_tokens)
@@ -356,17 +410,16 @@ def run_experiment_for_model(model_id):
                 test_log_probs = torch.log_softmax(test_logits[0, -1, :], dim=0).to(torch.float32)
                 test_entropy_nats = -torch.sum(torch.exp(test_log_probs) * test_log_probs)
                 test_entropy_bits = test_entropy_nats.item() / math.log(2)
-                print(f"  (entropy: {test_entropy_bits:.3f} bits)")
-                
-                for i, (prob, idx) in enumerate(zip(test_top_probs, test_top_indices)):
-                    token = model.tokenizer.decode([idx])
-                    print(f"  {i+1:2d}. '{token}' ({prob.item():.6f})")
+                # Emit JSON Lines record for this test prompt
+                probe_record = {
+                    "type": "test_prompt",
+                    "prompt": test_prompt,
+                    "entropy": test_entropy_bits,
+                    "topk": [[model.tokenizer.decode([idx]), prob.item()] for prob, idx in zip(test_top_probs, test_top_indices)]
+                }
+                print(json.dumps(probe_record, ensure_ascii=False))
             
-            # OPTIMIZED: Single forward pass for temperature exploration
-            print("=" * 60)
-            print("TEMPERATURE EXPLORATION:")
-            print("(Temperature controls randomness: low=confident, high=creative)")
-            
+            # Emit temperature exploration records
             test_prompt = "Question: What is the capital of Germany? Answer:"
             # Reuse cached tokens if available, otherwise tokenize once
             if test_prompt not in test_tokens_cache:
@@ -379,7 +432,7 @@ def run_experiment_for_model(model_id):
             temperatures = [0.1, 2.0]
             
             for temp in temperatures:
-                print(f"\nTemperature {temp}:")
+                # Compute for temperature and emit JSONL record
                 
                 # Rescale existing logits instead of new forward pass (cast to float32 for numerical stability)
                 scaled_logits = (base_logits / temp).float()
@@ -391,22 +444,27 @@ def run_experiment_for_model(model_id):
                 temp_log_probs = torch.log_softmax(scaled_logits, dim=0).to(torch.float32)
                 temp_entropy_nats = -torch.sum(torch.exp(temp_log_probs) * temp_log_probs)
                 temp_entropy_bits = temp_entropy_nats.item() / math.log(2)
-                print(f"  (entropy: {temp_entropy_bits:.3f} bits)")
-                
-                for i, (prob, idx) in enumerate(zip(temp_top_probs, temp_top_indices)):
-                    token = model.tokenizer.decode([idx])
-                    print(f"  {i+1:2d}. '{token}' ({prob.item():.6f})")
-            
+                # Emit JSON Lines record for this temperature
+                temp_record = {
+                    "type": "temperature_exploration",
+                    "temperature": temp,
+                    "entropy": temp_entropy_bits,
+                    "topk": [[model.tokenizer.decode([idx]), prob.item()] for prob, idx in zip(temp_top_probs, temp_top_indices)]
+                }
+                print(json.dumps(temp_record, ensure_ascii=False))
+        
         print("=== END OF INSPECTING ==============\n")
         
-        # Show some basic statistics about the model
-        print("\n=== MODEL STATS ===============")
-        print(f"Number of layers: {model.cfg.n_layers}")
-        print(f"Model dimension: {model.cfg.d_model}")
-        print(f"Number of heads: {model.cfg.n_heads}")
-        print(f"Vocab size: {model.cfg.d_vocab}")
-        print(f"Context length: {model.cfg.n_ctx}")
-        print("=== END OF MODEL STATS ========\n")
+        # Emit model stats as a JSON Lines record
+        stats_record = {
+            "type": "model_stats",
+            "num_layers": model.cfg.n_layers,
+            "d_model": model.cfg.d_model,
+            "n_heads": model.cfg.n_heads,
+            "d_vocab": model.cfg.d_vocab,
+            "n_ctx": model.cfg.n_ctx
+        }
+        print(json.dumps(stats_record, ensure_ascii=False))
         
         # Clean up model to free memory (though process will end anyway)
         del model
@@ -421,11 +479,32 @@ def run_experiment_for_model(model_id):
         with redirect_stdout(output_buffer):
             evaluate_model()
         
-        # Also print to console by temporarily redirecting back
-        captured_output = output_buffer.getvalue()
-        print(captured_output, end='')  # Print captured output to console too
-        
-        return captured_output
+        # Get all captured output (including human-readable logs and JSONL records)
+        raw = output_buffer.getvalue()
+        # Print full raw output to console for diagnostics
+        print(raw, end='')
+        # Parse only the JSONL records into Python objects
+        lines = [line for line in raw.splitlines() if line.strip().startswith('{')]
+        objs = [json.loads(line) for line in lines]
+        # Partition into sections
+        diagnostics = next(o for o in objs if o.get('type') == 'diagnostics')
+        prompt_rec = next(o for o in objs if o.get('type') == 'prompt')
+        records = [o for o in objs if o.get('type') == 'record']
+        final_pred = next(o for o in objs if o.get('type') == 'final_prediction')
+        test_prompts = [o for o in objs if o.get('type') == 'test_prompt']
+        temp_expl = [o for o in objs if o.get('type') == 'temperature_exploration']
+        stats = next(o for o in objs if o.get('type') == 'model_stats')
+        # Assemble full JSON output
+        output_dict = {
+            "diagnostics": diagnostics,
+            "prompt": prompt_rec.get('prompt'),
+            "records": records,
+            "final_prediction": final_pred,
+            "test_prompts": test_prompts,
+            "temperature_exploration": temp_expl,
+            "model_stats": stats
+        }
+        return json.dumps(output_dict, ensure_ascii=False, indent=2)
         
     except Exception as e:
         error_msg = f"ERROR evaluating {model_id}: {str(e)}"
@@ -440,24 +519,54 @@ def run_single_model(model_id):
     
     # Set memory limit BEFORE any CUDA operations
     if torch.cuda.is_available():
-        torch.cuda.set_per_process_memory_fraction(0.8)  # Use only 80% of GPU memory
+        try:
+            torch.cuda.set_per_process_memory_fraction(0.8)  # Use only 80% of GPU memory
+        except AttributeError:
+            pass
     
     # Generate filename
     clean_name = clean_model_name(model_id)
-    filename = f"output-{clean_name}.txt"
+    meta_filename = f"output-{clean_name}.json"
+    csv_filename  = f"output-{clean_name}-records.csv"
     
     # Save in the same directory as this script
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    filepath = os.path.join(script_dir, filename)
+    meta_filepath = os.path.join(script_dir, meta_filename)
+    csv_filepath  = os.path.join(script_dir, csv_filename)
     
     try:
-        output = run_experiment_for_model(model_id)
-        
-        # Save to file
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(output)
-        
-        print(f"✅ Experiment complete. Output saved to: {filepath}")
+        # Generate full JSON output from the experiment
+        json_str = run_experiment_for_model(model_id)
+        data = json.loads(json_str)
+        records = data.pop("records", [])
+
+        # Save JSON metadata (without records)
+        with open(meta_filepath, 'w', encoding='utf-8') as f_json:
+            json.dump(data, f_json, ensure_ascii=False, indent=2)
+
+        # Save records to CSV
+        with open(csv_filepath, 'w', newline='', encoding='utf-8') as f_csv:
+            writer = csv.writer(f_csv)
+            # Header: layer,pos,token,entropy
+            header = ["layer","pos","token","entropy"]
+            # Pad all rows to TOP_K_VERBOSE slots
+            for i in range(1, TOP_K_VERBOSE + 1):
+                header.extend([f"top{i}", f"prob{i}"])
+            writer.writerow(header)
+            for rec in records:
+                row = [rec.get("layer"), rec.get("pos"), rec.get("token"), rec.get("entropy")]
+                # Pad each record to TOP_K_VERBOSE entries
+                topk_list = rec.get("topk", [])
+                for j in range(TOP_K_VERBOSE):
+                    if j < len(topk_list):
+                        tok, prob = topk_list[j]
+                    else:
+                        tok, prob = "", ""
+                    row.extend([tok, prob])
+                writer.writerow(row)
+
+        print(f"✅ Experiment complete. JSON metadata saved to: {meta_filepath}")
+        print(f"✅ Records CSV saved to: {csv_filepath}")
         return True
         
     except Exception as e:
@@ -465,7 +574,7 @@ def run_single_model(model_id):
         print(error_msg)
         
         # Still save error output
-        with open(filepath, 'w', encoding='utf-8') as f:
+        with open(meta_filepath, 'w', encoding='utf-8') as f:
             f.write(f"EXPERIMENT FAILED FOR {model_id}\n")
             f.write(f"Error: {str(e)}\n")
             f.write(f"Timestamp: {datetime.now().strftime('%Y%m%d%H%M%S')}\n")
@@ -524,7 +633,8 @@ def main():
     print(f"\n📄 Expected output files:")
     for model_id in CONFIRMED_MODELS:
         clean_name = clean_model_name(model_id)
-        print(f"   output-{clean_name}.txt")
+        print(f"   output-{clean_name}.json")
+        print(f"   output-{clean_name}-records.csv")
     print(f"{'='*80}")
 
 if __name__ == "__main__":

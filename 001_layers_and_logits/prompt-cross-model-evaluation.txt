@@ -1,79 +1,33 @@
 ROLE
-
-You are an interpretability researcher from a top AI research lab (think OpenAI, Anthropic, Google) synthesising results from several open‑weight LLMs probed with the same script. These results are part of a hobby project that probes open‑weight LLMs to inform the philosophical debate between nominalism and realism.
+You are an interpretability researcher from a top AI research lab (e.g. OpenAI, Anthropic, Google) advising a hobby project that probes open‑weight LLMs.
+You are reviewing results of probes of multiple LLM models.
 
 INPUTS
-
-Per‑model evaluation reports (Markdown):
-EVAL
-
-Raw console dumps (output files `output‑{model}.txt`) available in the repo if you need to verify numbers:
-OUTPUT
-
-Probe implementation (for method context): SCRIPT
+- SCRIPT – probing script.  
+- JSON – structured results of the probe (first part of the results of each probe), one file per model.
+- CSV - layer-level results of the probe (second part of the results of each probe), one file per model.
+- EVALS – evaluations of probe results, one per model.
+- Your own expertise.
 
 TASK
-Produce CROSS (GitHub‑flavoured Markdown) that compares the models and surfaces insights relevant to the nominalism ↔ realism debate. Use the structure below **exactly** so later tools can parse the report.
+Write CROSS‑EVAL in GitHub‑flavoured Markdown answering the items below.  
+Draw only from SCRIPT, EVALS files (they are your key input), JSON and CSV (as necessary); avoid broad philosophical claims.
+The result of your evaluation must be in that file, don't put it into your response to me.
 
-Required section structure
+1. Result synthesis  
+Paragraphs that correlate quantitative patterns across models, drawing on your extensive knowledge of LLM interpretability research (cite sources). Quote EVAL line numbers or raw JSON or CSV snippets as needed.
 
-1. Executive summary
-3‑5 bullet points: headline similarities, standout divergences, and the single most interesting open question.
+2. Misinterpretations in existing EVALS
+Bullet each over‑statement or error you found; cite the exact EVAL line.
 
-2. Comparison table with the following columns
-- Model
-- Params
-- Norm type
-- Collapse layer (entropy < 1 bit)
-- Final entropy (bits)
-- First token after collapse
-- Any anomaly
+3. Usefulness for the Realism ↔ Nominalism project  
+Paragraphs framed as an open research question or potential signal, not a conclusion.
 
-Fill the numeric cells from evaluation reports; if missing, recover from output files (console dumps).
+4. Limitations  
+Concrete reasons the present data can mislead.
 
-3. Shared patterns
-
-Bullet list behaviours observed in ≥ 3 models (e.g. entropy cliff then mild rebound, directional relation asymmetry). Quote one line per claim:
-`> "Layer 24 … entropy: 0.78" — Llama‑3 [L912]`.
-
-4. Model‑specific quirks & red flags
-
-Sub‑heading per model with max 3 bullets. Identify anything unusual: e.g. Gemma’s early colon‑bias, Qwen’s delayed collapse. Support with line quotes or the EVAL text/location.
-
-5. Preliminary implications for Realism ↔ Nominalism (no verdicts)
-2‑5 bullets phrased as hypotheses or questions, explicitly tying **the cross‑model evidence** to philosophical angles (concept invariance, token‑dependence, etc.).
-
-No speculative leaps; stay conditional.
-
-6. Methodological caveats
-
-E.g. lens calibration differences, prompt artefacts, variance in norm application. Mention if any model’s OUTPUT shows warnings.
-
-7. Priority next steps
-
-3 concrete comparative probes that **reuse the existing codebase** (e.g. patch the identified collapse block from Mistral into Gemma; run paraphrase battery; apply tuned‑lens across checkpoints).
-
-Each step should reference which unanswered bullet (from §3‑5) it addresses.
-
-8. Appendix: Evidence map
-
-For every numeric cell in the comparison table, list the file and line number(s) where the value was taken.
-
-Format: `Llama‑3 collapse layer → output‑Meta‑Llama‑3‑8B.txt [L880‑L883]`.
-
-
-STYLE / RIGOUR RULES
-
-**Every factual statement** must be supported by either
-- an inline quote from an OUTPUT file (≤ 2 lines) with file ref, or
-- an explicit pointer like “EVAL‑Qwen §2.3”.
-
-If evidence is missing, say “data not present”.
-
-External literature citations optional; if used, place DOI or arXiv ID in parentheses.
-
-Use concise sentences and bullet lists; avoid block quotes longer than two lines.
-
-**Do not** produce final philosophical conclusions; keep language exploratory (“suggests”, “may indicate”).
-
-If you open any output file, cache only the small snippet needed; avoid pasting long logs.
+STYLE GUIDELINES
+- Be conscise but thorough; no tables; prefer paragraphs over lists.  
+- Quote lines with L‑numbers; keep quotes short.  
+- Cite external papers only with DOI/arXiv; skip if unsure.  
+- Avoid normative language; focus on actionable analysis.

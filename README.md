@@ -17,7 +17,7 @@ Basic chat interface for testing model responses and getting familiar with the m
 
 ### 001: Layer-by-Layer Analysis
 **Directory**: `001_layers_and_logits/`
-**Files**: `run.py`, individual model evaluations (`evaluation-*.md`), cross-model analysis (`interpretability/001_layers_and_logits/evaluation-cross-model.md`), raw outputs (`output-*.txt`), and evaluation prompts (`prompt-*.txt`)
+**Files**: `run.py`, individual model evaluations (`evaluation-*.md`), cross-model analysis (`001_layers_and_logits/evaluation-cross-model.md`), structured outputs (`output-*.json`, `output-*-records.csv`), and evaluation prompts (`prompt-*.txt`)
 
 Layer-by-layer analysis of how the prediction for "What is the capital of Germany?" evolves through four different models:
 
@@ -27,11 +27,17 @@ Layer-by-layer analysis of how the prediction for "What is the capital of German
 - **Gemma-2-9B** (42 layers): Later convergence with early over-confidence on punctuation
 
 
-**Cross-Model Findings**: 
-- All four models exhibit a sharp entropy **collapse** to near-deterministic predictions roughly 75-85 % into their layer stack. Gemma collapses twice: an early syntactic ':' placeholder, then a later semantic collapse onto "Berlin" (≈ 83 %).
-- A consistent 1–2 bit **entropy rebound** appears at the final unembedding layer in every model.
-- Mid-stack **meta-token fixation** (e.g. "Answer"/"answer") shows up in three models, hinting at a symbolic slot-filling stage before concrete entity resolution.
-- Model-specific quirks—Gemma's colon-spam, Qwen's underscore phase, Mistral's late Washington distraction—highlight spurious template biases.
+**Cross-Model Findings** (see `evaluation-cross-model.md` for full analysis):
+
+– A depth-normalised **entropy collapse**: the correct answer becomes near-deterministic at ~0.78 ± 0.05 of each model's layer stack (e.g. Llama & Mistral L 25/32, Qwen L 28/36, Gemma L 35/42).
+
+– **Concept-before-entity** progression: generic tokens like "capital" (or placeholders like "Answer/") peak 3-5 layers before "Berlin" dominates.
+
+– Universal **entropy rebound** of ≈1–2 bits after `ln_final` + unembed, indicating a calibration step rather than new evidence.
+
+– **Early-layer heterogeneity**: Gemma is over-confident on punctuation (entropy < 10⁻⁶ bits on ':'), whereas the others emit high-entropy junk or multilingual shards, revealing tokeniser noise when semantics are undeveloped.
+
+– Model-specific artefacts persist (colon-spam, underscore phase, Washington detour), underscoring template and corpus biases.
 
 ## Setup
 
@@ -44,7 +50,7 @@ Layer-by-layer analysis of how the prediction for "What is the capital of German
 
 ```bash
 git clone <your-repo-url>
-cd tinycave
+cd logos-in-layers
 python -m venv venv
 source venv/bin/activate  # On macOS/Linux
 pip install -r requirements.txt
@@ -82,27 +88,17 @@ python run.py
 - **GGUF files** - Require raw transformer format
 - **Extremely large models** - Hardware constraints
 
-## Key Insights
-
-### Interpretability Patterns
-- **Entropy collapse & rebound**: Near-zero entropy collapse followed by a modest (≈ 1–2 bit) rebound at the unembedding step.
-- **Mid-stack meta tokens**: "Answer"-style labels frequently dominate before the model commits to the factual entity.
-- **Late-binding factual knowledge**: Correct answers emerge consistently at 75-85% network depth
-- **Hierarchical processing**: Abstract categories ("capital") before specific instances ("Berlin")
-- **Model-specific artifacts**: Each architecture shows unique spurious features and biases
-- **Surface-form sensitivity**: Strong dependence on prompt formatting and direction
 
 ## File Structure
 
 ```
 001_layers_and_logits/
-├── run.py                           # Main experiment script
-├── evaluation-[model].md            # Individual model analyses  
-├── output-[model].txt               # Raw experimental outputs
-├── prompt-*.txt                     # Evaluation prompts
-└── interpretability/
-    └── 001_layers_and_logits/
-        └── evaluation-cross-model.md # Cross-model comparative analysis
+├── run.py                         # Main experiment script
+├── evaluation-[model].md          # Per-model analyses  
+├── evaluation-cross-model.md      # Cross-model comparative analysis
+├── output-[model].json            # JSON metadata (per model)
+├── output-[model]-records.csv     # Layer-wise records
+├── prompt-*.txt                   # Evaluation prompts
 ```
 
 ## Further Reading
@@ -121,5 +117,7 @@ MIT License - see LICENSE file for details.
 - **Apple** for Metal GPU acceleration
 
 ## AI-Assisted Development
-Research guided by **OpenAI o3** for conceptual direction, implemented with **Anthropic Claude 4 Sonnet** via **Cursor IDE** for code development and analysis. Individual model evaluations and cross-model analysis generated using OpenAI o3.
+- Conceptual direction: **OpenAI o3 pro**
+- Implementation: **Anthropic Claude 4 Sonnet** and **OpenAI o4-mini** via **Cursor IDE** 
+- Individual model evaluations and cross-model analysis: **OpenAI o3**
 

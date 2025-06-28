@@ -8,21 +8,28 @@
 ## Key Technical Implementation Details
 
 ### RMSNorm vs LayerNorm Handling
-**Problem**: All tested models use Pre-RMSNorm, not vanilla LayerNorm. Applying LayerNorm lens to RMSNorm creates artifacts.
+**Observation**: All tested checkpoints employ **Pre-RMSNorm**.  A naive LayerNorm lens therefore scales residuals incorrectly.
 
-**Solution**: 
+**Current implementation** (`run.py ≥ 2025-06-28`):
 ```python
 def is_safe_layernorm(norm_mod):
     return isinstance(norm_mod, nn.LayerNorm)
 
+def rms_lens(resid, gamma, eps=1e-5):
+    rms = torch.sqrt(resid.pow(2).mean(-1, keepdim=True) + eps)
+    return resid / rms * gamma
+
 def apply_norm_or_skip(resid, norm_mod, layer_info=""):
     if isinstance(norm_mod, nn.LayerNorm):
-        return norm_mod(resid)
-    # Skip for RMSNorm to avoid distortion
-    return resid
+        return norm_mod(resid)            # vanilla LN
+    if "RMS" in type(norm_mod).__name__:
+        eps   = getattr(norm_mod, "eps", 1e-5)
+        gamma = _get_rms_scale(norm_mod) or torch.ones(resid.shape[-1], device=resid.device)
+        return rms_lens(resid, gamma, eps) # RMS lens
+    return resid                           # fallback (rare)
 ```
 
-**Models tested**: All use Pre-RMSNorm (Meta, Mistral, Google, Alibaba)
+This applies a *true* RMS lens rather than skipping the operation.  All four reference models therefore use **normalised** residuals in the lens analysis.
 
 ### Memory Optimization for Large Models
 **Problem**: `run_with_cache()` loads full activations, causing OOM on 9B models
@@ -31,10 +38,12 @@ def apply_norm_or_skip(resid, norm_mod, layer_info=""):
 ```python
 def make_cache_hook(cache_dict):
     def cache_residual_hook(tensor, hook):
-        # Only last token, move to CPU
-        cache_dict[hook.name] = tensor[:, -1:, :].cpu().detach()
+        # Store **full sequence** to enable per-position analysis,
+        # then move to CPU in fp32 for memory safety.
+        cache_dict[hook.name] = tensor.cpu().float().detach()
     return cache_residual_hook
 ```
+If memory is a constraint, slice to `[:, -1:]` for last-token-only caching.
 
 ### Device/Precision Management
 ```python
@@ -84,13 +93,14 @@ model = HookedTransformer.from_pretrained(
 ### Experiment Structure
 ```
 XXX_experiment_name/
-├── run.py                  # Main script
-├── evaluation-*.md         # Analysis results  
-├── output-*.txt           # Raw outputs
-├── prompt-*.txt           # Evaluation prompts
-└── interpretability/      # AI-generated analysis
+├── run.py                       # Main script
+├── evaluation-*.md              # Per-model analyses  
+├── evaluation-cross-model.md    # Cross-model analysis (if applicable)
+├── output-*.json                # JSON metadata
+├── output-*-records.csv         # Layer-wise records
+├── prompt-*.txt                 # Evaluation prompts
+└── interpretability/            # AI-generated analysis
     └── XXX_experiment_name/
-        └── evaluation-cross-model.md
 ```
 
 ### Toggle Patterns
@@ -105,18 +115,18 @@ The main experiment script (`001_layers_and_logits/run.py`) exposes several rese
 
 - `USE_NORM_LENS` *(bool, default **True**)* – apply the **normalization lens** before unembedding. Falls back gracefully for RMSNorm-only checkpoints via `apply_norm_or_skip`.
 - `USE_FP32_UNEMBED` *(bool, default **True**)* – cast the unembedding matrix (and optional bias) to **float32** so we can resolve logit gaps < 1 e-5 that would vanish in fp16.
-- **Residual cache device** – the `cache_residual_hook` currently `.cpu()`s the last-token residual to save GPU RAM. For large-batch / multi-prompt sweeps comment that line out to keep everything on-device.
+- **Residual cache device** – the `cache_residual_hook` moves **full-sequence** residuals to CPU fp32.  For GPU-only workflows comment out the `.cpu()` call; for memory-tight runs slice to `[:, -1:]` first.
 
 These flags live near the top of `evaluate_model()` – keep them there so downstream notebooks can `sed`/patch without parsing the full file.
 
 ### Analysis Pipeline
 
-1. `run.py` (per-model) → console dump saved to `output-{model}.txt`.
+1. `run.py` (per-model) writes `output-{model}.json` (metadata) and `output-{model}-records.csv` (layer records).
 2. `prompt-single-model-evaluation.txt` → **LLM** summarises each run into `evaluation-{model}.md`.
-3. `prompt-cross-model-evaluation.txt` consumes the per-model markdown and outputs `interpretability/001_layers_and_logits/evaluation-cross-model.md`.
+3. `prompt-cross-model-evaluation.txt` consumes the per-model markdown and writes `evaluation-cross-model.md` in the same experiment directory.
 4. The meta prompt (`prompt-meta-evaluation.txt`) critiques methodology and suggests next probes; results stored next to the cross-model report.
 
-Keep all artefacts in‐repo for provenance – the evaluation markdown is machine-read by later automation so headings must remain stable.
+Keep all artefacts in-repo for provenance – the evaluation markdown is machine-read by later automation so headings must remain stable.
 
 ## AI Evaluation System
 
@@ -126,16 +136,11 @@ Keep all artefacts in‐repo for provenance – the evaluation markdown is machi
 - `prompt-meta-evaluation.txt`: Methodology analysis
 
 ### Usage Pattern
-1. Run experiment → generate `output-*.txt`
+1. Run experiment → generate `output-*.json` (metadata) **and** `output-*-records.csv` (layer records)
 2. Feed outputs to AI with evaluation prompts
 3. Generate `evaluation-*.md` files
-4. Cross-model analysis in `interpretability/` subdirectory
+4. Cross-model analysis is written alongside per-model evaluations in the experiment directory
 
-
-### Known Issues
-- Entropy values not comparable across models due to RMSNorm skipping
-- Early layers show BPE noise artifacts (not harmful but clutters output)
-- Temperature sweep only done on final output, not per-layer
 
 ## Philosophical Project Context
 - **Goal**: Use interpretability to inform nominalism vs realism debate
