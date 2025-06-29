@@ -55,9 +55,6 @@ cd 001_layers_and_logits
 python run.py
 ```
 
-## Supported Models
-<!-- Detailed supported-model list and experiment file structure have moved to `001_layers_and_logits/NOTES.md`. -->
-
 ## Further Reading
 
 For implementation details, developer-focused toggles, and methodology notes, see `PROJECT_NOTES.md`. 

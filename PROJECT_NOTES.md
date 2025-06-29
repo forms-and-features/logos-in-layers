@@ -1,4 +1,4 @@
-# Interpretability Project - Development Notes
+# Interpretability Project - Development Notes for AI assistant
 
 ## Experiment Notes
 Detailed technical notes for experiment `001_layers_and_logits` have been moved to `001_layers_and_logits/NOTES.md`.
