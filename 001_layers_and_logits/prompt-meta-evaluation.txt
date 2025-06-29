@@ -40,6 +40,15 @@ Your task is to:
 - consider the usefulness of the findings for the realism vs nominalism debate;
 - propose next steps, keeping in mind project context and goals.
 
+Please structure your response under four headers:
+
+1. Code & methodology
+2. Result interpretation
+3. Philosophical relevance
+4. Additional notes
+5. Recommended next steps
+
+
 Use your knowledge of cutting-edge LLM research. Be thorough and specific. Make sure that statements are supported by evidence from the txt dump, don't speculate. Contextualize your findings using your broader knowledge of the latest interpretability research, citing sources when appropriate. Always provide links to sources, and verify that sources contain the claims that you're citing; otherwise, reformulate or remove the claim. In any case, never provide a non-existent source.
 
 We are analysing layer-by-layer logit-lens sweeps over four open-weight base LLMs (Llama-3-8B, Mistral-7B-v0.1, Gemma-2-9B, Qwen-3-8B).
@@ -54,8 +63,12 @@ The script:
   `Give the city name only, plain text. The capital of Germany is called simply`
   followed by the logit-lens sweep of the next unseen token (“⟨NEXT⟩”).
   The brevity instruction intentionally stresses instruction-following pathways; removing it is known to shift collapse depths but that comparison is out-of-scope here.
-* Runs **CPU inference, float-32 residual cache, FP-32 unembed**, with no seeding; minor ranking ties near p≈0.90 may fluctuate.  Early-layer token decoding sometimes produces garbled Unicode - these artefacts should be treated as noise.
-* Outputs three artefacts per model: a JSON meta file (diagnostics + summary), a full-sequence CSV (“records”) and a pure-next-token CSV (one row per layer) that now includes the flags `copy_collapse`, `entropy_collapse` (legacy) and `is_answer`.
+* Inference runs on the user-selected device (CUDA, MPS or CPU). Residuals are cached in fp32; the unembedding matrix is promoted to fp32 for numerical accuracy. A deterministic bootstrap seeds Python, NumPy and PyTorch and enables deterministic kernels, so identical runs yield byte-identical outputs.  
+* Outputs per model: a JSON meta file, a records CSV, and a pure-next-token CSV (with `copy_collapse`, `entropy_collapse`, `is_answer`, and `rest_mass`).  
+* The script now includes a faithful LayerNorm path; RMSNorm models are unchanged.  
+* Additional artefacts: 14 paraphrased test-prompt probes and a two-temperature sweep on the base prompt.
+
+Keep within-model comparisons; cross-model comparisons are still subject to RMS-lens bias.
 
 Known limitations to keep in mind:
 
