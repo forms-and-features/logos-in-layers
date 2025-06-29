@@ -96,9 +96,17 @@ def apply_norm_or_skip(residual: torch.Tensor, norm_module):
             bias   = norm_module.bias.to(residual.dtype)
             return normalized * weight + bias
         else:
-            # assume RMSNorm-style (weight only, no bias)
+            # Gracefully handle different RMSNorm variants that may expose the scale
+            # parameter under various attribute names (e.g. `.w`, `.weight`, `.scale`, `.gamma`).
             denom = residual.norm(dim=-1, keepdim=True) / math.sqrt(residual.size(-1))
-            return residual / (denom + norm_module.eps) * norm_module.weight
+            scale = _get_rms_scale(norm_module)
+            if scale is not None:
+                # Detach to avoid autograd bookkeeping and match device & dtype
+                scale = scale.detach().to(residual.device, dtype=residual.dtype)
+                return residual / (denom + norm_module.eps) * scale
+            else:
+                # Fallback: no learned scale present (rare but possible)
+                return residual / (denom + norm_module.eps)
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -910,9 +918,9 @@ def main():
     for model_id in CONFIRMED_MODELS:
         clean_name = clean_model_name(model_id)
         print(f"   {os.path.join(run_dir, f'output-{clean_name}.json')}")
-        print(f"   {os.path.join(run_dir, f'output-{clean_name}-records.csv')} (all positions)")
-        print(f"   {os.path.join(run_dir, f'output-{clean_name}-pure-next-token.csv')} (clean entropy)")
-        print(f"   {os.path.join(run_dir, f'evaluation-{clean_name}.md')} (evaluation report)")
+        print(f"   {os.path.join(run_dir, f'output-{clean_name}-records.csv')}")
+        print(f"   {os.path.join(run_dir, f'output-{clean_name}-pure-next-token.csv')} ")
+        print(f"   {os.path.join(run_dir, f'evaluation-{clean_name}.md')}")
     print(f"{'='*80}")
 
 if __name__ == "__main__":
