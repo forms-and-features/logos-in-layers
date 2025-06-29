@@ -6,10 +6,11 @@ INPUTS
 - SCRIPT – source code of the probe's script (for context): 
 
 - JSON  – one json file with structured results of the probe of the model(first part of results):
-
+001_layers_and_logits/run-2025-06-29-21-02/output-Qwen3-8B.json
 
 - CSV  - two csv files with detailed layer-level results of the probe of the model (second part of results):
-
+001_layers_and_logits/run-2025-06-29-21-02/output-Qwen3-8B-records.csv
+001_layers_and_logits/run-2025-06-29-21-02/output-Qwen3-8B-pure-next-token.csv 
 
 - Your own research knowledge.
 
