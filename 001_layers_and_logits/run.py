@@ -855,6 +855,17 @@ def main():
     run_dir = os.path.join(os.path.dirname(script_path), timestamp)
     os.makedirs(run_dir, exist_ok=True)
 
+    # Create empty markdown files for evaluation reports
+    print(f"📝 Creating empty evaluation markdown files...")
+    for model_id in CONFIRMED_MODELS:
+        clean_name = clean_model_name(model_id)
+        eval_md_path = os.path.join(run_dir, f"evaluation-{clean_name}.md")
+        with open(eval_md_path, 'w', encoding='utf-8') as f:
+            f.write(f"# Evaluation Report: {model_id}\n\n")
+            f.write(f"*Run executed on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
+
+        print(f"   📄 Created: evaluation-{clean_name}.md")
+
     results = []
     
     for i, model_id in enumerate(CONFIRMED_MODELS, 1):
@@ -901,6 +912,7 @@ def main():
         print(f"   {os.path.join(run_dir, f'output-{clean_name}.json')}")
         print(f"   {os.path.join(run_dir, f'output-{clean_name}-records.csv')} (all positions)")
         print(f"   {os.path.join(run_dir, f'output-{clean_name}-pure-next-token.csv')} (clean entropy)")
+        print(f"   {os.path.join(run_dir, f'evaluation-{clean_name}.md')} (evaluation report)")
     print(f"{'='*80}")
 
 if __name__ == "__main__":
