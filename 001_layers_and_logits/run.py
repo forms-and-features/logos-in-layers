@@ -77,9 +77,18 @@ def apply_norm_or_skip(resid, norm_mod, layer_info=""):
         Normalized residual stream (or original if skipped)
     Note: All supported norm types are handled above; fallback below is unreachable.
     """
-    # Vanilla LayerNorm - apply as before
+    # FIXED: Bias-free LayerNorm to avoid distorting unembedding
+    # The bias term β shifts the residual stream, which can scramble top-k rankings
+    # since the unembedding matrix was trained on centered activations
     if isinstance(norm_mod, nn.LayerNorm):
-        return norm_mod(resid)
+        eps = norm_mod.eps
+        # Manual LayerNorm without bias: (x - μ) / σ * γ
+        mu = resid.mean(-1, keepdim=True)
+        var = resid.var(-1, unbiased=False, keepdim=True)
+        normalized = (resid - mu) / torch.sqrt(var + eps)
+        # Apply only the scale parameter (weight), skip bias
+        # Note: This fix is rarely needed since most modern models use RMSNorm
+        return normalized * norm_mod.weight
     
     # RMSNorm - robust scale detection and normalization
     norm_type = type(norm_mod).__name__
@@ -161,11 +170,39 @@ def run_experiment_for_model(model_id):
         # FIXED: Remove teacher-forcing by using prompt that stops before "Answer:"
         # This way we predict the first truly unseen token rather than analyzing 
         # tokens the model has already consumed
-        context_prompt = "Question: What is the capital of Germany?"
-        full_prompt = "Question: What is the capital of Germany? Answer:"  # For display/comparison
+        context_prompt = "The capital of Germany is "
+        ground_truth = "Berlin"  # For display/comparison
         
         first_block_ln1_type = type(model.blocks[0].ln1).__name__ if hasattr(model, 'blocks') and len(model.blocks) > 0 else None
         final_ln_type = type(model.ln_final).__name__ if hasattr(model, 'ln_final') else None
+        
+        # Check if LayerNorm bias fix will be applied
+        uses_layernorm = (hasattr(model, 'blocks') and len(model.blocks) > 0 and 
+                         isinstance(model.blocks[0].ln1, nn.LayerNorm))
+        layernorm_bias_fix = "active" if uses_layernorm else "not_needed_rms_model"
+        
+        # Check normalization alignment for post-block residuals
+        has_ln2 = (hasattr(model, 'blocks') and len(model.blocks) > 0 and 
+                   hasattr(model.blocks[0], 'ln2'))
+        if has_ln2:
+            ln2_type = type(model.blocks[0].ln2).__name__
+            if isinstance(model.blocks[0].ln2, nn.LayerNorm):
+                norm_alignment_fix = "using_ln2_layernorm_for_post_block"
+            else:
+                norm_alignment_fix = "using_ln2_rmsnorm_for_post_block"
+        else:
+            norm_alignment_fix = "fallback_to_ln1"
+        
+        # Check layer-0 normalization approach
+        layer0_norm_fix = "using_real_ln1_on_embeddings" if USE_NORM_LENS else "no_normalization"
+        
+        # Check mixed precision fix
+        mixed_precision_fix = "casting_to_fp32_before_unembed"
+        
+        # Check positional embedding type for layer-0 interpretation
+        has_additive_pos_embed = 'hook_pos_embed' in model.hook_dict
+        layer0_position_info = "additive_pos_embed_included" if has_additive_pos_embed else "token_only_rotary_model"
+        
         diag = {
             "type": "diagnostics",
             "model": model_id,
@@ -175,13 +212,18 @@ def run_experiment_for_model(model_id):
             "unembed_dtype": str(UNEMBED_DTYPE),
             "first_block_ln1_type": first_block_ln1_type,
             "final_ln_type": final_ln_type,
+            "layernorm_bias_fix": layernorm_bias_fix,
+            "norm_alignment_fix": norm_alignment_fix,
+            "layer0_norm_fix": layer0_norm_fix,
+            "mixed_precision_fix": mixed_precision_fix,
+            "layer0_position_info": layer0_position_info,
             "context_prompt": context_prompt,
-            "target_prediction": "first unseen token (likely ' Answer' or 'Answer' or ' Berlin')"
+            "target_prediction": "first unseen token (likely 'Berlin')"
         }
         print(json.dumps(diag, ensure_ascii=False))
         # Emit prompt record
-        print(json.dumps({"type": "prompt", "context_prompt": context_prompt, "full_prompt_for_comparison": full_prompt}, ensure_ascii=False))
-        IMPORTANT_WORDS = ["Germany", "Berlin", "capital", "Answer"]
+        print(json.dumps({"type": "prompt", "context_prompt": context_prompt, "ground_truth": ground_truth}, ensure_ascii=False))
+        IMPORTANT_WORDS = ["Germany", "Berlin", "capital",]
 
         def is_verbose_position(pos, token_str, seq_len):
             # Final position (predicting next token) always verbose
@@ -193,10 +235,10 @@ def run_experiment_for_model(model_id):
                     return True
             return False
 
-        def print_summary(layer_idx, pos, token_str, entropy_bits, top_tokens, top_probs):
+        def print_summary(layer_idx, pos, token_str, entropy_bits, top_tokens, top_probs, is_pure_next_token=False):
             # Emit a JSON Lines record for this layer/position
             record = {
-                "type": "record",
+                "type": "pure_next_token_record" if is_pure_next_token else "record",
                 "layer": layer_idx,
                 "pos": pos,
                 "token": token_str,
@@ -286,17 +328,19 @@ def run_experiment_for_model(model_id):
                              residual_cache['hook_pos_embed']).to(model.cfg.device)
                 else:
                     resid = residual_cache['hook_embed'].to(model.cfg.device)
-                    print("[diagnostic] No separate positional embedding hook found (as expected for some models); using token embeddings for layer 0.")
-                # Apply first block's LayerNorm to embeddings if using norm-lens
+                    print("[diagnostic] No separate positional embedding hook found (as expected for rotary models).")
+                    print("[diagnostic] Layer 0 contains TOKEN information only; positional info is injected inside attention layers.")
+                # FIXED: Apply first real normalizer to embeddings if using norm-lens
+                # This gives us the normalized embeddings that the model actually sees
                 if USE_NORM_LENS:
-                    resid = rms_lens(
-                        resid,
-                        torch.ones(resid.shape[-1], device=resid.device),
-                        eps=getattr(model.blocks[0].ln1, "eps", 1e-5)
-                    )
+                    # Use the actual first normalization layer instead of synthetic γ=1
+                    print("[diagnostic] Applying real ln1 normalization to embeddings (not synthetic γ=1)")
+                    resid = apply_norm_or_skip(resid, model.blocks[0].ln1, "layer 0 (embeddings)")
                 
-                # Vectorized unembedding for all positions
-                logits_all = model.unembed(resid[0].to(UNEMBED_DTYPE)).float()  # [seq, d_vocab]
+                # FIXED: Cast to FP32 before unembedding to avoid precision loss
+                # Vectorized unembedding for all positions  
+                resid_fp32 = resid[0].to(torch.float32)
+                logits_all = model.unembed(resid_fp32).float()  # [seq, d_vocab]
                 
                 for pos in range(tokens.shape[1]):
                     layer_logits = logits_all[pos]
@@ -328,6 +372,19 @@ def run_experiment_for_model(model_id):
                             print(f"    {i+1:2d}. '{tok}' ({prob.item():.6f})")
                         print()
                 
+                # FIXED: Also emit pure next-token record (last position only)
+                # This avoids deflated entropy from tokens the model has already seen
+                last_pos = tokens.shape[1] - 1
+                last_logits = logits_all[last_pos]
+                last_log_probs = torch.log_softmax(last_logits, dim=0).to(torch.float32)
+                last_entropy_nats = -torch.sum(torch.exp(last_log_probs) * last_log_probs)
+                last_entropy_bits = last_entropy_nats.item() / math.log(2)
+                last_token_str = str_tokens[last_pos]
+                _, last_top_indices = torch.topk(last_logits, TOP_K_RECORD, largest=True, sorted=True)
+                last_top_probs = torch.exp(last_log_probs[last_top_indices])
+                last_top_tokens = [model.tokenizer.decode([idx]) for idx in last_top_indices]
+                print_summary(0, last_pos, last_token_str, last_entropy_bits, last_top_tokens, last_top_probs, is_pure_next_token=True)
+                
                 # Layers 1 to n_layers: after each transformer block
                 for layer in range(n_layers):
                     print(f"Layer {layer + 1:2d} (after transformer block {layer}):")
@@ -336,17 +393,29 @@ def run_experiment_for_model(model_id):
                     
                     # Apply normalization if requested
                     if USE_NORM_LENS:
-                        # For pre-LN models, apply ln_final on last layer, otherwise a simple RMS lens
+                        # For pre-LN models, apply ln_final on last layer, otherwise use ln2 for post-block residuals
                         if layer == n_layers - 1 and hasattr(model, 'ln_final'):
                             resid = apply_norm_or_skip(resid, model.ln_final, f"layer {layer + 1} (final ln)")
                         else:
-                            gamma = _get_rms_scale(model.blocks[layer].ln1) \
-                                    or torch.ones(resid.shape[-1], device=resid.device)
-                            eps = getattr(model.blocks[layer].ln1, "eps", 1e-5)
-                            resid = rms_lens(resid, gamma, eps)
+                            # FIXED: Use ln2 (MLP-pre norm) instead of ln1 for post-block residuals
+                            # ln2 stats better match the post-attention, pre-MLP state which is closer to post-block
+                            norm_layer = model.blocks[layer].ln2 if hasattr(model.blocks[layer], 'ln2') else model.blocks[layer].ln1
+                            
+                            # FIXED: Safety guard for ln2 type - handle both LayerNorm and RMSNorm
+                            if isinstance(norm_layer, nn.LayerNorm):
+                                # ln2 is LayerNorm (e.g., GPT-NeoX style) - use full LayerNorm with mean-centering
+                                resid = apply_norm_or_skip(resid, norm_layer, f"layer {layer + 1} ln2")
+                            else:
+                                # ln2 is RMSNorm (e.g., Llama style) - use RMS lens
+                                gamma = _get_rms_scale(norm_layer) \
+                                        or torch.ones(resid.shape[-1], device=resid.device)
+                                eps = getattr(norm_layer, "eps", 1e-5)
+                                resid = rms_lens(resid, gamma, eps)
                     
+                    # FIXED: Cast to FP32 before unembedding to avoid precision loss
                     # Vectorized unembedding for all positions
-                    logits_all = model.unembed(resid[0].to(UNEMBED_DTYPE)).float() # [seq, d_vocab]
+                    resid_fp32 = resid[0].to(torch.float32) 
+                    logits_all = model.unembed(resid_fp32).float() # [seq, d_vocab]
                     
                     for pos in range(tokens.shape[1]):
                         layer_logits = logits_all[pos]
@@ -377,6 +446,19 @@ def run_experiment_for_model(model_id):
                                 tok = model.tokenizer.decode([idx])
                                 print(f"    {i+1:2d}. '{tok}' ({prob.item():.6f})")
                             print()
+                    
+                    # FIXED: Also emit pure next-token record (last position only) 
+                    # This avoids deflated entropy from tokens the model has already seen
+                    last_pos = tokens.shape[1] - 1
+                    last_logits = logits_all[last_pos]
+                    last_log_probs = torch.log_softmax(last_logits, dim=0).to(torch.float32)
+                    last_entropy_nats = -torch.sum(torch.exp(last_log_probs) * last_log_probs)
+                    last_entropy_bits = last_entropy_nats.item() / math.log(2)
+                    last_token_str = str_tokens[last_pos]
+                    _, last_top_indices = torch.topk(last_logits, TOP_K_RECORD, largest=True, sorted=True)
+                    last_top_probs = torch.exp(last_log_probs[last_top_indices])
+                    last_top_tokens = [model.tokenizer.decode([idx]) for idx in last_top_indices]
+                    print_summary(layer + 1, last_pos, last_token_str, last_entropy_bits, last_top_tokens, last_top_probs, is_pure_next_token=True)
                 
             finally:
                 # Clean up hooks and cache
@@ -414,9 +496,11 @@ def run_experiment_for_model(model_id):
             # Emit additional probing records for test prompts
             # Cache tokenized test prompts to avoid redundant tokenization
             test_prompts = [
-                "Germany's capital is", 
-                "Berlin is the capital of",
-                "Respond in one word: which city is the capital of Germany?"
+                "Berlin is the capital of ",
+                "Germany's capital city is called ",
+                "The capital city of Germany is named ",
+                "Germany has its capital at ",
+                "In Germany, the capital city is ",
             ]
             test_tokens_cache = {prompt: model.to_tokens(prompt).to(model.cfg.device) for prompt in test_prompts}
             
@@ -513,6 +597,7 @@ def run_experiment_for_model(model_id):
         diagnostics = next(o for o in objs if o.get('type') == 'diagnostics')
         prompt_rec = next(o for o in objs if o.get('type') == 'prompt')
         records = [o for o in objs if o.get('type') == 'record']
+        pure_next_token_records = [o for o in objs if o.get('type') == 'pure_next_token_record']
         final_pred = next(o for o in objs if o.get('type') == 'final_prediction')
         test_prompts = [o for o in objs if o.get('type') == 'test_prompt']
         temp_expl = [o for o in objs if o.get('type') == 'temperature_exploration']
@@ -522,6 +607,7 @@ def run_experiment_for_model(model_id):
             "diagnostics": diagnostics,
             "prompt": prompt_rec,  # Keep full prompt record with both context and full versions
             "records": records,
+            "pure_next_token_records": pure_next_token_records,
             "final_prediction": final_pred,
             "test_prompts": test_prompts,
             "temperature_exploration": temp_expl,
@@ -547,21 +633,24 @@ def run_single_model(model_id):
         except AttributeError:
             pass
     
-    # Generate filename
+    # Generate filename (FIXED: moved outside CUDA block to fix scoping issue)
     clean_name = clean_model_name(model_id)
     meta_filename = f"output-{clean_name}.json"
     csv_filename  = f"output-{clean_name}-records.csv"
+    pure_csv_filename = f"output-{clean_name}-pure-next-token.csv"
     
     # Save in the same directory as this script
     script_dir = os.path.dirname(os.path.abspath(__file__))
     meta_filepath = os.path.join(script_dir, meta_filename)
     csv_filepath  = os.path.join(script_dir, csv_filename)
+    pure_csv_filepath = os.path.join(script_dir, pure_csv_filename)
     
     try:
         # Generate full JSON output from the experiment
         json_str = run_experiment_for_model(model_id)
         data = json.loads(json_str)
         records = data.pop("records", [])
+        pure_next_token_records = data.pop("pure_next_token_records", [])
 
         # Save JSON metadata (without records)
         with open(meta_filepath, 'w', encoding='utf-8') as f_json:
@@ -570,26 +659,58 @@ def run_single_model(model_id):
         # Save records to CSV
         with open(csv_filepath, 'w', newline='', encoding='utf-8') as f_csv:
             writer = csv.writer(f_csv)
-            # Header: layer,pos,token,entropy
+            # FIXED: Add rest_mass column to preserve full probability distribution
+            # Header: layer,pos,token,entropy + top-k pairs + rest_mass
             header = ["layer","pos","token","entropy"]
             # Pad all rows to TOP_K_VERBOSE slots
             for i in range(1, TOP_K_VERBOSE + 1):
                 header.extend([f"top{i}", f"prob{i}"])
+            header.append("rest_mass")  # Probability mass not in top-k
             writer.writerow(header)
             for rec in records:
                 row = [rec.get("layer"), rec.get("pos"), rec.get("token"), rec.get("entropy")]
                 # Pad each record to TOP_K_VERBOSE entries
                 topk_list = rec.get("topk", [])
+                topk_prob_sum = 0.0
                 for j in range(TOP_K_VERBOSE):
                     if j < len(topk_list):
                         tok, prob = topk_list[j]
+                        topk_prob_sum += prob
                     else:
                         tok, prob = "", ""
                     row.extend([tok, prob])
+                # Add rest-of-probability-mass for offline entropy/KL calculations
+                rest_mass = max(0.0, 1.0 - topk_prob_sum)  # Ensure non-negative
+                row.append(rest_mass)
+                writer.writerow(row)
+
+        # Save pure next-token records to separate CSV (cleaner entropy analysis)
+        with open(pure_csv_filepath, 'w', newline='', encoding='utf-8') as f_csv:
+            writer = csv.writer(f_csv)
+            # Same header structure as main CSV
+            header = ["layer","pos","token","entropy"]
+            for i in range(1, TOP_K_VERBOSE + 1):
+                header.extend([f"top{i}", f"prob{i}"])
+            header.append("rest_mass")
+            writer.writerow(header)
+            for rec in pure_next_token_records:
+                row = [rec.get("layer"), rec.get("pos"), rec.get("token"), rec.get("entropy")]
+                topk_list = rec.get("topk", [])
+                topk_prob_sum = 0.0
+                for j in range(TOP_K_VERBOSE):
+                    if j < len(topk_list):
+                        tok, prob = topk_list[j]
+                        topk_prob_sum += prob
+                    else:
+                        tok, prob = "", ""
+                    row.extend([tok, prob])
+                rest_mass = max(0.0, 1.0 - topk_prob_sum)
+                row.append(rest_mass)
                 writer.writerow(row)
 
         print(f"✅ Experiment complete. JSON metadata saved to: {meta_filepath}")
         print(f"✅ Records CSV saved to: {csv_filepath}")
+        print(f"✅ Pure next-token CSV saved to: {pure_csv_filepath}")
         return True
         
     except Exception as e:
@@ -673,7 +794,8 @@ def main():
     for model_id in CONFIRMED_MODELS:
         clean_name = clean_model_name(model_id)
         print(f"   output-{clean_name}.json")
-        print(f"   output-{clean_name}-records.csv")
+        print(f"   output-{clean_name}-records.csv (all positions)")
+        print(f"   output-{clean_name}-pure-next-token.csv (clean entropy)")
     print(f"{'='*80}")
 
 if __name__ == "__main__":

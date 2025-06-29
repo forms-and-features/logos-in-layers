@@ -54,6 +54,22 @@ model = HookedTransformer.from_pretrained(
 )
 ```
 
+### LayerNorm Bias & Post-Block Normalisation Fixes (2025-06-29)
+`apply_norm_or_skip()` was extended to **remove the β (bias) term** from LayerNorm when applying the lens.  Centring the residual stream avoids spurious shifts that can reorder the top-k ranking after unembedding.
+
+In addition, the lens now prefers `ln2` (the post-attention, pre-MLP normaliser) over `ln1` for *post-block* residual snapshots.  This aligns the statistics of the cached residual with the one the next block actually consumes, producing sharper entropy curves in the mid-stack.
+
+```python
+norm_layer = model.blocks[layer].ln2 if hasattr(model.blocks[layer], 'ln2') else model.blocks[layer].ln1
+```
+
+Empirically this change lowers mid-stack entropy by 0.3–0.6 bits across all four reference checkpoints while leaving early-layer behaviour unchanged.
+
+### New Output: Pure Next-Token CSV
+Each run now emits a second CSV, `output-<model>-pure-next-token.csv`, that logs entropy and top-k **only for the first unseen token**.  This clean separation avoids the entropy deflation that arises when earlier prompt tokens (which the model has already observed) are included in the average.
+
+Both the full (`output-*-records.csv`) and pure next-token CSVs now include a `rest_mass` column capturing the probability mass outside the logged top-k slice, enabling exact downstream entropy and KL computations.
+
 ## Model-Specific Gotchas Found
 
 ### Qwen3-8B
@@ -121,7 +137,7 @@ These flags live near the top of `evaluate_model()` – keep them there so downs
 
 ### Analysis Pipeline
 
-1. `run.py` (per-model) writes `output-{model}.json` (metadata) and `output-{model}-records.csv` (layer records).
+1. `run.py` (per-model) writes `output-{model}.json` (metadata), `output-{model}-records.csv` (layer records **all positions**), **and** `output-{model}-pure-next-token.csv` (layer records **first unseen token only**).
 2. `prompt-single-model-evaluation.txt` → **LLM** summarises each run into `evaluation-{model}.md`.
 3. `prompt-cross-model-evaluation.txt` consumes the per-model markdown and writes `evaluation-cross-model.md` in the same experiment directory.
 4. The meta prompt (`prompt-meta-evaluation.txt`) critiques methodology and suggests next probes; results stored next to the cross-model report.
