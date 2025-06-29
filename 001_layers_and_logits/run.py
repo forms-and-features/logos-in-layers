@@ -732,17 +732,25 @@ def run_single_model(model_id):
         except AttributeError:
             pass
     
-    # Generate filename (FIXED: moved outside CUDA block to fix scoping issue)
+    # Generate filename components
     clean_name = clean_model_name(model_id)
     meta_filename = f"output-{clean_name}.json"
     csv_filename  = f"output-{clean_name}-records.csv"
     pure_csv_filename = f"output-{clean_name}-pure-next-token.csv"
-    
-    # Save in the same directory as this script
+
+    # Determine output directory (parent may pass --out_dir)
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    meta_filepath = os.path.join(script_dir, meta_filename)
-    csv_filepath  = os.path.join(script_dir, csv_filename)
-    pure_csv_filepath = os.path.join(script_dir, pure_csv_filename)
+    if CLI_ARGS.out_dir:
+        out_dir = CLI_ARGS.out_dir
+    else:
+        # Stand-alone invocation: create its own timestamped run directory
+        out_dir = os.path.join(script_dir, datetime.now().strftime("run-%Y-%m-%d-%H-%M"))
+    # Ensure directory exists
+    os.makedirs(out_dir, exist_ok=True)
+
+    meta_filepath = os.path.join(out_dir, meta_filename)
+    csv_filepath  = os.path.join(out_dir, csv_filename)
+    pure_csv_filepath = os.path.join(out_dir, pure_csv_filename)
     
     try:
         # Generate full JSON output from the experiment
@@ -838,6 +846,9 @@ def parse_cli():
                    help="compute device to run on (default: cuda)")
     p.add_argument("model_id", nargs="?", default=None,
                    help="Model ID for single-run (when invoking as subprocess)")
+    p.add_argument("--out_dir",
+                   default=None,
+                   help="Output directory to save CSV & JSON results (default: current script directory or value forwarded by parent launcher)")
     return p.parse_args()
 
 # Parse once and promote to module-global so run_single_model and main can see it
@@ -853,8 +864,14 @@ def main():
     # Main process - launch subprocess for each model
     print(f"🎯 Starting experiment launcher for {len(CONFIRMED_MODELS)} models...")
     print("Each model will run in a separate process for clean memory isolation.")
-    
+
     script_path = os.path.abspath(__file__)
+
+    # Create timestamped run directory once per launcher invocation
+    timestamp = datetime.now().strftime("run-%Y-%m-%d-%H-%M")
+    run_dir = os.path.join(os.path.dirname(script_path), timestamp)
+    os.makedirs(run_dir, exist_ok=True)
+
     results = []
     
     for i, model_id in enumerate(CONFIRMED_MODELS, 1):
@@ -868,6 +885,7 @@ def main():
                 sys.executable,
                 script_path,
                 "--device", CLI_ARGS.device,   # forward the flag
+                "--out_dir", run_dir,          # ensure all subprocesses share same dir
                 model_id
             ], capture_output=False, text=True, check=False)
             
@@ -886,8 +904,7 @@ def main():
     # Summary
     print(f"\n{'='*80}")
     print("🎉 All model processes completed!")
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    print(f"📁 Output files saved in: {script_dir}")
+    print(f"📁 Output files saved in: {run_dir}")
     
     print("\n📊 Results Summary:")
     for model_id, status in results:
@@ -898,9 +915,9 @@ def main():
     print(f"\n📄 Expected output files:")
     for model_id in CONFIRMED_MODELS:
         clean_name = clean_model_name(model_id)
-        print(f"   output-{clean_name}.json")
-        print(f"   output-{clean_name}-records.csv (all positions)")
-        print(f"   output-{clean_name}-pure-next-token.csv (clean entropy)")
+        print(f"   {os.path.join(run_dir, f'output-{clean_name}.json')}")
+        print(f"   {os.path.join(run_dir, f'output-{clean_name}-records.csv')} (all positions)")
+        print(f"   {os.path.join(run_dir, f'output-{clean_name}-pure-next-token.csv')} (clean entropy)")
     print(f"{'='*80}")
 
 if __name__ == "__main__":
