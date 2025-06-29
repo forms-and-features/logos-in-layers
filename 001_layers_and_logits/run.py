@@ -158,7 +158,12 @@ def run_experiment_for_model(model_id):
             UNEMBED_DTYPE = torch.float32 if USE_FP32_UNEMBED else model.unembed.W_U.dtype
         
         # Assemble prompt and normalization diagnostics
-        prompt = "Question: What is the capital of Germany? Answer:"
+        # FIXED: Remove teacher-forcing by using prompt that stops before "Answer:"
+        # This way we predict the first truly unseen token rather than analyzing 
+        # tokens the model has already consumed
+        context_prompt = "Question: What is the capital of Germany?"
+        full_prompt = "Question: What is the capital of Germany? Answer:"  # For display/comparison
+        
         first_block_ln1_type = type(model.blocks[0].ln1).__name__ if hasattr(model, 'blocks') and len(model.blocks) > 0 else None
         final_ln_type = type(model.ln_final).__name__ if hasattr(model, 'ln_final') else None
         diag = {
@@ -170,15 +175,16 @@ def run_experiment_for_model(model_id):
             "unembed_dtype": str(UNEMBED_DTYPE),
             "first_block_ln1_type": first_block_ln1_type,
             "final_ln_type": final_ln_type,
-            "prompt": prompt
+            "context_prompt": context_prompt,
+            "target_prediction": "first unseen token (likely ' Answer' or 'Answer' or ' Berlin')"
         }
         print(json.dumps(diag, ensure_ascii=False))
         # Emit prompt record
-        print(json.dumps({"type": "prompt", "prompt": prompt}, ensure_ascii=False))
-        IMPORTANT_WORDS = ["Germany", "Berlin", "capital"]
+        print(json.dumps({"type": "prompt", "context_prompt": context_prompt, "full_prompt_for_comparison": full_prompt}, ensure_ascii=False))
+        IMPORTANT_WORDS = ["Germany", "Berlin", "capital", "Answer"]
 
         def is_verbose_position(pos, token_str, seq_len):
-            # Answer slot always verbose
+            # Final position (predicting next token) always verbose
             if pos == seq_len - 1:
                 return True
             # Any prompt word in token string
@@ -199,8 +205,8 @@ def run_experiment_for_model(model_id):
             }
             print(json.dumps(record, ensure_ascii=False))
         
-        # Tokenize the prompt (cache for reuse)
-        tokens = model.to_tokens(prompt).to(model.cfg.device)
+        # Tokenize the context prompt (without "Answer:" to avoid teacher-forcing)
+        tokens = model.to_tokens(context_prompt).to(model.cfg.device)
         
         # Begin capturing residual streams
         with torch.no_grad():
@@ -246,7 +252,8 @@ def run_experiment_for_model(model_id):
                 logits = model(tokens)
                 
                 # Show top predictions at different layers
-                print(f"\nTop predictions for next token at each position in '{prompt}':")
+                print(f"\nLayer-by-layer analysis of context: '{context_prompt}'")
+                print("→ Predicting the first unseen token (what comes after the context)")
                 if USE_NORM_LENS:
                     # Check if we'll actually be applying norms
                     if hasattr(model, 'blocks') and len(model.blocks) > 0:
@@ -270,7 +277,7 @@ def run_experiment_for_model(model_id):
                 print("-" * 60)
                 
                 # Get string representations of tokens for labeling output
-                str_tokens = model.to_str_tokens(prompt)
+                str_tokens = model.to_str_tokens(context_prompt)
 
                 # Layer 0: embeddings (+ positional embeddings if available)
                 print("Layer  0 (embeddings):")
@@ -435,11 +442,12 @@ def run_experiment_for_model(model_id):
                 print(json.dumps(probe_record, ensure_ascii=False))
             
             # Emit temperature exploration records
-            test_prompt = "Question: What is the capital of Germany? Answer:"
+            # Note: Using original full prompt for temperature exploration to compare with previous results
+            temp_test_prompt = "Question: What is the capital of Germany? Answer:"
             # Reuse cached tokens if available, otherwise tokenize once
-            if test_prompt not in test_tokens_cache:
-                test_tokens_cache[test_prompt] = model.to_tokens(test_prompt).to(model.cfg.device)
-            test_tokens = test_tokens_cache[test_prompt]
+            if temp_test_prompt not in test_tokens_cache:
+                test_tokens_cache[temp_test_prompt] = model.to_tokens(temp_test_prompt).to(model.cfg.device)
+            test_tokens = test_tokens_cache[temp_test_prompt]
             
             # Single forward pass - then rescale for different temperatures
             base_logits = model(test_tokens)[0, -1, :]
@@ -512,7 +520,7 @@ def run_experiment_for_model(model_id):
         # Assemble full JSON output
         output_dict = {
             "diagnostics": diagnostics,
-            "prompt": prompt_rec.get('prompt'),
+            "prompt": prompt_rec,  # Keep full prompt record with both context and full versions
             "records": records,
             "final_prediction": final_pred,
             "test_prompts": test_prompts,
