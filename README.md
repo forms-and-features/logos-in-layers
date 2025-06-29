@@ -16,32 +16,7 @@ The first published iteration (`001_layers_and_logits/`) introduces a memory-eff
 Basic chat interface for testing model responses and getting familiar with the models.
 
 ### 001: Layer-by-Layer Analysis
-**Directory**: `001_layers_and_logits/`
-**Files**: `run.py`, individual model evaluations (`evaluation-*.md`), cross-model analysis (`evaluation-cross-model.md`), structured outputs (`output-*.json`, `output-*-records.csv`, `output-*-pure-next-token.csv`), and evaluation prompts (`prompt-*.txt`)
-
-Layer-by-layer analysis of how the prediction for "What is the capital of Germany?" evolves through four different models:
-
-- **Qwen3-8B** (36 layers): Shows distinctive "Germany → Berlin" transition with template-driven behavior
-- **Meta-Llama-3-8B** (32 layers): More direct path with anomalous junk tokens in mid-layers  
-- **Mistral-7B-v0.1** (32 layers): Early emergence of German-related tokens with formatting bias
-- **Gemma-2-9B** (42 layers): Later convergence with early over-confidence on punctuation
-
-
-**Cross-Model Findings** (see `evaluation-cross-model.md` for full analysis):
-
-– A depth-normalised **entropy collapse**: the correct answer becomes near-deterministic at ~0.78 ± 0.05 of each model's layer stack (e.g. Llama & Mistral L 25/32, Qwen L 28/36, Gemma L 35/42).
-
-– **Concept-before-entity** progression: generic tokens like "capital" (or placeholders like "Answer/") peak 3-5 layers before "Berlin" dominates.
-
-– Universal **entropy rebound** of ≈1–2 bits after `ln_final` + unembed, indicating a calibration step rather than new evidence.
-
-– **Mid-stack category plateau**: all checkpoints first converge on a *generic answer class* (e.g. the word "city" or the placeholder "____") before the specific referent appears.  This plateau spans ~5–10 layers and reaches entropy well below 4 bits.
-
-– **Late formatting override**: after "Berlin" peaks, probability mass drifts back to surface-form tokens (`<strong>`, numerals, full-width punctuation).  The factual state is still recoverable at low temperature (τ = 0.1) but is suppressed in generation-ready logits.
-
-– **Early-layer heterogeneity**: Gemma is over-confident on punctuation (entropy < 10⁻⁶ bits on ':'), whereas the others emit high-entropy junk or multilingual shards, revealing tokeniser noise when semantics are undeveloped.
-
-– Model-specific artefacts persist (colon-spam, underscore phase, Washington detour), underscoring template and corpus biases.
+Detailed experiment documentation and findings have moved to `001_layers_and_logits/NOTES.md`.
 
 ## Setup
 
@@ -81,30 +56,7 @@ python run.py
 ```
 
 ## Supported Models
-
-### ✅ Confirmed Working
-- **Llama 3** (Meta) - 32 layers
-- **Mistral 7B** (Mistral AI) - 32 layers  
-- **Gemma 2** (Google) - 42 layers
-- **Qwen3** (Alibaba) - 36 layers
-
-### ❌ Not Supported
-- **GGUF files** - Require raw transformer format
-- **Extremely large models** - Hardware constraints
-
-
-## File Structure
-
-```
-001_layers_and_logits/
-├── run.py                         # Main experiment script
-├── evaluation-[model].md          # Per-model analyses  
-├── evaluation-cross-model.md      # Cross-model analysis
-├── output-[model].json            # JSON metadata (per model)
-├── output-[model]-records.csv     # Layer-wise records
-├── output-[model]-pure-next-token.csv  # Clean entropy (first unseen token only)
-├── prompt-*.txt                   # Evaluation prompts
-```
+<!-- Detailed supported-model list and experiment file structure have moved to `001_layers_and_logits/NOTES.md`. -->
 
 ## Further Reading
 

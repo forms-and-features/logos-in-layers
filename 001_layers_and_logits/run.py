@@ -166,11 +166,7 @@ def run_experiment_for_model(model_id):
         else:
             UNEMBED_DTYPE = torch.float32 if USE_FP32_UNEMBED else model.unembed.W_U.dtype
         
-        # Assemble prompt and normalization diagnostics
-        # FIXED: Remove teacher-forcing by using prompt that stops before "Answer:"
-        # This way we predict the first truly unseen token rather than analyzing 
-        # tokens the model has already consumed
-        context_prompt = "The capital of Germany is "
+        context_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
         ground_truth = "Berlin"  # For display/comparison
         
         first_block_ln1_type = type(model.blocks[0].ln1).__name__ if hasattr(model, 'blocks') and len(model.blocks) > 0 else None
@@ -220,10 +216,9 @@ def run_experiment_for_model(model_id):
             "context_prompt": context_prompt,
             "target_prediction": "first unseen token (likely 'Berlin')"
         }
-        print(json.dumps(diag, ensure_ascii=False))
         # Emit prompt record
         print(json.dumps({"type": "prompt", "context_prompt": context_prompt, "ground_truth": ground_truth}, ensure_ascii=False))
-        IMPORTANT_WORDS = ["Germany", "Berlin", "capital",]
+        IMPORTANT_WORDS = ["Germany", "Berlin", "capital", "Answer", "word", "simply"]
 
         def is_verbose_position(pos, token_str, seq_len):
             # Final position (predicting next token) always verbose
@@ -235,7 +230,7 @@ def run_experiment_for_model(model_id):
                     return True
             return False
 
-        def print_summary(layer_idx, pos, token_str, entropy_bits, top_tokens, top_probs, is_pure_next_token=False):
+        def print_summary(layer_idx, pos, token_str, entropy_bits, top_tokens, top_probs, is_pure_next_token=False, extra=None):
             # Emit a JSON Lines record for this layer/position
             record = {
                 "type": "pure_next_token_record" if is_pure_next_token else "record",
@@ -245,10 +240,15 @@ def run_experiment_for_model(model_id):
                 "entropy": entropy_bits,
                 "topk": [[tok, prob.item()] for tok, prob in zip(top_tokens, top_probs)]
             }
+            if extra:
+                record.update(extra)
             print(json.dumps(record, ensure_ascii=False))
         
         # Tokenize the context prompt (without "Answer:" to avoid teacher-forcing)
         tokens = model.to_tokens(context_prompt).to(model.cfg.device)
+        
+        # Storage to collect pure_next_token_records for L_copy/L_semantic computation
+        collected_pure_records = []
         
         # Begin capturing residual streams
         with torch.no_grad():
@@ -316,10 +316,16 @@ def run_experiment_for_model(model_id):
                 else:
                     print("Using RAW residual stream (normalization disabled)")
                 print("Note: Shown probabilities are from full softmax (calibrated and comparable)")
+                print("copy-collapse: first layer where top-1 token is in prompt & p>0.9")
                 print("-" * 60)
                 
                 # Get string representations of tokens for labeling output
                 str_tokens = model.to_str_tokens(context_prompt)
+
+                # Collect prompt tokens for copy-collapse detection
+                prompt_token_set = {
+                    tok.strip() for tok in model.to_str_tokens(context_prompt)
+                }
 
                 # Layer 0: embeddings (+ positional embeddings if available)
                 print("Layer  0 (embeddings):")
@@ -347,7 +353,7 @@ def run_experiment_for_model(model_id):
                     # Compute log-probs for entropy and selective probabilities
                     log_probs = torch.log_softmax(layer_logits, dim=0).to(torch.float32)
                     entropy_nats = -torch.sum(torch.exp(log_probs) * log_probs)
-                    entropy_bits = entropy_nats.item() / math.log(2)
+                    entropy_bits = max(entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
 
                     token_str = str_tokens[pos]
                     # Decide verbosity for this position
@@ -378,12 +384,41 @@ def run_experiment_for_model(model_id):
                 last_logits = logits_all[last_pos]
                 last_log_probs = torch.log_softmax(last_logits, dim=0).to(torch.float32)
                 last_entropy_nats = -torch.sum(torch.exp(last_log_probs) * last_log_probs)
-                last_entropy_bits = last_entropy_nats.item() / math.log(2)
-                last_token_str = str_tokens[last_pos]
+                last_entropy_bits = max(last_entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
+                last_token_str = "⟨NEXT⟩"  # Pure next-token prediction, not the last prompt token
                 _, last_top_indices = torch.topk(last_logits, TOP_K_RECORD, largest=True, sorted=True)
                 last_top_probs = torch.exp(last_log_probs[last_top_indices])
                 last_top_tokens = [model.tokenizer.decode([idx]) for idx in last_top_indices]
-                print_summary(0, last_pos, last_token_str, last_entropy_bits, last_top_tokens, last_top_probs, is_pure_next_token=True)
+                
+                # ------------------------------------------------------------------- #
+                #  1.  Is this layer "copy-collapsed" (prompt echo)?   -> L_copy
+                #  2.  Does top-1 equal the ground-truth answer token? -> L_semantic
+                # ------------------------------------------------------------------- #
+                # --- NEW copy-collapse rule (prompt echo) ---------------------------
+                copy_collapse = (
+                    last_top_tokens[0].strip() in prompt_token_set
+                    and last_top_probs[0].item() > 0.90
+                )
+                entropy_collapse = last_entropy_bits <= 1.0      # keep for reference
+                # use new criterion for L_copy
+                collapsed = copy_collapse
+                is_answer = (last_top_tokens[0].strip() == "Berlin")
+                
+                record_extra = {
+                    "copy_collapse": copy_collapse,
+                    "entropy_collapse": entropy_collapse,
+                    "is_answer": is_answer,
+                }
+                
+                # Collect for L_copy/L_semantic computation
+                collected_pure_records.append({
+                    "layer": 0,
+                    "copy_collapse": copy_collapse,
+                    "entropy_collapse": entropy_collapse,
+                    "is_answer": is_answer
+                })
+                
+                print_summary(0, last_pos, last_token_str, last_entropy_bits, last_top_tokens, last_top_probs, is_pure_next_token=True, extra=record_extra)
                 
                 # Layers 1 to n_layers: after each transformer block
                 for layer in range(n_layers):
@@ -422,7 +457,7 @@ def run_experiment_for_model(model_id):
                         # Compute log-probs for entropy and selective probabilities
                         log_probs = torch.log_softmax(layer_logits, dim=0).to(torch.float32)
                         entropy_nats = -torch.sum(torch.exp(log_probs) * log_probs)
-                        entropy_bits = entropy_nats.item() / math.log(2)
+                        entropy_bits = max(entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
 
                         token_str = str_tokens[pos]
                         # Decide verbosity for this position
@@ -453,12 +488,66 @@ def run_experiment_for_model(model_id):
                     last_logits = logits_all[last_pos]
                     last_log_probs = torch.log_softmax(last_logits, dim=0).to(torch.float32)
                     last_entropy_nats = -torch.sum(torch.exp(last_log_probs) * last_log_probs)
-                    last_entropy_bits = last_entropy_nats.item() / math.log(2)
-                    last_token_str = str_tokens[last_pos]
+                    last_entropy_bits = max(last_entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
+                    last_token_str = "⟨NEXT⟩"  # Pure next-token prediction, not the last prompt token
                     _, last_top_indices = torch.topk(last_logits, TOP_K_RECORD, largest=True, sorted=True)
                     last_top_probs = torch.exp(last_log_probs[last_top_indices])
                     last_top_tokens = [model.tokenizer.decode([idx]) for idx in last_top_indices]
-                    print_summary(layer + 1, last_pos, last_token_str, last_entropy_bits, last_top_tokens, last_top_probs, is_pure_next_token=True)
+                    
+                    # ------------------------------------------------------------------- #
+                    #  1.  Is this layer "copy-collapsed" (prompt echo)?   -> L_copy
+                    #  2.  Does top-1 equal the ground-truth answer token? -> L_semantic
+                    # ------------------------------------------------------------------- #
+                    # --- NEW copy-collapse rule (prompt echo) ---------------------------
+                    copy_collapse = (
+                        last_top_tokens[0].strip() in prompt_token_set
+                        and last_top_probs[0].item() > 0.90
+                    )
+                    entropy_collapse = last_entropy_bits <= 1.0      # keep for reference
+                    # use new criterion for L_copy
+                    collapsed = copy_collapse
+                    is_answer = (last_top_tokens[0].strip() == "Berlin")
+                    
+                    record_extra = {
+                        "copy_collapse": copy_collapse,
+                        "entropy_collapse": entropy_collapse,
+                        "is_answer": is_answer,
+                    }
+                    
+                    # Collect for L_copy/L_semantic computation
+                    collected_pure_records.append({
+                        "layer": layer + 1,
+                        "copy_collapse": copy_collapse,
+                        "entropy_collapse": entropy_collapse,
+                        "is_answer": is_answer
+                    })
+                    
+                    print_summary(layer + 1, last_pos, last_token_str, last_entropy_bits, last_top_tokens, last_top_probs, is_pure_next_token=True, extra=record_extra)
+                
+                # ---------------------------------------------------------------
+                #  Compute L_copy  (first copy-collapsed layer, prompt echo rule)
+                #  Compute L_semantic (first layer whose top-1 == "Berlin")
+                # ---------------------------------------------------------------
+                L_copy = None
+                L_copy_H = None  # Legacy entropy-based metric
+                L_sem = None
+                for rec in collected_pure_records:    # already collected in RAM
+                    if L_copy is None and rec["copy_collapse"]:
+                        L_copy = rec["layer"]
+                    if L_copy_H is None and rec["entropy_collapse"]:
+                        L_copy_H = rec["layer"]          # optional: legacy metric
+                    if L_sem is None and rec["is_answer"]:
+                        L_sem = rec["layer"]
+                    if L_copy is not None and L_copy_H is not None and L_sem is not None:
+                        break
+
+                # Attach to diagnostics block
+                diag.update({"L_copy": L_copy,
+                             "L_copy_H": L_copy_H,
+                             "L_semantic": L_sem,
+                             "delta_layers": None if (L_copy is None or L_sem is None)
+                                                  else L_sem - L_copy})
+                print(json.dumps(diag, ensure_ascii=False))   # re-emit updated diagnostics
                 
             finally:
                 # Clean up hooks and cache
@@ -483,7 +572,7 @@ def run_experiment_for_model(model_id):
             # Calculate final entropy efficiently (convert to bits)
             final_log_probs = torch.log_softmax(final_logits, dim=0).to(torch.float32)
             final_entropy_nats = -torch.sum(torch.exp(final_log_probs) * final_log_probs)
-            final_entropy_bits = final_entropy_nats.item() / math.log(2)
+            final_entropy_bits = max(final_entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
             
             # Emit final prediction as a JSON Lines record
             final_record = {
@@ -495,12 +584,22 @@ def run_experiment_for_model(model_id):
             
             # Emit additional probing records for test prompts
             # Cache tokenized test prompts to avoid redundant tokenization
+            # Give the city name only, plain text. 
             test_prompts = [
-                "Berlin is the capital of ",
-                "Germany's capital city is called ",
-                "The capital city of Germany is named ",
-                "Germany has its capital at ",
-                "In Germany, the capital city is ",
+                "Berlin is the capital of",
+                "Germany's capital city is called simply",
+                "The capital city of Germany is named simply",
+                "Germany has its capital at the city called simply",
+                "In Germany the capital city is simply",            
+                "Germany's capital city is called",
+                "The capital city of Germany is named",
+                "Germany has its capital at",
+                "In Germany the capital city is known as",
+                "Give the country name only, plain text. Berlin is the capital of",
+                "Give the city name only, plain text. Germany's capital city is called",
+                "Give the city name only, plain text. The capital city of Germany is named simply",
+                "Give the city name only, plain text. Germany has its capital at",
+                "Give the city name only, plain text. In Germany, the capital city is known as",
             ]
             test_tokens_cache = {prompt: model.to_tokens(prompt).to(model.cfg.device) for prompt in test_prompts}
             
@@ -515,7 +614,7 @@ def run_experiment_for_model(model_id):
                 # Calculate entropy for this prompt efficiently (convert to bits)
                 test_log_probs = torch.log_softmax(test_logits[0, -1, :], dim=0).to(torch.float32)
                 test_entropy_nats = -torch.sum(torch.exp(test_log_probs) * test_log_probs)
-                test_entropy_bits = test_entropy_nats.item() / math.log(2)
+                test_entropy_bits = max(test_entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
                 # Emit JSON Lines record for this test prompt
                 probe_record = {
                     "type": "test_prompt",
@@ -526,8 +625,8 @@ def run_experiment_for_model(model_id):
                 print(json.dumps(probe_record, ensure_ascii=False))
             
             # Emit temperature exploration records
-            # Note: Using original full prompt for temperature exploration to compare with previous results
-            temp_test_prompt = "Question: What is the capital of Germany? Answer:"
+            # Note: Using consistent prompt for temperature exploration to maintain comparability
+            temp_test_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
             # Reuse cached tokens if available, otherwise tokenize once
             if temp_test_prompt not in test_tokens_cache:
                 test_tokens_cache[temp_test_prompt] = model.to_tokens(temp_test_prompt).to(model.cfg.device)
@@ -550,7 +649,7 @@ def run_experiment_for_model(model_id):
                 # Calculate entropy at this temperature efficiently (convert to bits)
                 temp_log_probs = torch.log_softmax(scaled_logits, dim=0).to(torch.float32)
                 temp_entropy_nats = -torch.sum(torch.exp(temp_log_probs) * temp_log_probs)
-                temp_entropy_bits = temp_entropy_nats.item() / math.log(2)
+                temp_entropy_bits = max(temp_entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
                 # Emit JSON Lines record for this temperature
                 temp_record = {
                     "type": "temperature_exploration",
@@ -594,7 +693,7 @@ def run_experiment_for_model(model_id):
         lines = [line for line in raw.splitlines() if line.strip().startswith('{')]
         objs = [json.loads(line) for line in lines]
         # Partition into sections
-        diagnostics = next(o for o in objs if o.get('type') == 'diagnostics')
+        diagnostics = [o for o in objs if o.get('type') == 'diagnostics'][-1]  # Get the LAST (updated) diagnostics
         prompt_rec = next(o for o in objs if o.get('type') == 'prompt')
         records = [o for o in objs if o.get('type') == 'record']
         pure_next_token_records = [o for o in objs if o.get('type') == 'pure_next_token_record']
@@ -687,11 +786,11 @@ def run_single_model(model_id):
         # Save pure next-token records to separate CSV (cleaner entropy analysis)
         with open(pure_csv_filepath, 'w', newline='', encoding='utf-8') as f_csv:
             writer = csv.writer(f_csv)
-            # Same header structure as main CSV
+            # Header includes new collapse detection flags
             header = ["layer","pos","token","entropy"]
             for i in range(1, TOP_K_VERBOSE + 1):
                 header.extend([f"top{i}", f"prob{i}"])
-            header.append("rest_mass")
+            header.extend(["rest_mass", "copy_collapse", "entropy_collapse", "is_answer"])
             writer.writerow(header)
             for rec in pure_next_token_records:
                 row = [rec.get("layer"), rec.get("pos"), rec.get("token"), rec.get("entropy")]
@@ -705,7 +804,13 @@ def run_single_model(model_id):
                         tok, prob = "", ""
                     row.extend([tok, prob])
                 rest_mass = max(0.0, 1.0 - topk_prob_sum)
-                row.append(rest_mass)
+                # Add the new collapse detection flags
+                row.extend([
+                    rest_mass,
+                    rec.get("copy_collapse", ""),
+                    rec.get("entropy_collapse", ""),
+                    rec.get("is_answer", "")
+                ])
                 writer.writerow(row)
 
         print(f"✅ Experiment complete. JSON metadata saved to: {meta_filepath}")

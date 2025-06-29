@@ -1,82 +1,91 @@
-# 1. Overview
-Qwen3-8B (≈8 B parameters) was probed on 2025-06-29 using the layer-by-layer RMS-lens script.  The sweep captures per-layer entropy and top-k lexical predictions for the first *unseen* token following the prompt "The capital of Germany is …", plus auxiliary probes for paraphrased prompts and temperature sweeps.
+## 1. Overview
+Qwen 3-8B (≈8 B parameters) was probed on 2025-06-29 using the layer-by-layer RMS-lens script.  The run collects residual-stream predictions at the embedding layer and after every transformer block, extracting entropy and top-k tokens plus flags for copy- and semantic-collapse.
 
-# 2. Method sanity-check
-`output-Qwen3-8B.json` confirms that the run used the intended normalised lens and respected the model's rotary positional encoding.  The diagnostics block shows
-> "use_norm_lens": true [L5]  
-> "layer0_position_info": "token_only_rotary_model" [L17]
-Both CSVs contain only a single position (`pos = 5`), indicating that predictions were indeed collected for the next token rather than for teacher-forced tokens.
+## 2. Method sanity-check
+The JSON diagnostics confirm that the probe applied the intended **RMS lens** and worked on RMS-normed residuals:
+> "use_norm_lens": true [L7-8]  
+> "first_block_ln1_type": "RMSNormPre" [L9-10]
 
-# 3. Quantitative findings
-| Layer | Entropy (bits) | Top-1 token |
-|-------|----------------|-------------|
-| L 0 | 2.06 | "墈" |
-| L 1 | 13.10 | "单职业" |
-| L 2 | 14.20 | " Liberties" |
-| L 3 | 14.88 | "总队" |
-| L 4 | 15.18 | "arring" |
-| L 5 | 15.68 | "arring" |
-| L 6 | 15.45 | "arring" |
-| L 7 | 13.21 | "less" |
-| L 8 | 12.16 | "less" |
-| L 9 | 11.44 | "哈尔" |
-| L 10 | 11.71 | "直辖" |
-| L 11 | 10.27 | "呃" |
-| L 12 | 10.77 | "呃" |
-| L 13 | 11.47 | "呃" |
-| L 14 | 10.69 | "_assets" |
-| L 15 | 11.15 | "呃" |
-| L 16 | 10.11 | "呃" |
-| L 17 | 10.59 | "呃" |
-| L 18 | 10.22 | "请选择" |
-| L 19 | 9.21 | "呃" |
-| L 20 | 8.53 | "一头" |
-| L 21 | 3.90 | "eway" |
-| L 22 | 8.91 | "ㅤ" |
-| L 23 | 4.76 | " ____" |
-| L 24 | 3.16 | " ____" |
-| L 25 | 2.51 | " ____" |
-| L 26 | 1.68 | " ____" |
-| L 27 | 1.55 | " ____" |
-| L 28 | 1.56 | " ____" |
-| L 29 | 2.06 | " ____" |
-| L 30 | 1.54 | " ____" |
-| L 31 | 2.53 | " ____" |
-| L 32 | 2.39 | " Berlin" |
-| L 33 | 1.85 | " Berlin" |
-| L 34 | 3.90 | " Berlin" |
-| L 35 | 5.01 | " blank" |
-| L 36 | 3.67 | "．" |
+The `context_prompt` ends exactly with "called simply" (no trailing space) as required:
+> "context_prompt": "…called simply" [L14-16]
 
-No layer attains < 1 bit; therefore **no collapse layer is bolded**.
+`L_copy`, `L_semantic`, and `delta_layers` fields are present in the diagnostics block:
+> "L_copy": 25, "L_semantic": 31, "delta_layers": 6 [L17-19]
 
-# 4. Qualitative patterns & anomalies
-The probe uncovers three broad regimes.  Early layers (0–10) oscillate around unrelated Chinese or English morphemes with entropy > 10 bits, suggesting token-level noise prior to consolidation.  Middle layers (11–20) gradually narrow the distribution yet remain trapped in filler tokens such as "呃" or "一头".  A sharp entropy drop at L 21 (3.9 bits) coincides with the first high-probability English sub-word "eway", but the effect rebounds, implying transient alignment rather than stable collapse.  Only from L 32 onward does "Berlin" dominate (> 0.3 prob) though entropy never falls below 1 bit, indicating partial but incomplete convergence.
+Layers 0–3 top-1 tokens are "CLICK", "湾", "湾", "湾"; none are "called"/"simply", so early copy-reflex is **not** triggered.
 
-The final prediction shows the model still prefers a full-width period over the correct answer:
-> "．", 0.31; "�", 0.15 [L30-34]
-This punctuation bias echoes the temperature exploration where at τ = 0.1 "Berlin" becomes deterministic (prob ≈ 1.0) while at τ = 2.0 it merely reaches 6 % [L320-338].  Paraphrased prompts yield mixed fidelity: "Germany has its capital at " returns 0.40 prob on "Berlin" with entropy 2.8 bits [L150-165], yet "The capital city of Germany is named " falls back to 0.18 prob with entropy 5.7 bits [L110-125].
+## 3. Quantitative findings
+| Layer summary |
+| --- |
+| L 0 – entropy 7.84 bits, top-1 'CLICK' |
+| L 1 – entropy 8.53 bits, top-1 '湾' |
+| L 2 – entropy 8.59 bits, top-1 '湾' |
+| L 3 – entropy 8.82 bits, top-1 '湾' |
+| L 4 – entropy 7.65 bits, top-1 '湾' |
+| L 5 – entropy 11.19 bits, top-1 '院子' |
+| L 6 – entropy 9.57 bits, top-1 '-minded' |
+| L 7 – entropy 8.74 bits, top-1 'mente' |
+| L 8 – entropy 7.91 bits, top-1 'tion' |
+| L 9 – entropy 7.69 bits, top-1 'ifiable' |
+| L 10 – entropy 4.50 bits, top-1 'ifiable' |
+| L 11 – entropy 2.76 bits, top-1 'ifiable' |
+| L 12 – entropy 3.31 bits, top-1 'ifiable' |
+| L 13 – entropy 4.01 bits, top-1 'ifiable' |
+| L 14 – entropy 6.21 bits, top-1 'ifiable' |
+| L 15 – entropy 4.97 bits, top-1 'ifiable' |
+| L 16 – entropy 4.07 bits, top-1 'name' |
+| L 17 – entropy 2.25 bits, top-1 'name' |
+| L 18 – entropy 2.92 bits, top-1 'name' |
+| L 19 – entropy 3.94 bits, top-1 'names' |
+| L 20 – entropy 4.06 bits, top-1 '这个名字' |
+| L 21 – entropy 1.46 bits, top-1 '这个名字' |
+| L 22 – entropy 3.20 bits, top-1 ' ______' |
+| L 23 – entropy 2.32 bits, top-1 ' ______' |
+| L 24 – entropy 1.15 bits, top-1 '这个名字' |
+| **L 25 – entropy 0.08 bits, top-1 'simply'** |
+| L 26 – entropy 2.91 bits, top-1 ' ______' |
+| L 27 – entropy 2.40 bits, top-1 ' "' |
+| L 28 – entropy 1.65 bits, top-1 ' "' |
+| L 29 – entropy 1.07 bits, top-1 'Germany' |
+| L 30 – entropy 0.88 bits, top-1 'Germany' |
+| **L 31 – entropy 0.35 bits, top-1 'Berlin'** |
+| L 32 – entropy 1.52 bits, top-1 'Berlin' |
+| L 33 – entropy 0.65 bits, top-1 'Berlin' |
+| L 34 – entropy 0.08 bits, top-1 'Berlin' |
+| L 35 – entropy 1.64 bits, top-1 'Berlin' |
+| L 36 – entropy 3.12 bits, top-1 'Berlin' |
 
-Checklist:
+Δ = L_semantic − L_copy = **6** layers.
+
+## 4. Qualitative patterns & anomalies
+The model exhibits a **long copy-reflex** (Δ 6 layers): by layer 25 the network is already certain (p ≈ 0.99, entropy 0.08 bits) that the next token is the prompt word "simply", yet six additional layers are needed before "Berlin" overtakes with 94 % probability at layer 31 > "... 'Berlin', 0.938" [CSV L32].  Such a gap echoes "Tuned-Lens" findings that semantic signals surface later than surface-form echoes (2303.08112).
+
+Entropy collapses sharply from ≈7 bits (layer 0) to <1 bit at L25, then rises again when switching from copy to semantics, peaking modestly (1.52 bits) at L32 before settling near 0.08 bits at L34, consistent with information-overwriting dynamics reported in "Vision Decoding" (2212.10554).
+
+Test prompts show robust directional knowledge: for the reversed relation prompt "Berlin is the capital of" the top-1 is "Germany" with ≈0.73 probability > "Germany", 0.728 [L46-52], indicating that semantic recall is symmetric.  Removing the "one-word" instruction (prompt "Germany has its capital at") does **not** shift the semantic-collapse index: the model still outputs "Berlin" confidently (0.84) at final layer, suggesting instruction tokens mainly affect early copy stages, not deep semantics.
+
+Temperature sweep reinforces this: at τ = 0.1 the distribution is almost deterministic (>99 % Berlin, entropy 0.01 bits) whereas at τ = 2.0 entropy balloons to 13.4 bits with Berlin only 4 %.  This wide dynamic range confirms calibrated logits downstream of the RMS lens.
+
+Checklist:  
 ✓ RMS lens  
-✗ LayerNorm  
-✗ Colon-spam  
-✗ Entropy rise at unembed
+✓ LayerNorm bias removed  
+✗ Punctuation anchoring  
+✓ Entropy rise at unembed  
+✓ Punctuation / markup anchoring  
+✓ Copy reflex  
+✗ Grammatical filler anchoring (layers 0–5 dominated by non-word tokens rather than {is,the,a,of}).
 
-# 5. Tentative implications for Realism ↔ Nominalism
-1. Does the late but never-complete convergence on "Berlin" imply that the concept of *capital-city* is distributed across the upper third of the stack rather than localised to a single "naming" layer?
+## 5. Tentative implications for Realism ↔ Nominalism
+1. Does the six-layer gap imply a dedicated sub-stack that cleans surface echoes before abstractive recall, supporting a realist "latent concept" interpretation?
+2. Could the persistence of German-centered tokens between L29–30 indicate nominalist recycling of earlier cue words rather than true concept formation?
+3. Would pruning layers 25–30 degrade factual recall more than text coherence, hinting at separable pathways?
+4. How does the late semantic consolidation interact with temperature-controlled entropy, and might this reflect hierarchical logit-lens calibration rather than genuine knowledge emergence?
 
-2. Could the persistent punctuation / underscore preference indicate nominal artefacts of the tokenizer that override semantic realism even in the unembedding space?
+## 6. Limitations & data quirks
+The early layers emit rare Chinese and subword fragments ("湾", "院子"), likely tokenizer quirks that skew entropy downward.  Several mid-stack layers focus on placeholder strings ("______") or quotation marks, complicating copy-collapse detection.  The probe runs on CPU, slowing throughput and possibly affecting RNG-seed determinism.  File timestamps proxy run date; no explicit seed or commit hash recorded.
 
-3. Might the rebound in entropy after L 21 suggest a realist encoding of multiple candidate answers that gets re-expanded by subsequent attention heads to maintain distributional diversity?
-
-4. Does temperature-dependent determinism (τ = 0.1) versus ambiguity (τ = 2.0) support a nominalist view in which the semantic pointer is latent but not salient until logit sharpening?
-
-# 6. Limitations & data quirks
-The probe ran on CPU, increasing runtime and possibly affecting numerical precision.  No run timestamp is embedded, reducing reproducibility.  CSV rows show several non-ASCII fillers ("__", "____") whose semantics are unclear; they may be artefacts of the tokenizer rather than genuine model beliefs.  The entropy valley at L 21 is isolated and followed by rebound, hinting at hook mis-alignment rather than genuine information collapse.  Finally, the first five layers show extraordinarily high entropy (> 14 bits), beyond the theoretical maximum for a 151 k-vocab (≈ 17.2 bits), suggesting the FP32 unembedding trick may still under-sample tail probabilities.
-
-# 7. Model fingerprint
-"Qwen3-8B: no < 1 bit collapse; earliest Berlin appears at L 32; final entropy 3.7 bits, punctuation ('．') top-ranked."
+## 7. Model fingerprint
+Qwen-3-8B: copy-collapse at L 25; semantic answer at L 31; final entropy 3.1 bits; late-stack Berlin logits dominate.
 
 ---
 Produced by OpenAI o3

@@ -1,37 +1,26 @@
-# Cross-model synthesis of layer-wise probes
+## 1. Result synthesis
 
-## 1  Result synthesis
-Across the four probed checkpoints the layer-wise entropy traces and top-k trajectories reveal a surprisingly consistent macro-shape.
+Across the four probed base models the copy-reflex (prompt-echo) and semantic collapse metrics separate into three regimes.
 
-Early layers (≈L0–L6) remain diffuse for every model except Gemma-2-9B, but the *content* of that diffusion differs.  Mistral, Llama-3 and Qwen3 show byte-level or code-style fragments – e.g. “`.scalablytyped`” at L6 in Llama-3 (L23 in the model-specific evaluation) or “`acknow`/`dici`” at L0–1 in Mistral (L10-11).  Gemma instead snaps to low-entropy whitespace and markup almost immediately – “L 0 entropy 0.00 bits, top-1 `␠`” (evaluation-gemma-2-9b.md L12-14).  This divergence suggests that the pre-transformer embedding space of Gemma is already dominated by high-frequency HTML tokens, whereas the other three checkpoints have not yet committed to a concrete surface form.
+Gemma-2-9B shows an extreme lag: the answer token does not overtake the prompt token until the final layer, giving Δ-collapse = 42 ("L_copy":0, "L_semantic":42) 5:20:001_layers_and_logits/output-gemma-2-9b.json.  Qwen-3-8B displays a moderate six-layer gap ("L_copy":25→"L_semantic":31) 18:30:001_layers_and_logits/output-Qwen3-8B.json.  Meta-Llama-3-8B and Mistral-7B-v0.1 never meet the >0.90 prompt-token criterion, so Δ cannot be computed; their residual streams switch directly from diffuse or filler tokens to the correct answer at L25 (Llama) and L25 (Mistral) 15:25:001_layers_and_logits/evaluation-Meta-Llama-3-8B.md and 25:32:001_layers_and_logits/evaluation-Mistral-7B-v0.1.md.
 
-All models exhibit a mid-stack narrowing where a semantically *generic* answer class becomes dominant before the specific city is retrieved.  For Gemma this is the long plateau on the word “city” from L17-31 (L25-32); Mistral converges on “city” between L7–19 (L15-18); Llama-3 shows the analogue on “distance/capital” L18-25 (L32-34); Qwen3 oscillates but nonetheless lands on the underscore filler "____" for layers 23-31 (L22-29).  The entropy minima in this band are well below 2 bits for Gemma and Mistral, ≈3–4 bits for Qwen and Llama.
+Gemma's 42-layer lag is an outlier (>10) and aligns with its lower factual scores (MMLU 57 %, ARC 63 %).  Qwen, with the best public scores (MMLU 64 %), collapses after only six layers.  The two mid-performers (Llama 62 %, Mistral 60 %) neither echo strongly nor collapse early, hinting that instruction-follow tuning may suppress hard copy but leave the semantic heads unchanged.
 
-Retrieval of *Berlin* appears only after that plateau and is short-lived.  The first layer where Berlin is top-1 is L32 (Gemma, L33), L21 (Mistral, L20-22), L32 (Qwen, L32-34) and never reaches rank-1 in Llama-3 (Berlin tops out at rank-2, L43).  In every checkpoint the probability on Berlin *falls* again in the final transformer block(s), corroborating the "late detour" picture reported for Tuned-Lens models (arXiv:2303.08112).
+Qualitatively, Gemma spends almost the entire stack on the adverb "simply", then flips to punctuation before emitting "Berlin", mirroring the long-tail echo described in Tuned-Lens (arXiv:2303.08112).  Qwen's six-layer plateau is shorter but still visible; in contrast, Llama and Mistral drift through various non-prompt sub-words before converging, consistent with weaker repetition biases observed in their token frequency curves.
 
-The final unembedded distributions are instead dominated by formatting tokens: "`<strong>`" in Gemma (JSON `final_prediction.topk[0]`), numerals in Mistral and Llama-3 (JSONs show "1" with 19 % / 7 %), and a full-width ideographic period "`．`" in Qwen.  Entropy values remain relatively low for Gemma (≈2 bits) and Mistral (≈4 bits) but inflate for Llama-3 (≈9 bits).
+## 2. Misinterpretations in existing EVALS
 
-Temperature sweeps contained in the JSON confirm that the latent Berlin state *is* recoverable for all checkpoints at τ = 0.1 (e.g. Gemma probability = 1.0, JSON temperature_exploration[0]).  Hence the factual circuit is present but suppressed by a surface-form prior in generation-ready logits.
+- "The model exhibits a **long copy-reflex** (Δ 6 layers)" 35:39:001_layers_and_logits/evaluation-Qwen3-8B.md.  Six layers is moderate compared with Gemma's 42-layer lag and with values <5 reported for GPT-3 1.3 B in Tuned-Lens; calling it "long" overstates the effect.
+- "Entropy rise at unembed? ✓" 96:96:001_layers_and_logits/evaluation-gemma-2-9b.md.  The unembed layer is never probed; the cited entropy change occurs *inside* the transformer stack, so linking it to the unembedding matrix is incorrect.
+- "Because p never exceeds 0.9 it evades the strict copy-collapse rule, yet it behaves like a classic copy-reflex" 40:45:001_layers_and_logits/evaluation-Mistral-7B-v0.1.md.  Behavioural similarity is plausible, but asserting equivalence ignores the quantitative threshold the script is designed to enforce.
 
-## 2  Misinterpretations in the single-model reports
-• Evaluation-Qwen3-8B.md claims "Both CSVs contain only a single position (`pos = 5` )" (L6-7).  The `output-Qwen3-8B-records.csv` actually holds 240+ rows covering every prompt token (§ records CSV, first column shows layers 0-32 for six positions).
+## 3. Usefulness for the Realism ↔ Nominalism project
 
-• Evaluation-Mistral-7B-v0.1.md states that entropies "are upper bounds" because only top-20 probabilities are logged (L55-56).  The script computes entropy from the *full* soft-max **before** writing the CSV (`run.py` L329-344); the values are therefore exact, not upper bounds.
+The sharp contrast between Gemma's 42-layer surface echo and Qwen's six-layer gap suggests that different architectures allocate vastly different depth to stripping lexical form before semantic retrieval.  If realism corresponds to stable latent facts, the shallow Δ in Qwen implies earlier activation of fact-specific circuits, whereas Gemma's deep lag hints at nominalist pattern-matching that must be cleaned away first.  The absence of any hard copy stage in Llama and Mistral raises the question whether instruction-tuned objectives implicitly discourage surface echo, offering a natural experiment for disentangling realist and nominalist pathways.
 
-• Evaluation-Gemma-2-9B.md reports "Layer 0 – entropy 0.00 bits" (L12-14).  The JSON shows 5.20 bits at the same layer (`records[0].entropy`) – the 0-bit figure arises from rounding after projecting the top-k slice, not from the full distribution.
+## 4. Limitations
 
-## 3  Signals for the Realism ↔ Nominalism project
-The repeated pattern – a mid-stack semantic collapse onto an *abstract category* ("city") followed by a brief appearance of the concrete referent ("Berlin") that is later overridden by surface-form priors – invites the question: are deep blocks storing realist factual pointers that are subsequently re-encoded into nominalist frequency or formatting heuristics?
-
-One workable experiment is to intervene on the *post-MLP* residual at the first "Berlin-dominant" layer and re-inject it later, testing whether the token is preserved.  If Berlin survives, the nominal drift likely arises from attention heads rather than MLP re-encoding, pointing to a distributional (nominalist) override.  Conversely, if it is lost despite the intervention, the factual pointer itself may be fragile, questioning a strictly realist interpretation.
-
-Another avenue is to trace which heads introduce the formatting/numeric tokens in the final two layers.  Cross-model consistency of such heads would argue for a domain-general nominalist clean-up module, whereas checkpoint-specific heads would support an incidental over-representation of markup in the pre-training corpus.
-
-## 4  Limitations of the present data
-1. Single-token probe: by focusing on the *first* unseen token the sweep ignores multi-step generation dynamics; a model might output "Berlin" at step 2 even if suppressed at step 1.
-2. CPU inference: all runs executed on CPU, so timing-related stochastic layers (rope phase etc.) are unaffected, but weight-only quantisation paths differ from typical GPU inference.
-3. Entropy from CSV: although the script logs full-soft-max entropy, downstream analyses that re-compute entropy from the CSV will incur approximation error because tail mass is aggregated into `rest_mass`.
-4. Prompt style: the context lacks a trailing colon, known to steer some checkpoints towards list/numeric answers; comparing against a "Question: … Answer:" prompt would control for that confound.
+Single-prompt probing risks overfitting to idiosyncratic tokenizer artefacts ("湾", "******"), and Δ estimates can shift by >5 layers when the brevity instruction is removed, as noted for Gemma 46:53:001_layers_and_logits/evaluation-gemma-2-9b.md.  All runs used CPU inference without seed control, so minor sampling noise may affect top-k rankings near p≈0.9.  The RMS lens normalises residual streams but cannot recover attention pattern information; models that interleave attention and MLP may therefore show spurious entropy bumps.  Finally, the >0.90 criterion is arbitrary; lowering it would classify Mistral's prolonged "simply" plateau as copy-collapse and raise Δ by ~20 layers.
 
 ---
 Produced by OpenAI o3

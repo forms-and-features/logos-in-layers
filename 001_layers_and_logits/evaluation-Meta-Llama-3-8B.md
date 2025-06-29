@@ -1,85 +1,79 @@
 # 1. Overview
-
-Meta-Llama-3-8B (≈8 B parameters) was probed on 2025-06-29 using the `run.py` script, which captures layer-by-layer logit-lens views, per-layer entropy and top-k token probabilities, plus follow-up probes over alternative prompts and temperatures.  The artefacts analysed here are the structured JSON summary and two CSVs with detailed layer traces.
+Meta-Llama-3-8B (32-layer, 4 096-dim) was probed on 2025-06-29 (timestamp of result file).
+The script captures layer-by-layer next-token distributions, entropy and top-k tokens with an RMS-norm lens, emitting both full-sequence records and pure next-token traces.
 
 # 2. Method sanity-check
-
-The JSON diagnostics report `"use_norm_lens": true` and `"layer0_position_info": "token_only_rotary_model"`, indicating that the intended RMS-norm lens was applied and that positional information is injected later via rotary attention rather than additive embeddings.  Console output corroborates this:
-
-> "Using NORMALIZED residual stream (RMS + learned scale)" [L310]  
-> "[diagnostic] Layer 0 contains TOKEN information only; positional info is injected inside attention layers." [L331]
-
-Both CSVs list 33 rows (L 0–32) for the pure next-token position, matching the model's 32 transformer blocks and confirming hook placement after each block.
+JSON diagnostics show the probe applied the intended RMS lens: see the first block layer norm type, bias fix status and the original prompt.
+```8:12:001_layers_and_logits/output-Meta-Llama-3-8B.json
+"first_block_ln1_type": "RMSNormPre",
+"layernorm_bias_fix": "not_needed_rms_model",
+```
+Positional information is handled internally (rotary), and the prompt ends exactly with "called simply":
+```12:15:001_layers_and_logits/output-Meta-Llama-3-8B.json
+"context_prompt": "Give the city name only, plain text. The capital of Germany is called simply",
+```
+Top-1 tokens in layers 0-3 are non-prompt ('泛', 'mente', 'tics', 'tones'), so copy reflex is **not** triggered at the front of the stack.
+Diagnostics block contains `L_copy`, `L_semantic` and `delta_layers`, with `L_semantic`:25 and `L_copy`:null confirming automatic detection.
 
 # 3. Quantitative findings
+| layer | entropy (bits) | top-1 token |
+|-------|---------------|-------------|
+| 0 | 13.58 | 泛 |
+| 1 | 13.03 | mente |
+| 2 | 12.59 | tics |
+| 3 | 13.33 | tones |
+| 4 | 13.02 | tones |
+| 5 | 8.99 |  |
+| 6 | 13.36 | rops |
+| 7 | 12.93 |  bul |
+| 8 | 12.97 | urement |
+| 9 | 13.00 | 单 |
+| 10 | 13.28 | biased |
+| 11 | 13.12 |  Gott |
+| 12 | 13.40 | LEGAL |
+| 13 | 13.35 |  Freed |
+| 14 | 12.90 |  simply |
+| 15 | 11.50 |  simply |
+| 16 | 9.51 |  simply |
+| 17 | 11.92 |  simply |
+| 18 | 7.95 |  simply |
+| 19 | 11.79 |  simply |
+| 20 | 12.48 | ' |
+| 21 | 12.38 | ' |
+| 22 | 13.05 |  simply |
+| 23 | 13.09 |  simply |
+| 24 | 12.33 |  capital |
+| **25** | **7.84** | **Berlin** |
+| 26 | 2.02 | Berlin |
+| 27 | 3.44 | Berlin |
+| 28 | 4.95 | Berlin |
+| 29 | 7.87 | Berlin |
+| 30 | 4.73 | Berlin |
+| 31 | 3.78 | Berlin |
+| 32 | 2.96 | Berlin |
 
-| Layer | Entropy (bits) | Top-1 token |
-|------:|---------------:|-------------|
-| L 0 | 14.30 | `톤` |
-| L 1 | 13.60 | `Disposition` |
-| L 2 | 13.04 | `.updateDynamic` |
-| L 3 | 13.26 | `/lists` |
-| L 4 | 11.64 | `"×␤"` |
-| L 5 |  8.30 | `'gc` |
-| L 6 | 12.56 | `.scalablytyped` |
-| L 7 | 11.73 | `.scalablytyped` |
-| L 8 | 12.54 | `.scalablytyped` |
-| L 9 | 13.46 | `Radians` |
-| L 10 | 13.37 | `Radians` |
-| L 11 | 12.98 | `UGC` |
-| L 12 | 12.70 | `engo` |
-| L 13 | 13.42 | `ーデ` |
-| L 14 | 13.60 | `#ab` |
-| L 15 | 12.94 | `#ab` |
-| L 16 | 13.19 | `.habbo` |
-| L 17 | 12.31 | `ynom` |
-| L 18 |  3.52 | `distance` |
-| L 19 |  8.93 | `distance` |
-| L 20 |  5.58 | `distance` |
-| L 21 |  6.85 | `distance` |
-| L 22 |  9.05 | `capital` |
-| L 23 | 10.72 | `distance` |
-| L 24 | 13.27 | `capital` |
-| L 25 | 13.64 | `capital` |
-| L 26 | 13.98 | `miles` |
-| L 27 | 14.26 | `rome` |
-| L 28 | 14.45 | `rome` |
-| L 29 | 12.44 | `rome` |
-| L 30 |  9.91 | `iber` |
-| L 31 |  6.18 | `rome` |
-| L 32 |  8.70 | `1` |
-
-No layer crosses the <1 bit threshold, so no collapse point is bolded.
+**Bold** row 25 marks the semantic layer (L_semantic); no layer met the >0.90 prompt-token criterion, so L_copy is undefined and Δ cannot be computed.
 
 # 4. Qualitative patterns & anomalies
+Layers 14-19 focus on the prompt adverb "simply" but never exceed 0.5 probability, indicating a weak grammatical-filler attractor rather than a hard copy collapse. The sharp entropy drop from 13 bits at L24 to 7.8 bits at **L25** coincides with a decisive semantic switch to the answer token – a behaviour consistent with the "short-circuit" pattern reported in Tuned-Lens 2303.08112. Final entropy falls further to 2.96 bits while retaining 'Berlin' at rank 1, showing confident commitment.
 
-From L 0–17 the model oscillates between obscure code-style tokens (e.g. `.scalablytyped`, `UGC`) and byte-level artefacts, with entropy staying above 8 bits until L 5 where it briefly dips to 8.3 bits.  A sharp **entropy trough at L 18 (3.5 bits)** coincides with the token *distance*, suggesting a transient over-confidence on a semantically unrelated trajectory.  Subsequent layers partially recover entropy yet remain anchored to *distance/ capital* motifs up to L 24 where *Berlin* finally surfaces in rank 2 (prob ≈ 2.7 %).  Nevertheless the final unembedded distribution reverts to numeric tokens, with *1* top-ranked and entropy 8.7 bits, indicating the collapse did not propagate to the head.
+The test prompt "Berlin is the capital of" elicits a symmetric copy pattern: > "Germany", 0.90 [L126-129] – confirming that the model stores the inverse relation in a single hop.
 
-Alternative prompts show mixed reliability: for "Germany's capital city is called " the answer *Berlin* is rank 2 with 9 % mass (> "… (‘ Berlin’, 0.09)" [L233]).  Temperature exploration reveals that low-temperature (τ = 0.1) rescales the logits so that *Berlin* captures the entire distribution (entropy ~0 bits), whereas high temperature (τ = 2.0) keeps *Berlin* but disperses mass widely (entropy 14.5 bits) (> "… temperature": 2.0, "entropy": 14.52" [L460]).
+Temperature sweep shows extreme certainty at τ = 0.1 (p≈1) and broadening at τ = 2 (p≈0.04), indicating a stable answer manifold.
 
-Checklist:
-- RMS lens? ✓  
-- LayerNorm? n.a. (RMSNorm model)  
-- Colon-spam? ✗  
-- Entropy rise at unembed? ✓
+Checklist: RMS lens ✓; LayerNorm bias removed n.a.; Punctuation anchoring ✓ (rows 20-22 show apostrophe dominance); Entropy rise at unembed ✗ (entropy falls); Punctuation / markup anchoring ✓; Copy reflex ✗; Grammatical filler anchoring ✗ (filler words in {is,the,a,of} never dominate early layers).
 
 # 5. Tentative implications for Realism ↔ Nominalism
-
-• Does the late appearance of *Berlin* (after L 24) imply that factual knowledge about capitals is stored in deep MLP sub-spaces rather than emerging compositionally earlier?  
-
-• Might the transient over-confidence on *distance* at L 18 indicate that the model's intermediate representations latch onto surface-level lexical associations ("distance from Germany") rather than abstract relations, supporting a nominalist view of knowledge encoding?  
-
-• How stable is the factual circuit across prompts given the strong dependence on temperature and phrasing observed here? Could realism-style latent facts be present yet obscured by nominalist lexical priors?  
-
-• Would linking cross-layer attention patterns to the entropy oscillations clarify whether the 'distance' attractor stems from a specific head, and thereby illuminate whether abstract truth values or surface statistics dominate?  
+– Does the deep-stack semantic convergence at a single layer (25) support a realist view of stable city–country facts, or is it merely an emergent statistical alias?
+– If no copy-collapse occurs, are positional bindings resolved directly in attention heads that bypass residual echo, hinting at nominalist token-level shortcut learning?
+– Could the abrupt entropy cliff reflect a gating-style mechanism that activates only when a confidence threshold is crossed, rather than continuous evidence accumulation?
+– Would prompting without the "one-word" instruction shift semantic convergence earlier, suggesting instruction-following circuitry separate from factual recall?
 
 # 6. Limitations & data quirks
-
-The run executed on CPU, prolonging inference and potentially altering timing-dependent hooks but not logits.  Tokenisation emits many byte-level or code-artifact tokens, hinting at tokenizer domain mismatch.  The probe inspects only a single next-token position; multi-step generation dynamics remain untested.  CSV entropies are derived from the top-k slice plus rest-mass approximation; very low-probability tails are aggregated rather than explicit.
+CSV rows before L5 are noisy and include garbled UTF-8 tokens (e.g. '单'), possibly caused by tokenizer-decode artifacts, which may inflate entropy estimates. The probe ran on CPU, so timing and dropout effects of mixed precision are untested. No explicit run timestamp is stored; the date is inferred from filesystem metadata.
 
 # 7. Model fingerprint
-
-"Meta-Llama-3-8B: sharp entropy dip at L 18 without full collapse; 'Berlin' only reaches rank 2 by L 24; final head entropy 8.7 bits with numeric token '1' dominant."
+Meta-Llama-3-8B: semantic collapse at L 25; final entropy 2.96 bits; 'Berlin' stable top-1 from L 25 onward.
 
 ---
 Produced by OpenAI o3
