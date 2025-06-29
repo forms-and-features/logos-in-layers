@@ -1,6 +1,22 @@
 # Layer-by-Layer Analysis (Experiment 001)
 
-## Overview
+## Overview of experiment runs
+
+### Run at 2025-06-29 21:02 UTC+2
+
+Layer-by-layer analysis (identical prompt, deterministic seed):
+
+– **Gemma-2-9B** (42 layers) Immediate copy-collapse at layer 0 on "simply"; semantic answer "Berlin" only at the final layer (**Δ = 42**).
+
+– **Qwen3-8B** (36 layers) Copy-collapse at layer 25; "Berlin" emerges at layer 31 (**Δ = 6**).
+
+– **Meta-Llama-3-8B** (32 layers) No hard echo; "Berlin" appears at layer 25 (no Δ).
+
+– **Mistral-7B-v0.1** (32 layers) Soft "simply" plateau (<0.9 p), semantic collapse at layer 25 (no Δ).
+
+Cross-model synthesis: see `run-2025-06-29-21-02/evaluation-cross-model.md`.
+
+### Run at 2025-06-29 16:53 UTC+2
 
 Layer-by-layer analysis of how the prediction for *"Give the city name only, plain text. The capital of Germany is called simply"* evolves through four different models:
 
@@ -12,9 +28,7 @@ Layer-by-layer analysis of how the prediction for *"Give the city name only, pla
 
 – **Mistral-7B-v0.1** (32 layers) Similar to Llama—extended "simply" plateau without exceeding the copy threshold, then semantic convergence at layer 25.
 
-### Cross-Model Findings
-
-See evaluation-cross-model.md.
+Cross-model synthesis: see `run-2025-06-29-16-53/evaluation-cross-model.md`.
 
 ## Supported Models
 
@@ -32,13 +46,16 @@ See evaluation-cross-model.md.
 
 ```
 001_layers_and_logits/
-├── run.py                         # Main experiment script
-├── evaluation-[model].md          # Per-model analyses  
-├── evaluation-cross-model.md      # Cross-model analysis
-├── output-[model].json            # JSON metadata (per model)
-├── output-[model]-records.csv     # Layer-wise records
-├── output-[model]-pure-next-token.csv  # Clean entropy (first unseen token only)
-├── prompt-*.txt                   # Evaluation prompts
+├── run.py                           # Main experiment script
+├── run-YYYY-MM-DD-HH-MM/            # One timestamped directory per sweep
+│   ├── evaluation-[model].md        # Per-model analyses  
+│   ├── evaluation-cross-model.md    # Cross-model analysis
+│   ├── output-[model].json          # JSON diagnostics
+│   ├── output-[model]-records.csv   # Layer-wise records (all tokens)
+│   ├── output-[model]-pure-next-token.csv  # Clean entropy (next-token only)
+│   └── ...
+├── prompt-*.txt                     # Evaluation prompts
+└── NOTES.md                         # This file
 ```
 
 ---
@@ -54,6 +71,21 @@ The sections below were migrated from `PROJECT_NOTES.md` verbatim for historical
 
 ## Key Technical Implementation Details
 
+### Deterministic Seed & Reproducibility (2025-06-29)
+`run.py` now initialises a deterministic bootstrap (`SEED = 316`) and enables `torch.use_deterministic_algorithms(True)` plus cuBLAS workspace settings.  Every sweep is repeatable bit-for-bit across runs and machines.
+
+### Improved LayerNorm & RMSNorm Handling (2025-06-29)
+`apply_norm_or_skip()` now:
+* Applies full **LayerNorm** (γ *and* β) with dtype-safe casting.
+* Detects **RMSNorm** scale under multiple attribute names and casts to residual dtype.
+* Eliminates the deprecated helper `is_safe_layernorm()`.
+
+### New Output: Pure Next-Token CSV
+Each run emits `output-<model>-pure-next-token.csv`, logging entropy and top-k only for the first unseen token to avoid average deflation.
+
+### LayerNorm Bias & Post-Block Normalisation Fixes (2025-06-29)
+`apply_norm_or_skip()` removes the β (bias) term from LayerNorm when applying the lens and prefers `ln2` over `ln1` for post-block residual snapshots.
+
 ### RMSNorm vs LayerNorm Handling
 *(See original code snippets for full context)*
 
@@ -65,12 +97,6 @@ The sections below were migrated from `PROJECT_NOTES.md` verbatim for historical
 
 ### Device / Precision Management
 The experiment supports CUDA, MPS and CPU with automatic dtype selection. See `run.py` for logic.
-
-### LayerNorm Bias & Post-Block Normalisation Fixes (2025-06-29)
-`apply_norm_or_skip()` removes the β (bias) term from LayerNorm when applying the lens and prefers `ln2` over `ln1` for post-block residual snapshots.
-
-### New Output: Pure Next-Token CSV
-Each run emits `output-<model>-pure-next-token.csv`, logging entropy and top-k only for the first unseen token to avoid average deflation.
 
 ## Development Environment Notes
 - **Hardware**: Apple Silicon MacBook Pro M2 Max 64 GB
