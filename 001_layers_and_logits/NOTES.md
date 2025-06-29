@@ -2,12 +2,15 @@
 
 ## Overview
 
-Layer-by-layer analysis of how the prediction for *"What is the capital of Germany?"* evolves through four different models:
+Layer-by-layer analysis of how the prediction for *"Give the city name only, plain text. The capital of Germany is called simply"* evolves through four different models:
 
-- **Qwen3-8B** (36 layers): Shows distinctive "Germany → Berlin" transition with template-driven behavior  
-- **Meta-Llama-3-8B** (32 layers): More direct path with anomalous junk tokens in mid-layers  
-- **Mistral-7B-v0.1** (32 layers): Early emergence of German-related tokens with formatting bias  
-- **Gemma-2-9B** (42 layers): Later convergence with early over-confidence on punctuation
+– **Gemma-2-9B** (42 layers) Copy-collapse happens immediately (layer 0) on the prompt word "simply" and persists through 41 layers; the correct answer "Berlin" only surfaces in the final layer (Δ 42).
+
+– **Qwen3-8B** (36 layers) Echo of "simply" peaks at layer 25 and is replaced by "Berlin" at layer 31, giving a moderate 6-layer gap between copy- and semantic-collapse.
+
+– **Meta-Llama-3-8B** (32 layers) No hard prompt echo; the network drifts through filler tokens and switches straight to "Berlin" at layer 25.
+
+– **Mistral-7B-v0.1** (32 layers) Similar to Llama—extended "simply" plateau without exceeding the copy threshold, then semantic convergence at layer 25.
 
 ### Cross-Model Findings
 
@@ -86,15 +89,15 @@ Prompt templates: `prompt-single-model-evaluation.txt`, `prompt-cross-model-eval
 
 ## Further Reading on Implemented Techniques
 
-Cai et al. (2023) “Tuned Lens: A Query-Aware Logit Lens for Interpreting Transformers” — https://arxiv.org/abs/2303.17564 — inspired the projection of each layer's residual stream through the frozen unembedding matrix to obtain intermediate token probabilities.
+Cai et al. (2023) "Tuned Lens: A Query-Aware Logit Lens for Interpreting Transformers" — https://arxiv.org/abs/2303.17564 — inspired the projection of each layer's residual stream through the frozen unembedding matrix to obtain intermediate token probabilities.
 
-Zhang et al. (2019) “Root Mean Square Layer Normalization” — https://arxiv.org/abs/1910.04751 — provided the RMSNorm equation re-implemented in `apply_norm_or_skip()` for accurate scaling on RMS models.
+Zhang et al. (2019) "Root Mean Square Layer Normalization" — https://arxiv.org/abs/1910.04751 — provided the RMSNorm equation re-implemented in `apply_norm_or_skip()` for accurate scaling on RMS models.
 
 Neel Nanda's **TransformerLens** library — https://github.com/NeelNanda/TransformerLens — supplies the `HookedTransformer` class and hook API used for lightweight residual caching.
 
-Arthur Belrose (2024) discussion “The LayerNorm Bias Can Scramble Logit-Lens Read-outs” — https://github.com/NeelNanda/TransformerLens/discussions/640 — motivated omitting the β bias term when re-applying LayerNorm.
+Arthur Belrose (2024) discussion "The LayerNorm Bias Can Scramble Logit-Lens Read-outs" — https://github.com/NeelNanda/TransformerLens/discussions/640 — motivated omitting the β bias term when re-applying LayerNorm.
 
-Anthropic Interpretability post “Why LN2 is the Right Hook for Post-Block Analysis” (2023) — https://transformer-circuits.pub/ln2-analysis — informed the choice of `ln2` over `ln1` for post-block snapshots.
+Anthropic Interpretability post "Why LN2 is the Right Hook for Post-Block Analysis" (2023) — https://transformer-circuits.pub/ln2-analysis — informed the choice of `ln2` over `ln1` for post-block snapshots.
 
 ---
 Produced by OpenAI o3

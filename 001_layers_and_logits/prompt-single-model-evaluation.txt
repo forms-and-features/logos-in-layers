@@ -3,36 +3,64 @@ You are an interpretability researcher from a top AI research lab (e.g. OpenAI, 
 You are reviewing results of a probe of one LLM model.
 
 INPUTS
-- SCRIPT – source code of the probe's script (for context)
-- JSON  – one json file with structured results of the probe (first part of results).
-- CSV  - one csv file with detailed layer-level results of the probe (second part of results).
+- SCRIPT – source code of the probe's script (for context): 
+
+- JSON  – one json file with structured results of the probe of the model(first part of results):
+
+
+- CSV  - two csv files with detailed layer-level results of the probe of the model (second part of results):
+
+
 - Your own research knowledge.
+
 You're asked to evaluate only one specific model; cross-model analysis and comparison will be done separately, so you MUST ONLY read the files mentioned here.
 
 TASK
 Write EVAL in GitHub‑flavoured Markdown with the sections below **in order**.  
-Stick to empirical evidence from CSV, JSON and SCRIPT; no extra inference.
+If a claim cannot be grounded in a quoted CSV/JSON line, omit it.
 The result of your evaluation must be in that file, don't put it into your response to me.
+
+The brevity instruction is intentionally preserved to
+(a) ensure single-token answers across all models, and
+(b) expose the depth gap Δ between copy/filler collapse and semantic collapse.
 
 1. Overview  
 2 – 3 sentences: model name, size, run date, summary of what the probe captures.
 
 2. Method sanity‑check  
 One paragraph: do JSON and CSV confirm that positional encodings and the intended norm lens are applied? Quote ≤ 2 console lines with line numbers.
+Verify context_prompt ends with “called simply” (no trailing space).
+If the top-1 token in layers 0–3 is “called” or “simply”, flag copy-reflex ✓ in Section 4.
+Confirm that "L_copy", "L_semantic", "delta_layers" are present in diagnostics.
 
-3. Quantitative findings  
+3. Quantitative findings 
 A table, one row per each layer: “L 0 – entropy  X bits, top‑1 ‘token’” - you will read each row in the CSV for this, this is important, you must review each layer for a fully informed evaluation.
-Bold the first layer where entropy < 1 bit (collapse layer).
+Bold TWO layers:
+- Copy-collapse (L_copy) – first layer whose top-1 is a prompt token with p > 0.90.
+- Semantic layer (L_semantic) – first layer whose top-1 = “Berlin”.
+Δ = L_semantic − L_copy = __N__ layers.
+Use only the pure-next-token CSV for entropy and collapse-depth;
+ignore the records CSV so punctuation or copy artefacts from earlier prompt tokens cannot skew the metric.
+You may consult records CSV for additional context,
+but do not use it for the table or for bolding the collapse layer.
 
 4. Qualitative patterns & anomalies  
 - Conscise but thorough paragraph for each notable behaviour; use your knowledge of the latest LLM interpretability research; cite sources.
+- If Δ > 0, state “long copy-reflex (Δ layers)”.
 - In addition to layer-by-layer results in CSV and JSON, evaluate JSON for notable results for other test prompts and temperature exploration.
+- Pay special attention to the test prompt “Berlin is the capital of”.
+- Comment on whether the collapse-layer index shifts when the “one-word” instruction is absent, citing the test-prompt JSON block.
 - To support the claims, add a short inline quote + line number, e.g. > “… (‘Berlin’, 0.92)” [L541].
 - Checklist (✓/✗/n.a.) at end of section:
-    - RMS lens?
-    - LayerNorm?
-    - Colon‑spam?
+    - RMS lens?  
+    - LayerNorm bias removed?  
+    - Punctuation anchoring?
     - Entropy rise at unembed?
+    - Punctuation / markup anchoring?
+    - Copy reflex? (based on copy-collapse rule)
+    - Grammatical filler anchorin? (mark if the top-1 token in layers 0–5 is in the set {“is”, “the”, “a”, “of”})
+– Feel free to quote interesting rows from either CSV.
+– If you notice early layers dominated by punctuation, fillers, or copy-tokens in records.csv, flag that under “Punctuation / filler anchoring”.
 
 5. Tentative implications for Realism ↔ Nominalism  
 3-4 paragraphs, each phrased as an explicit question or hypothesis. **No conclusions or strong claims.**

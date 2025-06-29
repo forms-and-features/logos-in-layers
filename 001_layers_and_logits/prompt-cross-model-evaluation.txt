@@ -3,10 +3,33 @@ You are an interpretability researcher from a top AI research lab (e.g. OpenAI, 
 You are reviewing results of probes of multiple LLM models.
 
 INPUTS
-- SCRIPT – probing script.  
-- JSON – structured results of the probe (first part of the results of each probe), one file per model.
-- CSV - layer-level results of the probe (second part of the results of each probe), one file per model.
-- EVALS – evaluations of probe results, one per model.
+- SCRIPT – probing script:
+
+- JSON – structured results of the probe (part of the results of each probe), one file per model:
+001_layers_and_logits/output-gemma-2-9b.json
+001_layers_and_logits/output-Meta-Llama-3-8B.json
+001_layers_and_logits/output-Mistral-7B-v0.1.json
+001_layers_and_logits/output-Qwen3-8B.json
+
+- CSV - layer-level results of the probe (part of the results of each probe), one per model:
+001_layers_and_logits/output-gemma-2-9b-records.csv
+001_layers_and_logits/output-Meta-Llama-3-8B-records.csv
+001_layers_and_logits/output-Mistral-7B-v0.1-records.csv
+001_layers_and_logits/output-Qwen3-8B-records.csv
+
+- CSV - pure next-token results (part of the results of each probe) – one per model:
+001_layers_and_logits/output-gemma-2-9b-pure-next-token.csv
+001_layers_and_logits/output-Meta-Llama-3-8B-pure-next-token.csv
+001_layers_and_logits/output-Mistral-7B-v0.1-pure-next-token.csv
+001_layers_and_logits/output-Qwen3-8B-pure-next-token.csv
+
+
+- EVALS – evaluations of probe results, one per model:
+001_layers_and_logits/evaluation-gemma-2-9b.md
+001_layers_and_logits/evaluation-Meta-Llama-3-8B.md
+001_layers_and_logits/evaluation-Mistral-7B-v0.1.md
+001_layers_and_logits/evaluation-Qwen3-8B.md
+
 - Your own expertise.
 
 TASK
@@ -16,6 +39,8 @@ The result of your evaluation must be in that file, don't put it into your respo
 
 1. Result synthesis  
 Paragraphs that correlate quantitative patterns across models, drawing on your extensive knowledge of LLM interpretability research (cite sources). Quote EVAL line numbers or raw JSON or CSV snippets as needed.
+Report Δ-collapse = L_semantic − L_copy (prompt-token criterion).
+Compare Δ (copy-reflex lag) across models; highlight any outlier > 10 layers.
 
 2. Misinterpretations in existing EVALS
 Bullet each over‑statement or error you found; cite the exact EVAL line.
@@ -31,6 +56,16 @@ STYLE GUIDELINES
 - Quote lines with L‑numbers; keep quotes short.  
 - Cite external papers only with DOI/arXiv; skip if unsure.  
 - Avoid normative language; focus on actionable analysis.
+
+Where helpful, briefly relate a model’s collapse-depth (Δ) to its public factual-reasoning scores (e.g. MMLU, ARC-C) or to whether it is base vs. instruction-tuned; see the following table for scores:
+
+| Model           | Params | Release | MMLU-5shot |  ARC-C | Licence  |
+| --------------- | -----: | ------- | ---------: | -----: | -------- |
+| Meta-Llama-3-8B |    8 B | 2025-04 | **62.1 %** | 71.9 % | Apache-2 |
+| Mistral-7B-v0.1 |    7 B | 2023-09 |     60.1 % | 66.6 % | Apache-2 |
+| Gemma-2-9B      |    9 B | 2024-02 |       57 % |   63 % | Apache-2 |
+| Qwen-3-8B       |    8 B | 2025-05 | **64 %**\* |   72 % | Apache-2 |
+
 
 At the end of the markdown file, add the following:
 
