@@ -13,6 +13,20 @@ import json
 import csv
 import argparse
 
+# --- deterministic bootstrap -------------------------------------------------
+import random, numpy as np
+
+SEED = 316
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.cuda.manual_seed_all(SEED)
+
+torch.use_deterministic_algorithms(True)   # PyTorch 2.x+
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"  # harmless on CPU, required for CUDA
+torch.set_num_threads(1)  # optional; comment out if you need full CPU speed
+# -----------------------------------------------------------------------------
+
 # Top-k settings for record emission
 TOP_K_RECORD = 5    # number of tokens to record for non-verbose slots
 TOP_K_VERBOSE = 20  # number of tokens to record for verbose slots and answer position
@@ -38,9 +52,7 @@ def _get_rms_scale(norm_mod):
     params = list(norm_mod.parameters(recurse=False))
     return params[0] if len(params) == 1 else None
 
-def is_safe_layernorm(norm_mod):
-    """Check if a normalization module is vanilla LayerNorm that's safe to apply"""
-    return isinstance(norm_mod, nn.LayerNorm)
+
 
 def rms_lens(resid, gamma, eps=1e-5):
     """
@@ -64,50 +76,29 @@ def rms_lens(resid, gamma, eps=1e-5):
     # Normalize and scale
     return resid / rms * gamma
 
-def apply_norm_or_skip(resid, norm_mod, layer_info=""):
+def apply_norm_or_skip(residual: torch.Tensor, norm_module):
     """
-    Apply normalization safely, with support for both LayerNorm and RMSNorm.
-    
-    Args:
-        resid: Residual stream tensor
-        norm_mod: Normalization module (LayerNorm, RMSNorm, etc.)
-        layer_info: String for debugging/warning messages
-    
-    Returns:
-        Normalized residual stream (or original if skipped)
-    Note: All supported norm types are handled above; fallback below is unreachable.
+    Return the residual stream after applying the model's own normalisation layer.
+    Works for both RMSNorm (no bias) and LayerNorm (γ *and* β kept intact).
+
+    This runs under torch.no_grad() so it incurs no autograd overhead.
     """
-    # FIXED: Bias-free LayerNorm to avoid distorting unembedding
-    # The bias term β shifts the residual stream, which can scramble top-k rankings
-    # since the unembedding matrix was trained on centered activations
-    if isinstance(norm_mod, nn.LayerNorm):
-        eps = norm_mod.eps
-        # Manual LayerNorm without bias: (x - μ) / σ * γ
-        mu = resid.mean(-1, keepdim=True)
-        var = resid.var(-1, unbiased=False, keepdim=True)
-        normalized = (resid - mu) / torch.sqrt(var + eps)
-        # Apply only the scale parameter (weight), skip bias
-        # Note: This fix is rarely needed since most modern models use RMSNorm
-        return normalized * norm_mod.weight
-    
-    # RMSNorm - robust scale detection and normalization
-    norm_type = type(norm_mod).__name__
-    if "RMS" in norm_type:
-        # 1. epsilon (HF sometimes calls it variance_epsilon)
-        eps = getattr(norm_mod, "eps", getattr(norm_mod, "variance_epsilon", 1e-5))
-        # 2. scale (may be None for RMSNormPre)
-        gamma = _get_rms_scale(norm_mod)
-        if gamma is None:
-            if (not hasattr(norm_mod, "_lens_ones")
-                or norm_mod._lens_ones.device != resid.device
-                or norm_mod._lens_ones.dtype  != resid.dtype):
-                norm_mod._lens_ones = torch.ones(
-                    resid.shape[-1], device=resid.device, dtype=resid.dtype
-                )
-            gamma = norm_mod._lens_ones
-        return rms_lens(resid, gamma, eps)
-    # Fallback - this shouldn't happen but be safe (unreachable)
-    return resid
+    if norm_module is None:
+        return residual  # some models expose pre-norm residuals
+
+    with torch.no_grad():
+        if isinstance(norm_module, torch.nn.LayerNorm):
+            # --- faithful LayerNorm -----------------------------------------
+            mean = residual.mean(dim=-1, keepdim=True)
+            var  = residual.var(dim=-1, unbiased=False, keepdim=True)  # same as LN
+            normalized = (residual - mean) / torch.sqrt(var + norm_module.eps)
+            weight = norm_module.weight.to(residual.dtype)
+            bias   = norm_module.bias.to(residual.dtype)
+            return normalized * weight + bias
+        else:
+            # assume RMSNorm-style (weight only, no bias)
+            denom = residual.norm(dim=-1, keepdim=True) / math.sqrt(residual.size(-1))
+            return residual / (denom + norm_module.eps) * norm_module.weight
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -302,7 +293,7 @@ def run_experiment_for_model(model_id):
                         first_norm = model.blocks[0].ln1
                         norm_type = type(first_norm).__name__
                         
-                        if is_safe_layernorm(first_norm):
+                        if isinstance(first_norm, nn.LayerNorm):
                             print("Using NORMALIZED residual stream (LayerNorm applied - more accurate)")
                         elif 'RMS' in norm_type:
                             if _get_rms_scale(first_norm) is None:
@@ -341,7 +332,7 @@ def run_experiment_for_model(model_id):
                 if USE_NORM_LENS:
                     # Use the actual first normalization layer instead of synthetic γ=1
                     print("[diagnostic] Applying real ln1 normalization to embeddings (not synthetic γ=1)")
-                    resid = apply_norm_or_skip(resid, model.blocks[0].ln1, "layer 0 (embeddings)")
+                    resid = apply_norm_or_skip(resid, model.blocks[0].ln1)
                 
                 # FIXED: Cast to FP32 before unembedding to avoid precision loss
                 # Vectorized unembedding for all positions  
@@ -430,22 +421,14 @@ def run_experiment_for_model(model_id):
                     if USE_NORM_LENS:
                         # For pre-LN models, apply ln_final on last layer, otherwise use ln2 for post-block residuals
                         if layer == n_layers - 1 and hasattr(model, 'ln_final'):
-                            resid = apply_norm_or_skip(resid, model.ln_final, f"layer {layer + 1} (final ln)")
+                            resid = apply_norm_or_skip(resid, model.ln_final)
                         else:
                             # FIXED: Use ln2 (MLP-pre norm) instead of ln1 for post-block residuals
                             # ln2 stats better match the post-attention, pre-MLP state which is closer to post-block
                             norm_layer = model.blocks[layer].ln2 if hasattr(model.blocks[layer], 'ln2') else model.blocks[layer].ln1
                             
-                            # FIXED: Safety guard for ln2 type - handle both LayerNorm and RMSNorm
-                            if isinstance(norm_layer, nn.LayerNorm):
-                                # ln2 is LayerNorm (e.g., GPT-NeoX style) - use full LayerNorm with mean-centering
-                                resid = apply_norm_or_skip(resid, norm_layer, f"layer {layer + 1} ln2")
-                            else:
-                                # ln2 is RMSNorm (e.g., Llama style) - use RMS lens
-                                gamma = _get_rms_scale(norm_layer) \
-                                        or torch.ones(resid.shape[-1], device=resid.device)
-                                eps = getattr(norm_layer, "eps", 1e-5)
-                                resid = rms_lens(resid, gamma, eps)
+                            # Use the unified normalization function that handles both LayerNorm and RMSNorm
+                            resid = apply_norm_or_skip(resid, norm_layer)
                     
                     # FIXED: Cast to FP32 before unembedding to avoid precision loss
                     # Vectorized unembedding for all positions
