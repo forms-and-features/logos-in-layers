@@ -313,8 +313,19 @@ def run_experiment_for_model(model_id):
                 hooks.append(resid_hook)
             
             try:
+                # DEBUG: inspect devices before forward
+                print("[DEBUG] About to run model(tokens)")
+                print(f"[DEBUG] tokens device: {tokens.device}, dtype: {tokens.dtype}")
+                print(f"[DEBUG] embedding device: {model.embed.W_E.device}")
+                print(f"[DEBUG] first block param device: {next(model.blocks[0].parameters()).device}")
+                print(f"[DEBUG] unembed device: {model.unembed.W_U.device}")
                 # Run forward pass with targeted hooks
-                logits = model(tokens)
+                try:
+                    logits = model(tokens)
+                except Exception as e:
+                    print(f"[DEBUG ERROR] model(tokens) failed with: {e}")
+                    raise
+                print("[DEBUG] model(tokens) succeeded")
                 
                 # Debug: print device placements of cached activations and tokens
                 for name, t in residual_cache.items():
