@@ -1,7 +1,8 @@
-# Minimal requirements for experiments
-# Only core libraries needed; transformer-lens pulls its own dependencies
+# Minimal requirements for 001_layers_and_logits experiment
+# Updated versions that support proper device_map loading
 
 torch==2.7.1
+transformers>=4.44.0
+accelerate>=1.8.0
 transformer-lens==2.16.1
-accelerate==1.8.1
 tqdm==4.67.1

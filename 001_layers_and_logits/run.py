@@ -141,25 +141,14 @@ def run_experiment_for_model(model_id):
 
         # ---- load model -------------------------------------------------------
         print(f"Loading model on [{device}] ...")
-        # Configure HF loader to avoid duplicating weights in host RAM. Different
-        # versions of Transformers/Transformer-Lens expose different arguments,
-        # so we build a kwargs dict that works across versions.
-        hf_load_kwargs = {}
-        if device in {"cuda", "mps"}:
-            # Stream shards directly to the target accelerator & keep only a
-            # single shard in host RAM at once. Supported by Transformers
-            # >=4.30; older versions silently ignore the kwargs.
-            hf_load_kwargs = dict(low_cpu_mem_usage=True, device_map={"": device})
-
+        # For newer transformers (>=4.44), device_map works properly and gives
+        # significant speedups when model dtype matches weight dtype (e.g. both fp16)
         model = HookedTransformer.from_pretrained(
             model_id,
             device=device,
             torch_dtype=dtype,
-            **hf_load_kwargs,
+            device_map="auto" if device != "cpu" else None,
         )
-        # No `.to(device)` call needed: HF loader already placed every tensor
-        # (including tied weights) on the correct device when `device_map` is
-        # supplied. This also avoids an extra CPU→GPU copy.
         model.eval()  # Hygiene: avoid dropout etc.
         
         # Toggle for using normalized lens (recommended for accurate interpretation)
