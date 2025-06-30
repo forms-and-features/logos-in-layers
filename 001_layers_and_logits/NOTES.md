@@ -16,6 +16,8 @@ Layer-by-layer analysis (identical prompt, deterministic seed):
 
 Cross-model synthesis: see `run-2025-06-29-21-02/evaluation-cross-model.md`.
 
+Meta-evaluation by o3-pro: see `run-2025-06-29-21-02/meta-evaluation.md`.
+
 ### Run at 2025-06-29 16:53 UTC+2
 
 Layer-by-layer analysis of how the prediction for *"Give the city name only, plain text. The capital of Germany is called simply"* evolves through four different models:

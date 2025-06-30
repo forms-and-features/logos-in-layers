@@ -28,7 +28,7 @@ Detailed experiment documentation and findings have moved to `001_layers_and_log
 ### Installation
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/forms-and-features/logos-in-layers.git
 cd logos-in-layers
 python -m venv venv
 source venv/bin/activate  # On macOS/Linux
