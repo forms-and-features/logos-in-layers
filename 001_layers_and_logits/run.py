@@ -146,11 +146,10 @@ def run_experiment_for_model(model_id):
         # so we build a kwargs dict that works across versions.
         hf_load_kwargs = {}
         if device in {"cuda", "mps"}:
-            # Lowest-common-denominator options; silently ignored if unsupported.
-            hf_load_kwargs.update(
-                low_cpu_mem_usage=True,
-                device_map={"": device},  # stream tensors directly
-            )
+            # Stream shards directly to the target accelerator & keep only a
+            # single shard in host RAM at once. Supported by Transformers
+            # >=4.30; older versions silently ignore the kwargs.
+            hf_load_kwargs = dict(low_cpu_mem_usage=True, device_map={"": device})
 
         model = HookedTransformer.from_pretrained(
             model_id,
@@ -158,17 +157,9 @@ def run_experiment_for_model(model_id):
             torch_dtype=dtype,
             **hf_load_kwargs,
         )
-        # Ensure any residual parameters/buffers are on the target device.
-        model.to(device)
-        # Extra safety: ensure every tensor really lives on the desired device.
-        # Some HuggingFace loaders (especially with `low_cpu_mem_usage`) can
-        # leave tied or shared parameters on CPU. This loop moves any stragglers.
-        for _param in model.parameters():
-            if _param.device.type != device:
-                _param.data = _param.data.to(device)
-        for _buf in model.buffers():
-            if _buf.device.type != device:
-                _buf.data = _buf.data.to(device)
+        # No `.to(device)` call needed: HF loader already placed every tensor
+        # (including tied weights) on the correct device when `device_map` is
+        # supplied. This also avoids an extra CPU→GPU copy.
         model.eval()  # Hygiene: avoid dropout etc.
         
         # Toggle for using normalized lens (recommended for accurate interpretation)
