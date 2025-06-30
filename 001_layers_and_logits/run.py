@@ -52,14 +52,6 @@ def _get_rms_scale(norm_mod):
     params = list(norm_mod.parameters(recurse=False))
     return params[0] if len(params) == 1 else None
 
-def get_module_device(module):
-    """Get the device of a module by checking its first parameter."""
-    try:
-        return next(module.parameters()).device
-    except StopIteration:
-        # If module has no parameters, return None
-        return None
-
 def rms_lens(resid, gamma, eps=1e-5):
     """
     Apply RMS normalization with learnable scale parameter.
@@ -93,11 +85,6 @@ def apply_norm_or_skip(residual: torch.Tensor, norm_module):
         return residual  # some models expose pre-norm residuals
 
     with torch.no_grad():
-        # Ensure residual is on the same device as the norm module
-        norm_device = get_module_device(norm_module)
-        if norm_device and residual.device != norm_device:
-            residual = residual.to(norm_device)
-            
         if isinstance(norm_module, torch.nn.LayerNorm):
             # --- faithful LayerNorm -----------------------------------------
             mean = residual.mean(dim=-1, keepdim=True)
@@ -152,35 +139,26 @@ def run_experiment_for_model(model_id):
 
         # ---- load model -------------------------------------------------------
         print(f"Loading model on [{device}] ...")
-        # For newer transformers (>=4.44), device_map works properly and gives
-        # significant speedups when model dtype matches weight dtype (e.g. both fp16)
-        if device == "cpu":
-            model = HookedTransformer.from_pretrained(
-                model_id,
-                device=device,
-                torch_dtype=dtype,
-            )
-        else:
-            # Use device_map="auto" for GPU to leverage improved loading
-            model = HookedTransformer.from_pretrained(
-                model_id,
-                torch_dtype=dtype,
-                device_map="auto",
-                low_cpu_mem_usage=True,
-            )
+        # Avoid device_map="auto" which causes device mismatch issues
+        # Instead, load the model normally and move to target device
+        model = HookedTransformer.from_pretrained(
+            model_id,
+            device="cpu",  # Always load on CPU first
+            torch_dtype=dtype,
+            low_cpu_mem_usage=True,
+        )
         model.eval()  # Hygiene: avoid dropout etc.
-        # Don't force model.to(device) when using device_map="auto" as it can break the mapping
+        
+        # Move entire model to target device
+        print(f"Moving model to {device}...")
+        model = model.to(device)
         
         # Debug: inspect model parameter devices
         unique_param_devices = {p.device for p in model.parameters()}
         print(f"[DEBUG MODEL] Unique parameter devices: {unique_param_devices}")
         
-        # When using device_map="auto", we need to track which device each component is on
-        unembed_device = get_module_device(model.unembed)
-        if unembed_device is None:
-            # Fallback: check W_U directly
-            unembed_device = model.unembed.W_U.device
-        print(f"[DEBUG MODEL] Unembed device: {unembed_device}")
+        # Get the primary device of the model
+        primary_device = device
         
         # Toggle for using normalized lens (recommended for accurate interpretation)
         USE_NORM_LENS = True
@@ -286,9 +264,7 @@ def run_experiment_for_model(model_id):
             print(json.dumps(record, ensure_ascii=False))
         
         # Tokenize the context prompt (without "Answer:" to avoid teacher-forcing)
-        # Get the device of the first model parameter as the default
-        model_device = next(model.parameters()).device
-        tokens = model.to_tokens(context_prompt).to(model_device)
+        tokens = model.to_tokens(context_prompt).to(primary_device)
         
         # Storage to collect pure_next_token_records for L_copy/L_semantic computation
         collected_pure_records = []
@@ -378,13 +354,8 @@ def run_experiment_for_model(model_id):
                 # Layer 0: embeddings (+ positional embeddings if available)
                 print("Layer  0 (embeddings):")
                 if has_pos_embed:
-                    # Ensure both embeddings are on the same device before adding
-                    embed_tensor = residual_cache['hook_embed']
-                    pos_embed_tensor = residual_cache['hook_pos_embed']
-                    # Move to a common device (use embed device as primary)
-                    if embed_tensor.device != pos_embed_tensor.device:
-                        pos_embed_tensor = pos_embed_tensor.to(embed_tensor.device)
-                    resid = embed_tensor + pos_embed_tensor
+                    resid = (residual_cache['hook_embed'] +
+                             residual_cache['hook_pos_embed'])
                 else:
                     resid = residual_cache['hook_embed']
                     print("[diagnostic] No separate positional embedding hook found (as expected for rotary models).")
@@ -397,8 +368,8 @@ def run_experiment_for_model(model_id):
                     resid = apply_norm_or_skip(resid, model.blocks[0].ln1)
                 
                 # FIXED: Cast to FP32 before unembedding to avoid precision loss
-                # Ensure residual is on the same device as unembed module
-                resid_cast = resid[0].to(device=unembed_device, dtype=UNEMBED_DTYPE)
+                # Vectorized unembedding for all positions  
+                resid_cast = resid[0].to(dtype=UNEMBED_DTYPE)
                 logits_all = model.unembed(resid_cast).float()  # [seq, d_vocab]
                 
                 for pos in range(tokens.shape[1]):
@@ -493,8 +464,8 @@ def run_experiment_for_model(model_id):
                             resid = apply_norm_or_skip(resid, norm_layer)
                     
                     # FIXED: Cast to FP32 before unembedding to avoid precision loss
-                    # Ensure residual is on the same device as unembed module
-                    resid_cast = resid[0].to(device=unembed_device, dtype=UNEMBED_DTYPE)
+                    # Vectorized unembedding for all positions
+                    resid_cast = resid[0].to(dtype=UNEMBED_DTYPE)
                     logits_all = model.unembed(resid_cast).float() # [seq, d_vocab]
                     
                     for pos in range(tokens.shape[1]):
@@ -646,7 +617,7 @@ def run_experiment_for_model(model_id):
                 "Give the city name only, plain text. Germany has its capital at",
                 "Give the city name only, plain text. In Germany, the capital city is known as",
             ]
-            test_tokens_cache = {prompt: model.to_tokens(prompt).to(model_device) for prompt in test_prompts}
+            test_tokens_cache = {prompt: model.to_tokens(prompt).to(primary_device) for prompt in test_prompts}
             
             for test_prompt in test_prompts:
                 test_tokens = test_tokens_cache[test_prompt]
@@ -674,7 +645,7 @@ def run_experiment_for_model(model_id):
             temp_test_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
             # Reuse cached tokens if available, otherwise tokenize once
             if temp_test_prompt not in test_tokens_cache:
-                test_tokens_cache[temp_test_prompt] = model.to_tokens(temp_test_prompt).to(model_device)
+                test_tokens_cache[temp_test_prompt] = model.to_tokens(temp_test_prompt).to(primary_device)
             test_tokens = test_tokens_cache[temp_test_prompt]
             
             # Single forward pass - then rescale for different temperatures
