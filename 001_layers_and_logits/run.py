@@ -158,6 +158,11 @@ def run_experiment_for_model(model_id):
                 low_cpu_mem_usage=True,
             )
         model.eval()  # Hygiene: avoid dropout etc.
+        model = model.to(device)
+        
+        # Debug: inspect model parameter devices
+        unique_param_devices = {p.device for p in model.parameters()}
+        print(f"[DEBUG MODEL] Unique parameter devices: {unique_param_devices}")
         
         # Toggle for using normalized lens (recommended for accurate interpretation)
         USE_NORM_LENS = True
@@ -280,8 +285,8 @@ def run_experiment_for_model(model_id):
                 def cache_residual_hook(tensor, hook):
                     # Only store the tensor we need, detached from computation graph
                     # Store activations in fp32 for numerical stability and full sequence
-                    # TODO: For batch runs, consider storing cache on GPU to avoid repeated .to(device) copies
-                    cache_dict[hook.name] = tensor.cpu().float().detach()
+                    # Keep activations on target device to avoid device mismatch during analysis
+                    cache_dict[hook.name] = tensor.to(device=device, dtype=torch.float32).detach()
                 return cache_residual_hook
             
             # Create the hook function with explicit cache reference
@@ -310,6 +315,11 @@ def run_experiment_for_model(model_id):
             try:
                 # Run forward pass with targeted hooks
                 logits = model(tokens)
+                
+                # Debug: print device placements of cached activations and tokens
+                for name, t in residual_cache.items():
+                    print(f"[DEBUG CACHE] {name} device: {t.device}")
+                print(f"[DEBUG TOKENS] tokens device: {tokens.device}")
                 
                 # Show top predictions at different layers
                 print(f"\nLayer-by-layer analysis of context: '{context_prompt}'")
