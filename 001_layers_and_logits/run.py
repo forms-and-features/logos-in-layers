@@ -158,6 +158,8 @@ def run_experiment_for_model(model_id):
             torch_dtype=dtype,
             **hf_load_kwargs,
         )
+        # Ensure any residual parameters/buffers are on the target device.
+        model.to(device)
         model.eval()  # Hygiene: avoid dropout etc.
         
         # Toggle for using normalized lens (recommended for accurate interpretation)
