@@ -160,6 +160,15 @@ def run_experiment_for_model(model_id):
         )
         # Ensure any residual parameters/buffers are on the target device.
         model.to(device)
+        # Extra safety: ensure every tensor really lives on the desired device.
+        # Some HuggingFace loaders (especially with `low_cpu_mem_usage`) can
+        # leave tied or shared parameters on CPU. This loop moves any stragglers.
+        for _param in model.parameters():
+            if _param.device.type != device:
+                _param.data = _param.data.to(device)
+        for _buf in model.buffers():
+            if _buf.device.type != device:
+                _buf.data = _buf.data.to(device)
         model.eval()  # Hygiene: avoid dropout etc.
         
         # Toggle for using normalized lens (recommended for accurate interpretation)
