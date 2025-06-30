@@ -349,8 +349,8 @@ def run_experiment_for_model(model_id):
                 
                 # FIXED: Cast to FP32 before unembedding to avoid precision loss
                 # Vectorized unembedding for all positions  
-                resid_fp32 = resid[0].to(torch.float32)
-                logits_all = model.unembed(resid_fp32).float()  # [seq, d_vocab]
+                resid_cast = resid[0].to(UNEMBED_DTYPE)
+                logits_all = model.unembed(resid_cast).float()  # [seq, d_vocab]
                 
                 for pos in range(tokens.shape[1]):
                     layer_logits = logits_all[pos]
@@ -445,8 +445,8 @@ def run_experiment_for_model(model_id):
                     
                     # FIXED: Cast to FP32 before unembedding to avoid precision loss
                     # Vectorized unembedding for all positions
-                    resid_fp32 = resid[0].to(torch.float32) 
-                    logits_all = model.unembed(resid_fp32).float() # [seq, d_vocab]
+                    resid_cast = resid[0].to(UNEMBED_DTYPE)
+                    logits_all = model.unembed(resid_cast).float() # [seq, d_vocab]
                     
                     for pos in range(tokens.shape[1]):
                         layer_logits = logits_all[pos]
