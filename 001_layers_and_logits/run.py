@@ -260,7 +260,7 @@ def run_experiment_for_model(model_id):
             print(json.dumps(record, ensure_ascii=False))
         
         # Tokenize the context prompt (without "Answer:" to avoid teacher-forcing)
-        tokens = model.to_tokens(context_prompt).to(model.cfg.device)
+        tokens = model.to_tokens(context_prompt).to(device)
         
         # Storage to collect pure_next_token_records for L_copy/L_semantic computation
         collected_pure_records = []
@@ -346,9 +346,9 @@ def run_experiment_for_model(model_id):
                 print("Layer  0 (embeddings):")
                 if has_pos_embed:
                     resid = (residual_cache['hook_embed'] +
-                             residual_cache['hook_pos_embed']).to(model.cfg.device)
+                             residual_cache['hook_pos_embed']).to(device)
                 else:
-                    resid = residual_cache['hook_embed'].to(model.cfg.device)
+                    resid = residual_cache['hook_embed'].to(device)
                     print("[diagnostic] No separate positional embedding hook found (as expected for rotary models).")
                     print("[diagnostic] Layer 0 contains TOKEN information only; positional info is injected inside attention layers.")
                 # FIXED: Apply first real normalizer to embeddings if using norm-lens
@@ -360,7 +360,7 @@ def run_experiment_for_model(model_id):
                 
                 # FIXED: Cast to FP32 before unembedding to avoid precision loss
                 # Vectorized unembedding for all positions  
-                resid_cast = resid[0].to(UNEMBED_DTYPE)
+                resid_cast = resid[0].to(device=device, dtype=UNEMBED_DTYPE)
                 logits_all = model.unembed(resid_cast).float()  # [seq, d_vocab]
                 
                 for pos in range(tokens.shape[1]):
@@ -439,7 +439,7 @@ def run_experiment_for_model(model_id):
                 for layer in range(n_layers):
                     print(f"Layer {layer + 1:2d} (after transformer block {layer}):")
                     # Get residual stream after this layer's block (move from CPU to GPU)
-                    resid = residual_cache[f'blocks.{layer}.hook_resid_post'].to(model.cfg.device)
+                    resid = residual_cache[f'blocks.{layer}.hook_resid_post'].to(device)
                     
                     # Apply normalization if requested
                     if USE_NORM_LENS:
@@ -456,7 +456,7 @@ def run_experiment_for_model(model_id):
                     
                     # FIXED: Cast to FP32 before unembedding to avoid precision loss
                     # Vectorized unembedding for all positions
-                    resid_cast = resid[0].to(UNEMBED_DTYPE)
+                    resid_cast = resid[0].to(device=device, dtype=UNEMBED_DTYPE)
                     logits_all = model.unembed(resid_cast).float() # [seq, d_vocab]
                     
                     for pos in range(tokens.shape[1]):
@@ -608,7 +608,7 @@ def run_experiment_for_model(model_id):
                 "Give the city name only, plain text. Germany has its capital at",
                 "Give the city name only, plain text. In Germany, the capital city is known as",
             ]
-            test_tokens_cache = {prompt: model.to_tokens(prompt).to(model.cfg.device) for prompt in test_prompts}
+            test_tokens_cache = {prompt: model.to_tokens(prompt).to(device) for prompt in test_prompts}
             
             for test_prompt in test_prompts:
                 test_tokens = test_tokens_cache[test_prompt]
@@ -636,7 +636,7 @@ def run_experiment_for_model(model_id):
             temp_test_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
             # Reuse cached tokens if available, otherwise tokenize once
             if temp_test_prompt not in test_tokens_cache:
-                test_tokens_cache[temp_test_prompt] = model.to_tokens(temp_test_prompt).to(model.cfg.device)
+                                    test_tokens_cache[temp_test_prompt] = model.to_tokens(temp_test_prompt).to(device)
             test_tokens = test_tokens_cache[temp_test_prompt]
             
             # Single forward pass - then rescale for different temperatures
