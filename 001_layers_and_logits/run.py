@@ -52,7 +52,13 @@ def _get_rms_scale(norm_mod):
     params = list(norm_mod.parameters(recurse=False))
     return params[0] if len(params) == 1 else None
 
-
+def get_module_device(module):
+    """Get the device of a module by checking its first parameter."""
+    try:
+        return next(module.parameters()).device
+    except StopIteration:
+        # If module has no parameters, return None
+        return None
 
 def rms_lens(resid, gamma, eps=1e-5):
     """
@@ -87,6 +93,11 @@ def apply_norm_or_skip(residual: torch.Tensor, norm_module):
         return residual  # some models expose pre-norm residuals
 
     with torch.no_grad():
+        # Ensure residual is on the same device as the norm module
+        norm_device = get_module_device(norm_module)
+        if norm_device and residual.device != norm_device:
+            residual = residual.to(norm_device)
+            
         if isinstance(norm_module, torch.nn.LayerNorm):
             # --- faithful LayerNorm -----------------------------------------
             mean = residual.mean(dim=-1, keepdim=True)
@@ -158,11 +169,18 @@ def run_experiment_for_model(model_id):
                 low_cpu_mem_usage=True,
             )
         model.eval()  # Hygiene: avoid dropout etc.
-        model = model.to(device)
+        # Don't force model.to(device) when using device_map="auto" as it can break the mapping
         
         # Debug: inspect model parameter devices
         unique_param_devices = {p.device for p in model.parameters()}
         print(f"[DEBUG MODEL] Unique parameter devices: {unique_param_devices}")
+        
+        # When using device_map="auto", we need to track which device each component is on
+        unembed_device = get_module_device(model.unembed)
+        if unembed_device is None:
+            # Fallback: check W_U directly
+            unembed_device = model.unembed.W_U.device
+        print(f"[DEBUG MODEL] Unembed device: {unembed_device}")
         
         # Toggle for using normalized lens (recommended for accurate interpretation)
         USE_NORM_LENS = True
@@ -176,13 +194,13 @@ def run_experiment_for_model(model_id):
             print(f"🔬 Promoting unembed weights to FP32 for research-grade precision (was {model.unembed.W_U.dtype})")
             # Ensure we preserve device when promoting to FP32
             model.unembed.W_U = torch.nn.Parameter(
-                model.unembed.W_U.to(device=device, dtype=torch.float32), 
+                model.unembed.W_U.to(dtype=torch.float32), 
                 requires_grad=False
             )
             # Unembedding bias may be a plain tensor (not a Parameter); move it too.
             if hasattr(model.unembed, 'b_U') and model.unembed.b_U is not None:
                 model.unembed.b_U = torch.nn.Parameter(
-                    model.unembed.b_U.to(device=device, dtype=torch.float32),
+                    model.unembed.b_U.to(dtype=torch.float32),
                     requires_grad=False
                 )
             UNEMBED_DTYPE = torch.float32  # refresh after promotion
@@ -268,7 +286,9 @@ def run_experiment_for_model(model_id):
             print(json.dumps(record, ensure_ascii=False))
         
         # Tokenize the context prompt (without "Answer:" to avoid teacher-forcing)
-        tokens = model.to_tokens(context_prompt).to(device)
+        # Get the device of the first model parameter as the default
+        model_device = next(model.parameters()).device
+        tokens = model.to_tokens(context_prompt).to(model_device)
         
         # Storage to collect pure_next_token_records for L_copy/L_semantic computation
         collected_pure_records = []
@@ -285,8 +305,8 @@ def run_experiment_for_model(model_id):
                 def cache_residual_hook(tensor, hook):
                     # Only store the tensor we need, detached from computation graph
                     # Store activations in fp32 for numerical stability and full sequence
-                    # Keep activations on target device to avoid device mismatch during analysis
-                    cache_dict[hook.name] = tensor.to(device=device, dtype=torch.float32).detach()
+                    # Keep activations on their original device to preserve device_map="auto" layout
+                    cache_dict[hook.name] = tensor.to(dtype=torch.float32).detach()
                 return cache_residual_hook
             
             # Create the hook function with explicit cache reference
@@ -313,19 +333,8 @@ def run_experiment_for_model(model_id):
                 hooks.append(resid_hook)
             
             try:
-                # DEBUG: inspect devices before forward
-                print("[DEBUG] About to run model(tokens)")
-                print(f"[DEBUG] tokens device: {tokens.device}, dtype: {tokens.dtype}")
-                print(f"[DEBUG] embedding device: {model.embed.W_E.device}")
-                print(f"[DEBUG] first block param device: {next(model.blocks[0].parameters()).device}")
-                print(f"[DEBUG] unembed device: {model.unembed.W_U.device}")
                 # Run forward pass with targeted hooks
-                try:
-                    logits = model(tokens)
-                except Exception as e:
-                    print(f"[DEBUG ERROR] model(tokens) failed with: {e}")
-                    raise
-                print("[DEBUG] model(tokens) succeeded")
+                logits = model(tokens)
                 
                 # Debug: print device placements of cached activations and tokens
                 for name, t in residual_cache.items():
@@ -369,10 +378,15 @@ def run_experiment_for_model(model_id):
                 # Layer 0: embeddings (+ positional embeddings if available)
                 print("Layer  0 (embeddings):")
                 if has_pos_embed:
-                    resid = (residual_cache['hook_embed'] +
-                             residual_cache['hook_pos_embed']).to(device)
+                    # Ensure both embeddings are on the same device before adding
+                    embed_tensor = residual_cache['hook_embed']
+                    pos_embed_tensor = residual_cache['hook_pos_embed']
+                    # Move to a common device (use embed device as primary)
+                    if embed_tensor.device != pos_embed_tensor.device:
+                        pos_embed_tensor = pos_embed_tensor.to(embed_tensor.device)
+                    resid = embed_tensor + pos_embed_tensor
                 else:
-                    resid = residual_cache['hook_embed'].to(device)
+                    resid = residual_cache['hook_embed']
                     print("[diagnostic] No separate positional embedding hook found (as expected for rotary models).")
                     print("[diagnostic] Layer 0 contains TOKEN information only; positional info is injected inside attention layers.")
                 # FIXED: Apply first real normalizer to embeddings if using norm-lens
@@ -383,8 +397,8 @@ def run_experiment_for_model(model_id):
                     resid = apply_norm_or_skip(resid, model.blocks[0].ln1)
                 
                 # FIXED: Cast to FP32 before unembedding to avoid precision loss
-                # Vectorized unembedding for all positions  
-                resid_cast = resid[0].to(device=device, dtype=UNEMBED_DTYPE)
+                # Ensure residual is on the same device as unembed module
+                resid_cast = resid[0].to(device=unembed_device, dtype=UNEMBED_DTYPE)
                 logits_all = model.unembed(resid_cast).float()  # [seq, d_vocab]
                 
                 for pos in range(tokens.shape[1]):
@@ -462,8 +476,8 @@ def run_experiment_for_model(model_id):
                 # Layers 1 to n_layers: after each transformer block
                 for layer in range(n_layers):
                     print(f"Layer {layer + 1:2d} (after transformer block {layer}):")
-                    # Get residual stream after this layer's block (move from CPU to GPU)
-                    resid = residual_cache[f'blocks.{layer}.hook_resid_post'].to(device)
+                    # Get residual stream after this layer's block
+                    resid = residual_cache[f'blocks.{layer}.hook_resid_post']
                     
                     # Apply normalization if requested
                     if USE_NORM_LENS:
@@ -479,8 +493,8 @@ def run_experiment_for_model(model_id):
                             resid = apply_norm_or_skip(resid, norm_layer)
                     
                     # FIXED: Cast to FP32 before unembedding to avoid precision loss
-                    # Vectorized unembedding for all positions
-                    resid_cast = resid[0].to(device=device, dtype=UNEMBED_DTYPE)
+                    # Ensure residual is on the same device as unembed module
+                    resid_cast = resid[0].to(device=unembed_device, dtype=UNEMBED_DTYPE)
                     logits_all = model.unembed(resid_cast).float() # [seq, d_vocab]
                     
                     for pos in range(tokens.shape[1]):
@@ -632,7 +646,7 @@ def run_experiment_for_model(model_id):
                 "Give the city name only, plain text. Germany has its capital at",
                 "Give the city name only, plain text. In Germany, the capital city is known as",
             ]
-            test_tokens_cache = {prompt: model.to_tokens(prompt).to(device) for prompt in test_prompts}
+            test_tokens_cache = {prompt: model.to_tokens(prompt).to(model_device) for prompt in test_prompts}
             
             for test_prompt in test_prompts:
                 test_tokens = test_tokens_cache[test_prompt]
@@ -660,7 +674,7 @@ def run_experiment_for_model(model_id):
             temp_test_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
             # Reuse cached tokens if available, otherwise tokenize once
             if temp_test_prompt not in test_tokens_cache:
-                                    test_tokens_cache[temp_test_prompt] = model.to_tokens(temp_test_prompt).to(device)
+                test_tokens_cache[temp_test_prompt] = model.to_tokens(temp_test_prompt).to(model_device)
             test_tokens = test_tokens_cache[temp_test_prompt]
             
             # Single forward pass - then rescale for different temperatures
@@ -965,4 +979,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
