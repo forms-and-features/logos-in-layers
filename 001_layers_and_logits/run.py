@@ -182,13 +182,10 @@ def run_experiment_for_model(model_id):
         if USE_FP32_UNEMBED and model.unembed.W_U.dtype != torch.float32:
             print(f"🔬 Promoting unembed weights to FP32 for research-grade precision (was {model.unembed.W_U.dtype})")
             model.unembed.W_U = torch.nn.Parameter(model.unembed.W_U.float(), requires_grad=False)
-            # Some models (e.g. Llama-3) expose a bias term b_U as an nn.Parameter.
-            # Re-casting it to float32 must preserve the nn.Parameter wrapper; otherwise
-            # assigning a plain tensor will raise "torch.nn.Parameter expected" errors.
+            # Unembedding bias may be a plain tensor (not a Parameter); move it too.
             if hasattr(model.unembed, 'b_U') and model.unembed.b_U is not None:
-                model.unembed.b_U = torch.nn.Parameter(
-                    model.unembed.b_U.float(), requires_grad=False
-                )
+                if model.unembed.b_U.device.type != device:
+                    model.unembed.b_U = model.unembed.b_U.to(device)
             UNEMBED_DTYPE = torch.float32  # refresh after promotion
         else:
             UNEMBED_DTYPE = torch.float32 if USE_FP32_UNEMBED else model.unembed.W_U.dtype
