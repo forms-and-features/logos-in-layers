@@ -143,12 +143,20 @@ def run_experiment_for_model(model_id):
         print(f"Loading model on [{device}] ...")
         # For newer transformers (>=4.44), device_map works properly and gives
         # significant speedups when model dtype matches weight dtype (e.g. both fp16)
-        model = HookedTransformer.from_pretrained(
-            model_id,
-            device=device,
-            torch_dtype=dtype,
-            device_map="auto" if device != "cpu" else None,
-        )
+        if device == "cpu":
+            model = HookedTransformer.from_pretrained(
+                model_id,
+                device=device,
+                torch_dtype=dtype,
+            )
+        else:
+            # Use device_map="auto" for GPU to leverage improved loading
+            model = HookedTransformer.from_pretrained(
+                model_id,
+                torch_dtype=dtype,
+                device_map="auto",
+                low_cpu_mem_usage=True,
+            )
         model.eval()  # Hygiene: avoid dropout etc.
         
         # Toggle for using normalized lens (recommended for accurate interpretation)
@@ -161,11 +169,17 @@ def run_experiment_for_model(model_id):
         # Promote unembedding weights to FP32 if requested for true precision gain
         if USE_FP32_UNEMBED and model.unembed.W_U.dtype != torch.float32:
             print(f"🔬 Promoting unembed weights to FP32 for research-grade precision (was {model.unembed.W_U.dtype})")
-            model.unembed.W_U = torch.nn.Parameter(model.unembed.W_U.float(), requires_grad=False)
+            # Ensure we preserve device when promoting to FP32
+            model.unembed.W_U = torch.nn.Parameter(
+                model.unembed.W_U.to(device=device, dtype=torch.float32), 
+                requires_grad=False
+            )
             # Unembedding bias may be a plain tensor (not a Parameter); move it too.
             if hasattr(model.unembed, 'b_U') and model.unembed.b_U is not None:
-                if model.unembed.b_U.device.type != device:
-                    model.unembed.b_U = model.unembed.b_U.to(device)
+                model.unembed.b_U = torch.nn.Parameter(
+                    model.unembed.b_U.to(device=device, dtype=torch.float32),
+                    requires_grad=False
+                )
             UNEMBED_DTYPE = torch.float32  # refresh after promotion
         else:
             UNEMBED_DTYPE = torch.float32 if USE_FP32_UNEMBED else model.unembed.W_U.dtype
