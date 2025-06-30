@@ -141,10 +141,14 @@ def run_experiment_for_model(model_id):
 
         # ---- load model -------------------------------------------------------
         print(f"Loading model on [{device}] ...")
+        # Stream weights directly to the target device to avoid doubling
+        # peak host-RAM usage when loading large models (Gemma, Llama-3, etc.).
+        # Works on CUDA and Apple-Silicon (MPS); ignored on pure CPU.
         model = HookedTransformer.from_pretrained(
             model_id,
             device=device,
             torch_dtype=dtype,
+            skip_cpu_load=(device in {"cuda", "mps"}),
         )
         model.eval()  # Hygiene: avoid dropout etc.
         
