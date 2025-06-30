@@ -141,14 +141,22 @@ def run_experiment_for_model(model_id):
 
         # ---- load model -------------------------------------------------------
         print(f"Loading model on [{device}] ...")
-        # Stream weights directly to the target device to avoid doubling
-        # peak host-RAM usage when loading large models (Gemma, Llama-3, etc.).
-        # Works on CUDA and Apple-Silicon (MPS); ignored on pure CPU.
+        # Configure HF loader to avoid duplicating weights in host RAM. Different
+        # versions of Transformers/Transformer-Lens expose different arguments,
+        # so we build a kwargs dict that works across versions.
+        hf_load_kwargs = {}
+        if device in {"cuda", "mps"}:
+            # Lowest-common-denominator options; silently ignored if unsupported.
+            hf_load_kwargs.update(
+                low_cpu_mem_usage=True,
+                device_map={"": device},  # stream tensors directly
+            )
+
         model = HookedTransformer.from_pretrained(
             model_id,
             device=device,
             torch_dtype=dtype,
-            skip_cpu_load=(device in {"cuda", "mps"}),
+            **hf_load_kwargs,
         )
         model.eval()  # Hygiene: avoid dropout etc.
         
