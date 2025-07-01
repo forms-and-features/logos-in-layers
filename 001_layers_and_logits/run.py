@@ -12,6 +12,7 @@ import math
 import json
 import csv
 import argparse
+import gc  # For garbage collection
 
 # --- deterministic bootstrap -------------------------------------------------
 import random, numpy as np
@@ -139,19 +140,45 @@ def run_experiment_for_model(model_id):
 
         # ---- load model -------------------------------------------------------
         print(f"Loading model on [{device}] ...")
+        
+        # Clear any existing CUDA cache before loading
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        # Set batch_first=False for models that need it (TransformerLens expectation)
+        os.environ['TRANSFORMERS_BATCH_FIRST'] = 'False'
+            
+        # Load model directly to target device to minimize memory usage
         # Avoid device_map="auto" which causes device mismatch issues
-        # Instead, load the model normally and move to target device
-        model = HookedTransformer.from_pretrained(
-            model_id,
-            device="cpu",  # Always load on CPU first
-            torch_dtype=dtype,
-            low_cpu_mem_usage=True,
-        )
+        try:
+            # Try loading directly to target device first
+            model = HookedTransformer.from_pretrained(
+                model_id,
+                device=device,
+                torch_dtype=dtype,
+                low_cpu_mem_usage=True,
+            )
+        except Exception as e:
+            print(f"Direct loading to {device} failed: {e}")
+            print("Falling back to CPU loading...")
+            # Fallback: load on CPU then move
+            model = HookedTransformer.from_pretrained(
+                model_id,
+                device="cpu",
+                torch_dtype=dtype,
+                low_cpu_mem_usage=True,
+            )
+            # Clear cache before moving
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            print(f"Moving model to {device}...")
+            model = model.to(device)
+            
         model.eval()  # Hygiene: avoid dropout etc.
         
-        # Move entire model to target device
-        print(f"Moving model to {device}...")
-        model = model.to(device)
+        # Clear cache after loading
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         
         # Debug: inspect model parameter devices
         unique_param_devices = {p.device for p in model.parameters()}
@@ -570,9 +597,14 @@ def run_experiment_for_model(model_id):
                 for h in hooks:  # HookPoint.add_hook always returns a handle with .remove()
                     if h is not None:
                         h.remove()
-                del residual_cache, hooks
+                        
+                # Aggressively free memory
+                del residual_cache
+                del hooks
+                gc.collect()  # Force garbage collection
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                    torch.cuda.synchronize()  # Ensure all CUDA operations are complete
             
             # Let's also see what the actual model would predict (final layer)
             print("=" * 60)
@@ -599,8 +631,7 @@ def run_experiment_for_model(model_id):
             print(json.dumps(final_record, ensure_ascii=False))
             
             # Emit additional probing records for test prompts
-            # Cache tokenized test prompts to avoid redundant tokenization
-            # Give the city name only, plain text. 
+            # Process test prompts in smaller batches to reduce memory usage
             test_prompts = [
                 "Berlin is the capital of",
                 "Germany's capital city is called simply",
@@ -617,10 +648,10 @@ def run_experiment_for_model(model_id):
                 "Give the city name only, plain text. Germany has its capital at",
                 "Give the city name only, plain text. In Germany, the capital city is known as",
             ]
-            test_tokens_cache = {prompt: model.to_tokens(prompt).to(primary_device) for prompt in test_prompts}
             
+            # Process test prompts one at a time to minimize memory usage
             for test_prompt in test_prompts:
-                test_tokens = test_tokens_cache[test_prompt]
+                test_tokens = model.to_tokens(test_prompt).to(primary_device)
                 
                 test_logits = model(test_tokens)
                 _, test_top_indices = torch.topk(test_logits[0, -1, :], 10, largest=True, sorted=True)
@@ -639,17 +670,17 @@ def run_experiment_for_model(model_id):
                     "topk": [[model.tokenizer.decode([idx]), prob.item()] for prob, idx in zip(test_top_probs, test_top_indices)]
                 }
                 print(json.dumps(probe_record, ensure_ascii=False))
+                
+                # Clean up tensors immediately
+                del test_tokens, test_logits, test_top_indices, test_full_probs, test_top_probs, test_log_probs
             
             # Emit temperature exploration records
             # Note: Using consistent prompt for temperature exploration to maintain comparability
             temp_test_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
-            # Reuse cached tokens if available, otherwise tokenize once
-            if temp_test_prompt not in test_tokens_cache:
-                test_tokens_cache[temp_test_prompt] = model.to_tokens(temp_test_prompt).to(primary_device)
-            test_tokens = test_tokens_cache[temp_test_prompt]
+            temp_tokens = model.to_tokens(temp_test_prompt).to(primary_device)
             
             # Single forward pass - then rescale for different temperatures
-            base_logits = model(test_tokens)[0, -1, :]
+            base_logits = model(temp_tokens)[0, -1, :]
             
             temperatures = [0.1, 2.0]
             
@@ -674,6 +705,9 @@ def run_experiment_for_model(model_id):
                     "topk": [[model.tokenizer.decode([idx]), prob.item()] for prob, idx in zip(temp_top_probs, temp_top_indices)]
                 }
                 print(json.dumps(temp_record, ensure_ascii=False))
+            
+            # Clean up temperature exploration tensors
+            del temp_tokens, base_logits
         
         print("=== END OF INSPECTING ==============\n")
         
@@ -690,6 +724,7 @@ def run_experiment_for_model(model_id):
         
         # Clean up model to free memory (though process will end anyway)
         del model
+        gc.collect()  # Force garbage collection
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
     
@@ -741,10 +776,13 @@ def run_single_model(model_id):
     print(f"🚀 Starting subprocess for model: {model_id}")
     print(f"{'='*80}")
     
-    # Set memory limit BEFORE any CUDA operations
+    # Set memory limits BEFORE any CUDA operations
     if torch.cuda.is_available():
         try:
-            torch.cuda.set_per_process_memory_fraction(0.8)  # Use only 80% of GPU memory
+            # Use 85% of GPU memory (increased from 80% since we're managing memory better)
+            torch.cuda.set_per_process_memory_fraction(0.85)
+            # Also set environment variable for better memory management
+            os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
         except AttributeError:
             pass
     
