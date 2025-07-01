@@ -416,18 +416,7 @@ def run_experiment_for_model(model_id):
                     top_probs_k = torch.exp(log_probs[top_indices_k])
                     top_tokens_k = [model.tokenizer.decode([idx]) for idx in top_indices_k]
                     print_summary(0, pos, token_str, entropy_bits, top_tokens_k, top_probs_k)
-                    if verbose:
-                        # Print full verbose list (TOP_K_VERBOSE), reusing initial topk when possible
-                        if k == TOP_K_VERBOSE:
-                            verbose_indices = top_indices_k
-                            verbose_probs = top_probs_k
-                        else:
-                            _, verbose_indices = torch.topk(layer_logits, TOP_K_VERBOSE, largest=True, sorted=True)
-                            verbose_probs = torch.exp(log_probs[verbose_indices])
-                        for i, (prob, idx) in enumerate(zip(verbose_probs, verbose_indices)):
-                            tok = model.tokenizer.decode([idx])
-                            print(f"    {i+1:2d}. '{tok}' ({prob.item():.6f})")
-                        print()
+                    # Verbose console output removed to reduce noise - data still captured in files
                 
                 # FIXED: Also emit pure next-token record (last position only)
                 # This avoids deflated entropy from tokens the model has already seen
@@ -512,18 +501,7 @@ def run_experiment_for_model(model_id):
                         top_probs_k = torch.exp(log_probs[top_indices_k])
                         top_tokens_k = [model.tokenizer.decode([idx]) for idx in top_indices_k]
                         print_summary(layer + 1, pos, token_str, entropy_bits, top_tokens_k, top_probs_k)
-                        if verbose:
-                            # Print full verbose list (TOP_K_VERBOSE), reusing initial topk when possible
-                            if k == TOP_K_VERBOSE:
-                                verbose_indices = top_indices_k
-                                verbose_probs = top_probs_k
-                            else:
-                                _, verbose_indices = torch.topk(layer_logits, TOP_K_VERBOSE, largest=True, sorted=True)
-                                verbose_probs = torch.exp(log_probs[verbose_indices])
-                            for i, (prob, idx) in enumerate(zip(verbose_probs, verbose_indices)):
-                                tok = model.tokenizer.decode([idx])
-                                print(f"    {i+1:2d}. '{tok}' ({prob.item():.6f})")
-                            print()
+                        # Verbose console output removed to reduce noise - data still captured in files
                     
                     # FIXED: Also emit pure next-token record (last position only) 
                     # This avoids deflated entropy from tokens the model has already seen
@@ -738,8 +716,6 @@ def run_experiment_for_model(model_id):
         
         # Get all captured output (including human-readable logs and JSONL records)
         raw = output_buffer.getvalue()
-        # Print full raw output to console for diagnostics
-        print(raw, end='')
         # Parse only the JSONL records into Python objects
         lines = [line for line in raw.splitlines() if line.strip().startswith('{')]
         objs = [json.loads(line) for line in lines]
