@@ -13,6 +13,7 @@ import json
 import csv
 import argparse
 import gc  # For garbage collection
+from transformers import Gemma3ForCausalLM
 
 # --- deterministic bootstrap -------------------------------------------------
 import random, numpy as np
@@ -37,11 +38,25 @@ TOP_K_VERBOSE = 20  # number of tokens to record for verbose slots and answer po
 
 # List of confirmed supported models
 CONFIRMED_MODELS = [
-    "mistralai/Mistral-7B-v0.1",       # 7B - Mistral
-    "google/gemma-2-9b",               # 9B - Gemma 2
-    "Qwen/Qwen3-8B",                 # 8B - Qwen3
-    "meta-llama/Meta-Llama-3-8B"      # 8B - Llama 3 Base
+    "meta-llama/Meta-Llama-3-8B",
+    "meta-llama/Meta-Llama-3-70B",
+    "mistralai/Mistral-7B-v0.1",
+    "mistralai/Mixtral-8x7B-v0.1",
+    "google/gemma-2-9b",
+    "google/gemma-3-12b",
+    "google/paligemma-3b-pt-224",
+    "Qwen/Qwen3-8B",
+    "01-ai/Yi-1.5-34B",
+    "baidu/ERNIE-4.5-21B-A3B-Base-PT",
 ]
+
+MODEL_LOAD_KWARGS = {
+    # custom loaders / large-model sharding / remote code
+    "meta-llama/Meta-Llama-3-70B":      {"device_map": "auto"},
+    "mistralai/Mixtral-8x7B-v0.1":      {"trust_remote_code": True},
+    "google/paligemma-3b-pt-224":       {"trust_remote_code": True},
+    "baidu/ERNIE-4.5-21B-A3B-Base-PT":  {"trust_remote_code": True},
+}
 
 # --- helpers ---------------------------------------------------------------
 RMS_ATTR_CANDIDATES = ("w", "weight", "scale", "gamma")
@@ -113,6 +128,10 @@ def clean_model_name(model_id):
     clean_name = model_id.split('/')[-1]
     return clean_name
 
+def get_final_norm(m):
+    """Get the final normalization layer (handles both ln_final and norm attributes)"""
+    return getattr(m, "ln_final", None) or getattr(m, "norm", None)
+
 def run_experiment_for_model(model_id):
     """Run the complete experiment for a single model and return output as string"""
     
@@ -149,7 +168,9 @@ def run_experiment_for_model(model_id):
         os.environ['TRANSFORMERS_BATCH_FIRST'] = 'False'
             
         # Load model directly to target device to minimize memory usage
-        # Avoid device_map="auto" which causes device mismatch issues
+        # Get model-specific loading kwargs
+        extra = MODEL_LOAD_KWARGS.get(model_id, {})
+        
         try:
             # Try loading directly to target device first
             model = HookedTransformer.from_pretrained(
@@ -157,6 +178,7 @@ def run_experiment_for_model(model_id):
                 device=device,
                 torch_dtype=dtype,
                 low_cpu_mem_usage=True,
+                **extra
             )
         except Exception as e:
             print(f"Direct loading to {device} failed: {e}")
@@ -167,12 +189,20 @@ def run_experiment_for_model(model_id):
                 device="cpu",
                 torch_dtype=dtype,
                 low_cpu_mem_usage=True,
+                **extra
             )
             # Clear cache before moving
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             print(f"Moving model to {device}...")
             model = model.to(device)
+        
+        # Special handling for PaliGemma
+        if model_id == "google/paligemma-3b-pt-224":
+            model = model.text_decoder                      # drop vision encoder
+            model.tokenizer = model.tokenizer.from_pretrained(
+                model_id, subfolder="text_decoder"
+            )
             
         model.eval()  # Hygiene: avoid dropout etc.
         
@@ -216,7 +246,8 @@ def run_experiment_for_model(model_id):
         ground_truth = "Berlin"  # For display/comparison
         
         first_block_ln1_type = type(model.blocks[0].ln1).__name__ if hasattr(model, 'blocks') and len(model.blocks) > 0 else None
-        final_ln_type = type(model.ln_final).__name__ if hasattr(model, 'ln_final') else None
+        final_norm = get_final_norm(model)
+        final_ln_type = type(final_norm).__name__ if final_norm else None
         
         # Check if LayerNorm bias fix will be applied
         uses_layernorm = (hasattr(model, 'blocks') and len(model.blocks) > 0 and 
@@ -469,14 +500,16 @@ def run_experiment_for_model(model_id):
                     # Apply normalization if requested
                     if USE_NORM_LENS:
                         # For pre-LN models, apply ln_final on last layer, otherwise use ln2 for post-block residuals
-                        if layer == n_layers - 1 and hasattr(model, 'ln_final'):
-                            resid = apply_norm_or_skip(resid, model.ln_final)
+                        if layer == n_layers - 1 and get_final_norm(model):
+                            resid = apply_norm_or_skip(resid, get_final_norm(model))
                         else:
                             # FIXED: Use ln2 (MLP-pre norm) instead of ln1 for post-block residuals
                             # ln2 stats better match the post-attention, pre-MLP state which is closer to post-block
-                            norm_layer = model.blocks[layer].ln2 if hasattr(model.blocks[layer], 'ln2') else model.blocks[layer].ln1
-                            
-                            # Use the unified normalization function that handles both LayerNorm and RMSNorm
+                            candidates = ("ln2", "router_norm", "ln1")
+                            for n in candidates:
+                                if hasattr(model.blocks[layer], n):
+                                    norm_layer = getattr(model.blocks[layer], n)
+                                    break
                             resid = apply_norm_or_skip(resid, norm_layer)
                     
                     # FIXED: Cast to FP32 before unembedding to avoid precision loss
