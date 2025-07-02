@@ -1,3 +1,4 @@
+import os
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512,expandable_segments:True"
 import transformer_lens
 from transformer_lens import HookedTransformer
@@ -6,7 +7,6 @@ import torch.nn as nn
 import io
 from contextlib import redirect_stdout
 from datetime import datetime
-import os
 import subprocess
 import sys
 import math
