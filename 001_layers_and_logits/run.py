@@ -55,10 +55,10 @@ CONFIRMED_MODELS = [
 MODEL_LOAD_KWARGS = {
     # custom loaders / large-model sharding / remote code
     "meta-llama/Meta-Llama-3-70B": {
-        "device_map": "auto",
+        "device_map": "balanced",
         "max_memory": {
-            "cuda:0": "40GiB",
-            "cuda:1": "40GiB",
+            "0": "41GiB",
+            "1": "41GiB",
             "cpu":    "400GiB",
         },
     },
