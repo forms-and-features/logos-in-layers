@@ -54,9 +54,9 @@ CONFIRMED_MODELS = [
 
 MODEL_LOAD_KWARGS = {
     # custom loaders / large-model sharding / remote code
-    "meta-llama/Meta-Llama-3-70B":      {
+    "meta-llama/Meta-Llama-3-70B": {
         "device_map": "auto",
-        "max_memory": {0: "68GiB", "cpu": "400GiB"}
+        "max_memory": {0: "40GiB", 1: "40GiB", "cpu": "400GiB"},
     },
     "mistralai/Mixtral-8x7B-v0.1":      {"trust_remote_code": True},
     "google/paligemma-3b-pt-224":       {"trust_remote_code": True},
@@ -176,31 +176,56 @@ def run_experiment_for_model(model_id):
         # Get model-specific loading kwargs
         extra = MODEL_LOAD_KWARGS.get(model_id, {})
         
+        # ------------------------------------------------------------------
+        # Load checkpoint – delegate placement to Accelerate when we are
+        # sharding ("device_map"/"load_in_8bit" present); otherwise fall back
+        # to the original single-device behaviour.
+        # ------------------------------------------------------------------
         try:
-            # Try loading directly to target device first
-            model = HookedTransformer.from_pretrained(
-                model_id,
-                device=device,
-                torch_dtype=dtype,
-                low_cpu_mem_usage=True,
-                **extra
-            )
+            if "device_map" in extra or "load_in_8bit" in extra:
+                # Sharded / quantised model → let Accelerate spread layers.
+                model = HookedTransformer.from_pretrained(
+                    model_id,
+                    torch_dtype=dtype,
+                    low_cpu_mem_usage=True,
+                    **extra
+                )
+            else:
+                # Classic single-GPU load.
+                model = HookedTransformer.from_pretrained(
+                    model_id,
+                    device=device,
+                    torch_dtype=dtype,
+                    low_cpu_mem_usage=True,
+                    **extra
+                )
         except Exception as e:
-            print(f"Direct loading to {device} failed: {e}")
-            print("Falling back to CPU loading...")
-            # Fallback: load on CPU then move
-            model = HookedTransformer.from_pretrained(
-                model_id,
-                device="cpu",
-                torch_dtype=dtype,
-                low_cpu_mem_usage=True,
-                **extra
-            )
-            # Clear cache before moving
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            print(f"Moving model to {device}...")
-            model = model.to(device)
+            print(f"Direct loading attempt failed: {e}")
+            print("Falling back to CPU loading…")
+
+            if "device_map" in extra or "load_in_8bit" in extra:
+                # Still let Accelerate decide – do NOT pass `device=`.
+                model = HookedTransformer.from_pretrained(
+                    model_id,
+                    torch_dtype=dtype,
+                    low_cpu_mem_usage=True,
+                    **extra
+                )
+            else:
+                model = HookedTransformer.from_pretrained(
+                    model_id,
+                    device="cpu",
+                    torch_dtype=dtype,
+                    low_cpu_mem_usage=True,
+                    **extra
+                )
+
+            # Only move onto the target GPU if we are NOT sharded/quantised.
+            if "device_map" not in extra and "load_in_8bit" not in extra:
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                print(f"Moving model to {device}…")
+                model = model.to(device)
         
         # Special handling for PaliGemma
         if model_id == "google/paligemma-3b-pt-224":
@@ -230,7 +255,9 @@ def run_experiment_for_model(model_id):
         USE_FP32_UNEMBED = (dtype == torch.float32)
         
         # Promote unembedding weights to FP32 if requested for true precision gain
-        if USE_FP32_UNEMBED and model.unembed.W_U.dtype != torch.float32:
+        if (USE_FP32_UNEMBED
+            and model.unembed.W_U.dtype != torch.float32
+            and model.unembed.W_U.device.type == "cuda"):
             print(f"🔬 Promoting unembed weights to FP32 for research-grade precision (was {model.unembed.W_U.dtype})")
             # Ensure we preserve device when promoting to FP32
             model.unembed.W_U = torch.nn.Parameter(
