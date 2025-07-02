@@ -56,7 +56,11 @@ MODEL_LOAD_KWARGS = {
     # custom loaders / large-model sharding / remote code
     "meta-llama/Meta-Llama-3-70B": {
         "device_map": "auto",
-        "max_memory": {0: "40GiB", 1: "40GiB", "cpu": "400GiB"},
+        "max_memory": {
+            "cuda:0": "40GiB",
+            "cuda:1": "40GiB",
+            "cpu":    "400GiB",
+        },
     },
     "mistralai/Mixtral-8x7B-v0.1":      {"trust_remote_code": True},
     "google/paligemma-3b-pt-224":       {"trust_remote_code": True},
@@ -818,14 +822,14 @@ def run_single_model(model_id):
     print(f"{'='*80}")
     
     # Set memory limits BEFORE any CUDA operations
-    if torch.cuda.is_available():
-        try:
+    #if torch.cuda.is_available():
+    #    try:
             # Use 85% of GPU memory (increased from 80% since we're managing memory better)
             #torch.cuda.set_per_process_memory_fraction(0.95)
             # Also set environment variable for better memory management
-            os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
-        except AttributeError:
-            pass
+            # os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
+    #    except AttributeError:
+    #        pass
     
     # Generate filename components
     clean_name = clean_model_name(model_id)
