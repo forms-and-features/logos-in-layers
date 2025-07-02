@@ -38,7 +38,6 @@ TOP_K_VERBOSE = 20  # number of tokens to record for verbose slots and answer po
 
 # List of confirmed supported models
 CONFIRMED_MODELS = [
-    "meta-llama/Meta-Llama-3-8B",
     "meta-llama/Meta-Llama-3-70B",
     "mistralai/Mistral-7B-v0.1",
     "mistralai/Mixtral-8x7B-v0.1",
@@ -48,13 +47,15 @@ CONFIRMED_MODELS = [
     "Qwen/Qwen3-8B",
     "01-ai/Yi-1.5-34B",
     "baidu/ERNIE-4.5-21B-A3B-Base-PT",
+    ####
+    "meta-llama/Meta-Llama-3-8B",
 ]
 
 MODEL_LOAD_KWARGS = {
     # custom loaders / large-model sharding / remote code
     "meta-llama/Meta-Llama-3-70B":      {
         "device_map": "auto",
-        "max_memory": {0: "62GiB", "cpu": "400GiB"}
+        "max_memory": {0: "74GiB", "cpu": "400GiB"}
     },
     "mistralai/Mixtral-8x7B-v0.1":      {"trust_remote_code": True},
     "google/paligemma-3b-pt-224":       {"trust_remote_code": True},
@@ -792,7 +793,7 @@ def run_single_model(model_id):
     if torch.cuda.is_available():
         try:
             # Use 85% of GPU memory (increased from 80% since we're managing memory better)
-            torch.cuda.set_per_process_memory_fraction(0.85)
+            torch.cuda.set_per_process_memory_fraction(0.95)
             # Also set environment variable for better memory management
             os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
         except AttributeError:
