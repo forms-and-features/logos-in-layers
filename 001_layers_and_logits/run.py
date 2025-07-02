@@ -1,5 +1,10 @@
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+os.environ["NCCL_P2P_LEVEL"] = "NVL"
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512,expandable_segments:True"
+os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
+from tqdm.auto import tqdm
+tqdm.monitor_interval = 0 
 import transformer_lens
 from transformer_lens import HookedTransformer
 import torch
@@ -40,11 +45,11 @@ TOP_K_VERBOSE = 20  # number of tokens to record for verbose slots and answer po
 # List of confirmed supported models
 CONFIRMED_MODELS = [
     "meta-llama/Meta-Llama-3-70B",
-    #"mistralai/Mixtral-8x7B-v0.1",
-    "google/gemma-3-12b-pt",
-    "baidu/ERNIE-4.5-21B-A3B-PT",
-    "01-ai/Yi-1.5-34B",
-    "google/paligemma2-3b-pt-224",
+    "mistralai/Mixtral-8x7B-v0.1",
+    #"google/gemma-3-12b-pt", # not available
+    # "baidu/ERNIE-4.5-21B-A3B-PT", # not available
+    # "01-ai/Yi-1.5-34B", # not available
+    # "google/paligemma2-3b-pt-224", # not available
     ####
     "google/gemma-2-9b",
     "Qwen/Qwen3-8B",
@@ -56,11 +61,7 @@ MODEL_LOAD_KWARGS = {
     # custom loaders / large-model sharding / remote code
     "meta-llama/Meta-Llama-3-70B": {
         "device_map": "auto",
-        #"max_memory": {
-        #    0: "41GiB",
-        #    1: "41GiB",
-        #    "cpu":    "400GiB",
-        #},
+        "max_memory":      {0: "76GiB", 1: "76GiB", "cpu": "400GiB"},
     },
     "mistralai/Mixtral-8x7B-v0.1":      {"trust_remote_code": True},
     "google/paligemma2-3b-pt-224":       {"trust_remote_code": True},
