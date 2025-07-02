@@ -52,7 +52,10 @@ CONFIRMED_MODELS = [
 
 MODEL_LOAD_KWARGS = {
     # custom loaders / large-model sharding / remote code
-    "meta-llama/Meta-Llama-3-70B":      {"device_map": "auto"},
+    "meta-llama/Meta-Llama-3-70B":      {
+        "device_map": "auto",
+        "max_memory": {0: "62GiB", "cpu": "400GiB"}
+    },
     "mistralai/Mixtral-8x7B-v0.1":      {"trust_remote_code": True},
     "google/paligemma-3b-pt-224":       {"trust_remote_code": True},
     "baidu/ERNIE-4.5-21B-A3B-Base-PT":  {"trust_remote_code": True},
