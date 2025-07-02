@@ -43,8 +43,8 @@ CONFIRMED_MODELS = [
     "mistralai/Mixtral-8x7B-v0.1",
     "google/gemma-3-12b-pt",
     "baidu/ERNIE-4.5-21B-A3B-PT",
-    #"01-ai/Yi-1.5-34B",
-    #"google/paligemma-3b-pt-224",
+    "01-ai/Yi-1.5-34B",
+    "google/paligemma2-3b-pt-224",
     ####
     "google/gemma-2-9b",
     "Qwen/Qwen3-8B",
@@ -55,15 +55,15 @@ CONFIRMED_MODELS = [
 MODEL_LOAD_KWARGS = {
     # custom loaders / large-model sharding / remote code
     "meta-llama/Meta-Llama-3-70B": {
-        "device_map": "balanced",
-        "max_memory": {
-            0: "41GiB",
-            1: "41GiB",
-            "cpu":    "400GiB",
-        },
+        "device_map": "auto",
+        #"max_memory": {
+        #    0: "41GiB",
+        #    1: "41GiB",
+        #    "cpu":    "400GiB",
+        #},
     },
     "mistralai/Mixtral-8x7B-v0.1":      {"trust_remote_code": True},
-    "google/paligemma-3b-pt-224":       {"trust_remote_code": True},
+    "google/paligemma2-3b-pt-224":       {"trust_remote_code": True},
     "baidu/ERNIE-4.5-21B-A3B-Base-PT":  {"trust_remote_code": True},
 }
 
