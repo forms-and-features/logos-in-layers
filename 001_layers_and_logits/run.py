@@ -38,10 +38,10 @@ TOP_K_VERBOSE = 20  # number of tokens to record for verbose slots and answer po
 # List of confirmed supported models
 CONFIRMED_MODELS = [
     # CUDA-only
-    "google/gemma-2-27b",
     "01-ai/Yi-34B-Chat",
     "meta-llama/Meta-Llama-3-70B",
     "Qwen/Qwen3-14B",
+    "google/gemma-2-27b",
     # MPS-safe
     "mistralai/Mistral-7B-v0.1",
     "google/gemma-2-9b",
@@ -830,7 +830,14 @@ def run_single_model(model_id):
 
         # Save records to CSV
         with open(csv_filepath, 'w', newline='', encoding='utf-8') as f_csv:
-            writer = csv.writer(f_csv)
+            writer = csv.writer(
+                f_csv,
+                delimiter=",",              # stay with normal commas
+                quotechar='"',              # wrap any field that needs quoting
+                quoting=csv.QUOTE_MINIMAL,  # auto-quote only when required
+                escapechar="\\",            # …otherwise escape
+                lineterminator="\n",
+            )
             # FIXED: Add rest_mass column to preserve full probability distribution
             # Header: layer,pos,token,entropy + top-k pairs + rest_mass
             header = ["layer","pos","token","entropy"]
@@ -858,7 +865,14 @@ def run_single_model(model_id):
 
         # Save pure next-token records to separate CSV (cleaner entropy analysis)
         with open(pure_csv_filepath, 'w', newline='', encoding='utf-8') as f_csv:
-            writer = csv.writer(f_csv)
+            writer = csv.writer(
+                f_csv,
+                delimiter=",",
+                quotechar='"',
+                quoting=csv.QUOTE_MINIMAL,
+                escapechar="\\",
+                lineterminator="\n",
+            )
             # Header includes new collapse detection flags
             header = ["layer","pos","token","entropy"]
             for i in range(1, TOP_K_VERBOSE + 1):
