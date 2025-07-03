@@ -36,18 +36,26 @@ TOP_K_VERBOSE = 20  # number of tokens to record for verbose slots and answer po
 # Toggle USE_NORM_LENS for raw vs normalized residual stream analysis
 
 # List of confirmed supported models
-CONFIRMED_MODELS = [
-    # CUDA-only
+CUDA_ONLY_MODELS = [
     "01-ai/Yi-34B",
     "meta-llama/Meta-Llama-3-70B",
     "Qwen/Qwen3-14B",
     "google/gemma-2-27b",
-    # MPS-safe
+]
+
+MPS_SAFE_MODELS = [
     "mistralai/Mistral-7B-v0.1",
     "google/gemma-2-9b",
     "Qwen/Qwen3-8B",
     "meta-llama/Meta-Llama-3-8B"
 ]
+
+# Dynamically determine which models to run based on CUDA availability
+if torch.cuda.is_available():
+    CONFIRMED_MODELS = CUDA_ONLY_MODELS + MPS_SAFE_MODELS
+else:
+    CONFIRMED_MODELS = MPS_SAFE_MODELS
+    print("⚠️  CUDA not available - running only MPS-safe models")
 
 # --- helpers ---------------------------------------------------------------
 RMS_ATTR_CANDIDATES = ("w", "weight", "scale", "gamma")
