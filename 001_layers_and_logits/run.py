@@ -60,10 +60,6 @@ CONFIRMED_MODELS = [
 ]
 
 MODEL_LOAD_KWARGS = {
-    # custom loaders / large-model sharding / remote code
-    "meta-llama/Meta-Llama-3-70B": {
-        "device_map": {"cuda:0": "all"}
-    },
     "mistralai/Mixtral-8x7B-v0.1":      {"trust_remote_code": True},
 }
 
@@ -190,13 +186,12 @@ def run_experiment_for_model(model_id):
         # to the original single-device behaviour.
         # ------------------------------------------------------------------
         try:
-            if "device_map" in extra or "load_in_8bit" in extra:
-                # Sharded / quantised model → let Accelerate spread layers.
+            if model_id == "meta-llama/Meta-Llama-3-70B":
                 model = HookedTransformer.from_pretrained(
                     model_id,
-                    torch_dtype=dtype_override,
-                    low_cpu_mem_usage=low_cpu,
-                    **extra
+                    device="cuda",                 # sends every param to the H200
+                    torch_dtype=torch.bfloat16,    # fits in ~140 GB
+                    low_cpu_mem_usage=False        # no meta tensors
                 )
             else:
                 # Classic single-GPU load.
@@ -235,12 +230,8 @@ def run_experiment_for_model(model_id):
                 print(f"Moving model to {device}…")
                 model = model.to(device)
         
-        # Special handling for PaliGemma
-        if model_id == "google/paligemma-3b-pt-224":
-            model = model.text_decoder                      # drop vision encoder
-            model.tokenizer = model.tokenizer.from_pretrained(
-                model_id, subfolder="text_decoder"
-            )
+        meta_params = [n for n, p in model.named_parameters() if p.device.type == "meta"]
+        print(f"Meta parameters remaining: {len(meta_params)}")
             
         model.eval()  # Hygiene: avoid dropout etc.
         
