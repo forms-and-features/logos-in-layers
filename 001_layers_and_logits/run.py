@@ -1,13 +1,3 @@
-import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-os.environ["NCCL_P2P_LEVEL"] = "NVL"
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "backend:cudaMallocAsync,max_split_size_mb:512,expandable_segments:True"
-os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-os.environ["NCCL_NVLS_ENABLE"]="1"
-os.environ["NCCL_DEBUG"]="WARN"
-os.environ["NVIDIA_TF32_OVERRIDE"]="0"
-
 import transformer_lens
 from transformer_lens import HookedTransformer
 import torch
@@ -15,6 +5,7 @@ import torch.nn as nn
 import io
 from contextlib import redirect_stdout
 from datetime import datetime
+import os
 import subprocess
 import sys
 import math
@@ -22,11 +13,6 @@ import json
 import csv
 import argparse
 import gc  # For garbage collection
-from transformers import Gemma3ForCausalLM
-
-torch.backends.cuda.matmul.allow_tf32 = True
-torch.set_float32_matmul_precision('high')
-
 
 # --- deterministic bootstrap -------------------------------------------------
 import random, numpy as np
@@ -37,7 +23,7 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 torch.cuda.manual_seed_all(SEED)
 
-torch.use_deterministic_algorithms(True)   # off while debugging OOMs
+torch.use_deterministic_algorithms(True)   # PyTorch 2.x+
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"  # harmless on CPU, required for CUDA
 torch.set_num_threads(1)  # optional; comment out if you need full CPU speed
 # -----------------------------------------------------------------------------
@@ -51,17 +37,11 @@ TOP_K_VERBOSE = 20  # number of tokens to record for verbose slots and answer po
 
 # List of confirmed supported models
 CONFIRMED_MODELS = [
-    "meta-llama/Meta-Llama-3-70B",
-    "mistralai/Mixtral-8x7B-v0.1",
-    "google/gemma-2-9b",
-    "Qwen/Qwen3-8B",
-    "mistralai/Mistral-7B-v0.1",
-    "meta-llama/Meta-Llama-3-8B",
+    "mistralai/Mistral-7B-v0.1",       # 7B - Mistral
+    "google/gemma-2-9b",               # 9B - Gemma 2
+    "Qwen/Qwen3-8B",                 # 8B - Qwen3
+    "meta-llama/Meta-Llama-3-8B"      # 8B - Llama 3 Base
 ]
-
-MODEL_LOAD_KWARGS = {
-    "mistralai/Mixtral-8x7B-v0.1":      {"trust_remote_code": True},
-}
 
 # --- helpers ---------------------------------------------------------------
 RMS_ATTR_CANDIDATES = ("w", "weight", "scale", "gamma")
@@ -133,10 +113,6 @@ def clean_model_name(model_id):
     clean_name = model_id.split('/')[-1]
     return clean_name
 
-def get_final_norm(m):
-    """Get the final normalization layer (handles both ln_final and norm attributes)"""
-    return getattr(m, "ln_final", None) or getattr(m, "norm", None)
-
 def run_experiment_for_model(model_id):
     """Run the complete experiment for a single model and return output as string"""
     
@@ -172,66 +148,31 @@ def run_experiment_for_model(model_id):
         # Set batch_first=False for models that need it (TransformerLens expectation)
         os.environ['TRANSFORMERS_BATCH_FIRST'] = 'False'
             
-        # Get model-specific loading kwargs
-        extra = MODEL_LOAD_KWARGS.get(model_id, {})
-        # Override dtype for Llama-3-70B to use bfloat16
-        dtype_override = torch.bfloat16 if model_id == "meta-llama/Meta-Llama-3-70B" else dtype
-        
-        # Special handling for Meta-Llama-3-70B: use low_cpu_mem_usage=False
-        low_cpu = False if model_id == "meta-llama/Meta-Llama-3-70B" else True
-        
-        # ------------------------------------------------------------------
-        # Load checkpoint – delegate placement to Accelerate when we are
-        # sharding ("device_map"/"load_in_8bit" present); otherwise fall back
-        # to the original single-device behaviour.
-        # ------------------------------------------------------------------
+        # Load model directly to target device to minimize memory usage
+        # Avoid device_map="auto" which causes device mismatch issues
         try:
-            if model_id == "meta-llama/Meta-Llama-3-70B":
-                model = HookedTransformer.from_pretrained(
-                    model_id,
-                    device="cuda",                 # sends every param to the H200
-                    torch_dtype=torch.bfloat16,    # fits in ~140 GB
-                    low_cpu_mem_usage=False        # no meta tensors
-                )
-            else:
-                # Classic single-GPU load.
-                model = HookedTransformer.from_pretrained(
-                    model_id,
-                    device=device,
-                    torch_dtype=dtype_override,
-                    low_cpu_mem_usage=low_cpu,
-                    **extra
-                )
+            # Try loading directly to target device first
+            model = HookedTransformer.from_pretrained(
+                model_id,
+                device=device,
+                torch_dtype=dtype,
+                low_cpu_mem_usage=True,
+            )
         except Exception as e:
-            print(f"Direct loading attempt failed: {e}")
-            print("Falling back to CPU loading…")
-
-            if "device_map" in extra or "load_in_8bit" in extra:
-                # Still let Accelerate decide – do NOT pass `device=`.
-                model = HookedTransformer.from_pretrained(
-                    model_id,
-                    torch_dtype=dtype_override,
-                    low_cpu_mem_usage=low_cpu,
-                    **extra
-                )
-            else:
-                model = HookedTransformer.from_pretrained(
-                    model_id,
-                    device="cpu",
-                    torch_dtype=dtype_override,
-                    low_cpu_mem_usage=low_cpu,
-                    **extra
-                )
-
-            # Only move onto the target GPU if we are NOT sharded/quantised.
-            if "device_map" not in extra and "load_in_8bit" not in extra:
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                print(f"Moving model to {device}…")
-                model = model.to(device)
-        
-        meta_params = [n for n, p in model.named_parameters() if p.device.type == "meta"]
-        print(f"Meta parameters remaining: {len(meta_params)}")
+            print(f"Direct loading to {device} failed: {e}")
+            print("Falling back to CPU loading...")
+            # Fallback: load on CPU then move
+            model = HookedTransformer.from_pretrained(
+                model_id,
+                device="cpu",
+                torch_dtype=dtype,
+                low_cpu_mem_usage=True,
+            )
+            # Clear cache before moving
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            print(f"Moving model to {device}...")
+            model = model.to(device)
             
         model.eval()  # Hygiene: avoid dropout etc.
         
@@ -254,9 +195,7 @@ def run_experiment_for_model(model_id):
         USE_FP32_UNEMBED = (dtype == torch.float32)
         
         # Promote unembedding weights to FP32 if requested for true precision gain
-        if (USE_FP32_UNEMBED
-            and model.unembed.W_U.dtype != torch.float32
-            and model.unembed.W_U.device.type == "cuda"):
+        if USE_FP32_UNEMBED and model.unembed.W_U.dtype != torch.float32:
             print(f"🔬 Promoting unembed weights to FP32 for research-grade precision (was {model.unembed.W_U.dtype})")
             # Ensure we preserve device when promoting to FP32
             model.unembed.W_U = torch.nn.Parameter(
@@ -277,8 +216,7 @@ def run_experiment_for_model(model_id):
         ground_truth = "Berlin"  # For display/comparison
         
         first_block_ln1_type = type(model.blocks[0].ln1).__name__ if hasattr(model, 'blocks') and len(model.blocks) > 0 else None
-        final_norm = get_final_norm(model)
-        final_ln_type = type(final_norm).__name__ if final_norm else None
+        final_ln_type = type(model.ln_final).__name__ if hasattr(model, 'ln_final') else None
         
         # Check if LayerNorm bias fix will be applied
         uses_layernorm = (hasattr(model, 'blocks') and len(model.blocks) > 0 and 
@@ -368,8 +306,10 @@ def run_experiment_for_model(model_id):
             
             def make_cache_hook(cache_dict):
                 def cache_residual_hook(tensor, hook):
-                    cache_dict[hook.name] = tensor.half().cpu().detach()
-                    return tensor.detach()
+                    # Only store the tensor we need, detached from computation graph
+                    # Store activations in fp32 for numerical stability and full sequence
+                    # Keep activations on their original device to preserve device_map="auto" layout
+                    cache_dict[hook.name] = tensor.to(dtype=torch.float32).detach()
                 return cache_residual_hook
             
             # Create the hook function with explicit cache reference
@@ -454,7 +394,8 @@ def run_experiment_for_model(model_id):
                     print("[diagnostic] Applying real ln1 normalization to embeddings (not synthetic γ=1)")
                     resid = apply_norm_or_skip(resid, model.blocks[0].ln1)
                 
-                # embeddings block (layer 0)
+                # FIXED: Cast to FP32 before unembedding to avoid precision loss
+                # Vectorized unembedding for all positions  
                 resid_cast = resid[0].to(dtype=UNEMBED_DTYPE)
                 logits_all = model.unembed(resid_cast).float()  # [seq, d_vocab]
                 
@@ -528,19 +469,18 @@ def run_experiment_for_model(model_id):
                     # Apply normalization if requested
                     if USE_NORM_LENS:
                         # For pre-LN models, apply ln_final on last layer, otherwise use ln2 for post-block residuals
-                        if layer == n_layers - 1 and get_final_norm(model):
-                            resid = apply_norm_or_skip(resid, get_final_norm(model))
+                        if layer == n_layers - 1 and hasattr(model, 'ln_final'):
+                            resid = apply_norm_or_skip(resid, model.ln_final)
                         else:
                             # FIXED: Use ln2 (MLP-pre norm) instead of ln1 for post-block residuals
                             # ln2 stats better match the post-attention, pre-MLP state which is closer to post-block
-                            candidates = ("ln2", "router_norm", "ln1")
-                            for n in candidates:
-                                if hasattr(model.blocks[layer], n):
-                                    norm_layer = getattr(model.blocks[layer], n)
-                                    break
+                            norm_layer = model.blocks[layer].ln2 if hasattr(model.blocks[layer], 'ln2') else model.blocks[layer].ln1
+                            
+                            # Use the unified normalization function that handles both LayerNorm and RMSNorm
                             resid = apply_norm_or_skip(resid, norm_layer)
                     
-                    # same change inside the layer-loop
+                    # FIXED: Cast to FP32 before unembedding to avoid precision loss
+                    # Vectorized unembedding for all positions
                     resid_cast = resid[0].to(dtype=UNEMBED_DTYPE)
                     logits_all = model.unembed(resid_cast).float() # [seq, d_vocab]
                     
@@ -813,14 +753,14 @@ def run_single_model(model_id):
     print(f"{'='*80}")
     
     # Set memory limits BEFORE any CUDA operations
-    #if torch.cuda.is_available():
-    #    try:
+    if torch.cuda.is_available():
+        try:
             # Use 85% of GPU memory (increased from 80% since we're managing memory better)
-            #torch.cuda.set_per_process_memory_fraction(0.95)
+            torch.cuda.set_per_process_memory_fraction(0.85)
             # Also set environment variable for better memory management
-            # os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
-    #    except AttributeError:
-    #        pass
+            os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
+        except AttributeError:
+            pass
     
     # Generate filename components
     clean_name = clean_model_name(model_id)
