@@ -229,7 +229,7 @@ def run_experiment_for_model(model_id):
                     requires_grad=False
                 )
             UNEMBED_DTYPE = torch.float32  # refresh after promotion
-        UNEMBED_DTYPE = torch.float32      # always
+        UNEMBED_DTYPE = model.unembed.W_U.dtype   # match actual weight dtype
         
         context_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
         ground_truth = "Berlin"  # For display/comparison
@@ -415,7 +415,7 @@ def run_experiment_for_model(model_id):
                 
                 # FIXED: Cast to FP32 before unembedding to avoid precision loss
                 # Vectorized unembedding for all positions  
-                resid_cast = resid[0].to(dtype=torch.float32)   # FP32 for safe matmul
+                resid_cast = resid[0].to(dtype=UNEMBED_DTYPE)
                 logits_all = model.unembed(resid_cast).float()  # [seq, d_vocab]
                 
                 for pos in range(tokens.shape[1]):
@@ -506,7 +506,7 @@ def run_experiment_for_model(model_id):
                     
                     # FIXED: Cast to FP32 before unembedding to avoid precision loss
                     # Vectorized unembedding for all positions
-                    resid_cast = resid[0].to(dtype=torch.float32)   # FP32 for safe matmul
+                    resid_cast = resid[0].to(dtype=UNEMBED_DTYPE)
                     logits_all = model.unembed(resid_cast).float() # [seq, d_vocab]
                     
                     for pos in range(tokens.shape[1]):
