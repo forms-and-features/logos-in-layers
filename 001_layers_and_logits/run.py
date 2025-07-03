@@ -37,7 +37,12 @@ TOP_K_VERBOSE = 20  # number of tokens to record for verbose slots and answer po
 
 # List of confirmed supported models
 CONFIRMED_MODELS = [
-    "meta-llama/Meta-Llama-3-70B",
+    # CUDA-only
+    #"meta-llama/Meta-Llama-3-70B",
+    "Qwen/Qwen3-14B",
+    "google/gemma-2-27b",
+    "01-ai/Yi-34B-Chat",
+    # MPS-safe
     "mistralai/Mistral-7B-v0.1",
     "google/gemma-2-9b",
     "Qwen/Qwen3-8B",
