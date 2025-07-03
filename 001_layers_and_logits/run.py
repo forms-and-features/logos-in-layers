@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["NCCL_P2P_LEVEL"] = "NVL"
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512,expandable_segments:True"
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
