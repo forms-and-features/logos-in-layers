@@ -463,7 +463,8 @@ def run_experiment_for_model(model_id):
                     print("[diagnostic] Applying real ln1 normalization to embeddings (not synthetic γ=1)")
                     resid = apply_norm_or_skip(resid, model.blocks[0].ln1)
                 
-                resid_cast = resid[0].float#.to(dtype=UNEMBED_DTYPE)
+                # embeddings block (layer 0)
+                resid_cast = resid[0].to(dtype=UNEMBED_DTYPE)
                 logits_all = model.unembed(resid_cast).float()  # [seq, d_vocab]
                 
                 for pos in range(tokens.shape[1]):
@@ -548,7 +549,8 @@ def run_experiment_for_model(model_id):
                                     break
                             resid = apply_norm_or_skip(resid, norm_layer)
                     
-                    resid_cast = resid[0].float#to(dtype=UNEMBED_DTYPE)
+                    # same change inside the layer-loop
+                    resid_cast = resid[0].to(dtype=UNEMBED_DTYPE)
                     logits_all = model.unembed(resid_cast).float() # [seq, d_vocab]
                     
                     for pos in range(tokens.shape[1]):
