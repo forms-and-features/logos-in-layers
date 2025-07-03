@@ -162,10 +162,10 @@ def run_experiment_for_model(model_id):
                 model_id,
                 # device=device,  # removed in favour of Accelerate sharding
                 device_map="auto",                  # let Accelerate shard
-                torch_dtype=torch.float16,          # full-precision weights
+                torch_dtype=dtype,                  # use fp16 on CUDA, fp32 on CPU/MPS
                 max_memory={                       # hard caps
                     0:  "120GiB",                  # GPU (H200)
-                    "cpu": "110",                # host RAM – anything extra spills
+                    "cpu": "110GiB",                # host RAM – anything extra spills
                 },
                 offload_folder="offload",    # fast local NVMe dir
                 offload_state_dict=True,            # stream shards directly
@@ -305,7 +305,7 @@ def run_experiment_for_model(model_id):
             print(json.dumps(record, ensure_ascii=False))
         
         # Tokenize the context prompt (without "Answer:" to avoid teacher-forcing)
-        tokens = model.to_tokens(context_prompt).to(primary_device)
+        tokens = model.to_tokens(context_prompt)      # let Accelerate move it
         
         # Storage to collect pure_next_token_records for L_copy/L_semantic computation
         collected_pure_records = []
@@ -604,7 +604,7 @@ def run_experiment_for_model(model_id):
                         h.remove()
                         
                 # Aggressively free memory
-                del residual_cache
+                residual_cache.clear()  # free the dict but keep the name alive
                 hooks.clear()  # Keep the variable, just empty it
                 gc.collect()  # Force garbage collection
                 if torch.cuda.is_available():
@@ -612,10 +612,7 @@ def run_experiment_for_model(model_id):
                     torch.cuda.synchronize()  # Ensure all CUDA operations are complete
             
             # === stop capturing large activations – probes don’t need them =======
-            residual_cache.clear()
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+
 
             # Let's also see what the actual model would predict (final layer)
             print("=" * 60)
@@ -663,7 +660,7 @@ def run_experiment_for_model(model_id):
             
             # Process test prompts one at a time to minimize memory usage
             for test_prompt in test_prompts:
-                test_tokens = model.to_tokens(test_prompt).to(primary_device)
+                test_tokens = model.to_tokens(test_prompt)      # let Accelerate move it
                 
                 test_logits = model(test_tokens)
                 _, test_top_indices = torch.topk(test_logits[0, -1, :], 10, largest=True, sorted=True)
@@ -689,7 +686,7 @@ def run_experiment_for_model(model_id):
             # Emit temperature exploration records
             # Note: Using consistent prompt for temperature exploration to maintain comparability
             temp_test_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
-            temp_tokens = model.to_tokens(temp_test_prompt).to(primary_device)
+            temp_tokens = model.to_tokens(temp_test_prompt)      # let Accelerate move it
             
             # Single forward pass - then rescale for different temperatures
             base_logits = model(temp_tokens)[0, -1, :]
@@ -819,6 +816,10 @@ def run_single_model(model_id):
     try:
         # Generate full JSON output from the experiment
         json_str = run_experiment_for_model(model_id)
+        # ── guard against plain-text error strings ───────────────────────────────────
+        if not json_str.lstrip().startswith('{'):
+            raise RuntimeError(f"sub-run returned error string:\n{json_str}")
+        # ─────────────────────────────────────────────────────────────────────────────
         data = json.loads(json_str)
         records = data.pop("records", [])
         pure_next_token_records = data.pop("pure_next_token_records", [])
