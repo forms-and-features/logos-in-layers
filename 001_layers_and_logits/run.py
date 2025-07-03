@@ -1,8 +1,13 @@
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["NCCL_P2P_LEVEL"] = "NVL"
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512,expandable_segments:True"
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "backend:cudaMallocAsync,max_split_size_mb:512,expandable_segments:True"
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+os.environ["NCCL_NVLS_ENABLE"]="1"
+os.environ["NCCL_DEBUG"]="WARN"
+os.environ["NVIDIA_TF32_OVERRIDE"]="0"
+
 import transformer_lens
 from transformer_lens import HookedTransformer
 import torch
@@ -18,6 +23,10 @@ import csv
 import argparse
 import gc  # For garbage collection
 from transformers import Gemma3ForCausalLM
+
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.set_float32_matmul_precision('high')
+
 
 # --- deterministic bootstrap -------------------------------------------------
 import random, numpy as np
