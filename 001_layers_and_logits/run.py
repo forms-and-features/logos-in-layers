@@ -212,7 +212,8 @@ def run_experiment_for_model(model_id):
         
         # Toggle for FP32 unembedding (recommended for research-grade precision)
         # Prevents under-resolving logit gaps < 1e-5 at cost of ~50MB memory
-        USE_FP32_UNEMBED = True        # numeric-safety for all models
+        USE_FP32_UNEMBED = (dtype == torch.float32)   # only promote when the *rest* of the model is FP32
+
         
         # Promote unembedding weights to FP32 if requested for true precision gain
         if USE_FP32_UNEMBED and model.unembed.W_U.dtype != torch.float32:
