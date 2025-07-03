@@ -144,6 +144,12 @@ def run_experiment_for_model(model_id):
             "cpu":  torch.float32,
         }[device]
 
+        # ── add this directly AFTER the dictionary block ─────────────
+        if "gemma" in model_id.lower() and device == "cuda":
+            # Gemma weights are published in bf16 – use that wider range
+            dtype = torch.bfloat16
+        # ──────────────────────────────────────────────────────────────
+
         # ---- load model -------------------------------------------------------
         print(f"Loading model on [{device}] ...")
         
@@ -206,7 +212,7 @@ def run_experiment_for_model(model_id):
         
         # Toggle for FP32 unembedding (recommended for research-grade precision)
         # Prevents under-resolving logit gaps < 1e-5 at cost of ~50MB memory
-        USE_FP32_UNEMBED = (dtype == torch.float32)
+        USE_FP32_UNEMBED = True        # numeric-safety for all models
         
         # Promote unembedding weights to FP32 if requested for true precision gain
         if USE_FP32_UNEMBED and model.unembed.W_U.dtype != torch.float32:
@@ -223,8 +229,7 @@ def run_experiment_for_model(model_id):
                     requires_grad=False
                 )
             UNEMBED_DTYPE = torch.float32  # refresh after promotion
-        else:
-            UNEMBED_DTYPE = torch.float32 if USE_FP32_UNEMBED else model.unembed.W_U.dtype
+        UNEMBED_DTYPE = torch.float32      # always
         
         context_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
         ground_truth = "Berlin"  # For display/comparison
@@ -410,7 +415,7 @@ def run_experiment_for_model(model_id):
                 
                 # FIXED: Cast to FP32 before unembedding to avoid precision loss
                 # Vectorized unembedding for all positions  
-                resid_cast = resid[0].to(model.unembed.W_U.device, dtype=UNEMBED_DTYPE)
+                resid_cast = resid[0].to(dtype=torch.float32)   # FP32 for safe matmul
                 logits_all = model.unembed(resid_cast).float()  # [seq, d_vocab]
                 
                 for pos in range(tokens.shape[1]):
@@ -501,7 +506,7 @@ def run_experiment_for_model(model_id):
                     
                     # FIXED: Cast to FP32 before unembedding to avoid precision loss
                     # Vectorized unembedding for all positions
-                    resid_cast = resid[0].to(model.unembed.W_U.device, dtype=UNEMBED_DTYPE)
+                    resid_cast = resid[0].to(dtype=torch.float32)   # FP32 for safe matmul
                     logits_all = model.unembed(resid_cast).float() # [seq, d_vocab]
                     
                     for pos in range(tokens.shape[1]):
