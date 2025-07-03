@@ -605,16 +605,13 @@ def run_experiment_for_model(model_id):
                         
                 # Aggressively free memory
                 del residual_cache
-                del hooks
+                hooks.clear()  # Keep the variable, just empty it
                 gc.collect()  # Force garbage collection
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                     torch.cuda.synchronize()  # Ensure all CUDA operations are complete
             
             # === stop capturing large activations – probes don’t need them =======
-            for h in hooks:
-                h.remove()
-            hooks.clear()
             residual_cache.clear()
             gc.collect()
             if torch.cuda.is_available():
