@@ -28,7 +28,7 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 torch.cuda.manual_seed_all(SEED)
 
-torch.use_deterministic_algorithms(True)   # PyTorch 2.x+
+# torch.use_deterministic_algorithms(True)   # off while debugging OOMs
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"  # harmless on CPU, required for CUDA
 torch.set_num_threads(1)  # optional; comment out if you need full CPU speed
 # -----------------------------------------------------------------------------
@@ -172,9 +172,10 @@ def run_experiment_for_model(model_id):
         # Set batch_first=False for models that need it (TransformerLens expectation)
         os.environ['TRANSFORMERS_BATCH_FIRST'] = 'False'
             
-        # Load model directly to target device to minimize memory usage
         # Get model-specific loading kwargs
         extra = MODEL_LOAD_KWARGS.get(model_id, {})
+        # Override dtype for Llama-3-70B to use bfloat16
+        dtype_override = torch.bfloat16 if model_id == "meta-llama/Meta-Llama-3-70B" else dtype
         
         # ------------------------------------------------------------------
         # Load checkpoint – delegate placement to Accelerate when we are
@@ -186,7 +187,7 @@ def run_experiment_for_model(model_id):
                 # Sharded / quantised model → let Accelerate spread layers.
                 model = HookedTransformer.from_pretrained(
                     model_id,
-                    torch_dtype=dtype,
+                    torch_dtype=dtype_override,
                     low_cpu_mem_usage=True,
                     **extra
                 )
@@ -195,7 +196,7 @@ def run_experiment_for_model(model_id):
                 model = HookedTransformer.from_pretrained(
                     model_id,
                     device=device,
-                    torch_dtype=dtype,
+                    torch_dtype=dtype_override,
                     low_cpu_mem_usage=True,
                     **extra
                 )
@@ -207,7 +208,7 @@ def run_experiment_for_model(model_id):
                 # Still let Accelerate decide – do NOT pass `device=`.
                 model = HookedTransformer.from_pretrained(
                     model_id,
-                    torch_dtype=dtype,
+                    torch_dtype=dtype_override,
                     low_cpu_mem_usage=True,
                     **extra
                 )
@@ -215,7 +216,7 @@ def run_experiment_for_model(model_id):
                 model = HookedTransformer.from_pretrained(
                     model_id,
                     device="cpu",
-                    torch_dtype=dtype,
+                    torch_dtype=dtype_override,
                     low_cpu_mem_usage=True,
                     **extra
                 )
@@ -369,10 +370,9 @@ def run_experiment_for_model(model_id):
             
             def make_cache_hook(cache_dict):
                 def cache_residual_hook(tensor, hook):
-                    # Only store the tensor we need, detached from computation graph
-                    # Store activations in fp32 for numerical stability and full sequence
-                    # Keep activations on their original device to preserve device_map="auto" layout
-                    cache_dict[hook.name] = tensor.to("cpu", dtype=torch.float32).detach()
+                    # Only store activations on CPU in fp32, then detach GPU tensor
+                    cache_dict[hook.name] = tensor.to("cpu", dtype=torch.float32)
+                    return tensor.detach()
                 return cache_residual_hook
             
             # Create the hook function with explicit cache reference
