@@ -38,10 +38,10 @@ TOP_K_VERBOSE = 20  # number of tokens to record for verbose slots and answer po
 # List of confirmed supported models
 CONFIRMED_MODELS = [
     # CUDA-only
-    #"meta-llama/Meta-Llama-3-70B",
-    "Qwen/Qwen3-14B",
     "google/gemma-2-27b",
     "01-ai/Yi-34B-Chat",
+    "meta-llama/Meta-Llama-3-70B",
+    "Qwen/Qwen3-14B",
     # MPS-safe
     "mistralai/Mistral-7B-v0.1",
     "google/gemma-2-9b",
@@ -160,11 +160,15 @@ def run_experiment_for_model(model_id):
             # Try loading directly to target device first
             model = HookedTransformer.from_pretrained(
                 model_id,
-                device=device,
-                device_map="auto",
-                torch_dtype=dtype,
-                max_memory={0: "120GiB",            # ≤ H200’s 141 GB
-                            "cpu": "256GiB"},       # rest is paged to host RAM
+                # device=device,  # removed in favour of Accelerate sharding
+                device_map="auto",                  # let Accelerate shard
+                torch_dtype=torch.float16,          # full-precision weights
+                max_memory={                       # hard caps
+                    0:  "120GiB",                  # GPU (H200)
+                    "cpu": "120GiB",                # host RAM – anything extra spills
+                },
+                offload_folder="offload_llama3",    # fast local NVMe dir
+                offload_state_dict=True,            # stream shards directly
                 low_cpu_mem_usage=True,
                 trust_remote_code=True,
             )
@@ -470,6 +474,12 @@ def run_experiment_for_model(model_id):
                 
                 print_summary(0, last_pos, last_token_str, last_entropy_bits, last_top_tokens, last_top_probs, is_pure_next_token=True, extra=record_extra)
                 
+                # --- free Layer-0 residual to keep host RAM flat ---------------------
+                del resid
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                
                 # Layers 1 to n_layers: after each transformer block
                 for layer in range(n_layers):
                     print(f"Layer {layer + 1:2d} (after transformer block {layer}):")
@@ -491,7 +501,7 @@ def run_experiment_for_model(model_id):
                     
                     # FIXED: Cast to FP32 before unembedding to avoid precision loss
                     # Vectorized unembedding for all positions
-                    resid_cast = resid[0].to(dtype=UNEMBED_DTYPE)
+                    resid_cast = resid[0].to(model.unembed.W_U.device, dtype=UNEMBED_DTYPE)
                     logits_all = model.unembed(resid_cast).float() # [seq, d_vocab]
                     
                     for pos in range(tokens.shape[1]):
@@ -554,6 +564,13 @@ def run_experiment_for_model(model_id):
                     })
                     
                     print_summary(layer + 1, last_pos, last_token_str, last_entropy_bits, last_top_tokens, last_top_probs, is_pure_next_token=True, extra=record_extra)
+                    
+                    # --- free residual for this layer -----------------------------------
+                    del resid
+                    del residual_cache[f'blocks.{layer}.hook_resid_post']
+                    gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
                 
                 # ---------------------------------------------------------------
                 #  Compute L_copy  (first copy-collapsed layer, prompt echo rule)
@@ -594,9 +611,19 @@ def run_experiment_for_model(model_id):
                     torch.cuda.empty_cache()
                     torch.cuda.synchronize()  # Ensure all CUDA operations are complete
             
+            # === stop capturing large activations – probes don’t need them =======
+            for h in hooks:
+                h.remove()
+            hooks.clear()
+            residual_cache.clear()
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
             # Let's also see what the actual model would predict (final layer)
             print("=" * 60)
             print("ACTUAL MODEL PREDICTION (for comparison):")
+
             final_logits = logits[0, -1, :]
             if USE_FP32_UNEMBED:
                 # Ensure consistent precision for final prediction
