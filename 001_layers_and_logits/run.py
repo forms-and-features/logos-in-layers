@@ -156,8 +156,12 @@ def run_experiment_for_model(model_id):
             model = HookedTransformer.from_pretrained(
                 model_id,
                 device=device,
+                device_map="auto",
                 torch_dtype=dtype,
+                max_memory={0: "120GiB",            # ≤ H200’s 141 GB
+                            "cpu": "256GiB"},       # rest is paged to host RAM
                 low_cpu_mem_usage=True,
+                trust_remote_code=True,
             )
         except Exception as e:
             print(f"Direct loading to {device} failed: {e}")
@@ -397,7 +401,7 @@ def run_experiment_for_model(model_id):
                 
                 # FIXED: Cast to FP32 before unembedding to avoid precision loss
                 # Vectorized unembedding for all positions  
-                resid_cast = resid[0].to(dtype=UNEMBED_DTYPE)
+                resid_cast = resid[0].to(model.unembed.W_U.device, dtype=UNEMBED_DTYPE)
                 logits_all = model.unembed(resid_cast).float()  # [seq, d_vocab]
                 
                 for pos in range(tokens.shape[1]):
@@ -757,7 +761,7 @@ def run_single_model(model_id):
     if torch.cuda.is_available():
         try:
             # Use 85% of GPU memory (increased from 80% since we're managing memory better)
-            torch.cuda.set_per_process_memory_fraction(0.85)
+            # torch.cuda.set_per_process_memory_fraction(0.85)
             # Also set environment variable for better memory management
             os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
         except AttributeError:
