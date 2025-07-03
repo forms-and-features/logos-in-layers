@@ -1,8 +1,7 @@
 import os
-os.environ["ACCELERATE_LOAD_CHECKPOINTS_IN_PARALLEL"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 os.environ["NCCL_P2P_LEVEL"] = "NVL"
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:64,expandable_segments:True"
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512,expandable_segments:True"
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
 import transformer_lens
 from transformer_lens import HookedTransformer
@@ -29,7 +28,7 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 torch.cuda.manual_seed_all(SEED)
 
-# torch.use_deterministic_algorithms(True)   # off while debugging OOMs
+torch.use_deterministic_algorithms(True)   # off while debugging OOMs
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"  # harmless on CPU, required for CUDA
 torch.set_num_threads(1)  # optional; comment out if you need full CPU speed
 # -----------------------------------------------------------------------------
@@ -54,14 +53,9 @@ CONFIRMED_MODELS = [
 MODEL_LOAD_KWARGS = {
     # custom loaders / large-model sharding / remote code
     "meta-llama/Meta-Llama-3-70B": {
-        # put the small stuff on GPU 1 to free head-room on GPU 0
-        "device_map": "balanced_low_0",
-        "max_memory": {0: "70GiB", 1: "76GiB", "cpu": "400GiB"},
-        "offload_state_dict": True,          # load weights shard-by-shard
+        "device_map": "auto"
     },
     "mistralai/Mixtral-8x7B-v0.1":      {"trust_remote_code": True},
-    "google/paligemma2-3b-pt-224":       {"trust_remote_code": True},
-    "baidu/ERNIE-4.5-21B-A3B-Base-PT":  {"trust_remote_code": True},
 }
 
 # --- helpers ---------------------------------------------------------------
