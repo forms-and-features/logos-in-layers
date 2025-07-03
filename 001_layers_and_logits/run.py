@@ -53,7 +53,7 @@ CONFIRMED_MODELS = [
 MODEL_LOAD_KWARGS = {
     # custom loaders / large-model sharding / remote code
     "meta-llama/Meta-Llama-3-70B": {
-        "device_map": "auto"
+        "device_map": {"cuda:0": "all"}
     },
     "mistralai/Mixtral-8x7B-v0.1":      {"trust_remote_code": True},
 }
@@ -172,6 +172,9 @@ def run_experiment_for_model(model_id):
         # Override dtype for Llama-3-70B to use bfloat16
         dtype_override = torch.bfloat16 if model_id == "meta-llama/Meta-Llama-3-70B" else dtype
         
+        # Special handling for Meta-Llama-3-70B: use low_cpu_mem_usage=False
+        low_cpu = False if model_id == "meta-llama/Meta-Llama-3-70B" else True
+        
         # ------------------------------------------------------------------
         # Load checkpoint – delegate placement to Accelerate when we are
         # sharding ("device_map"/"load_in_8bit" present); otherwise fall back
@@ -183,7 +186,7 @@ def run_experiment_for_model(model_id):
                 model = HookedTransformer.from_pretrained(
                     model_id,
                     torch_dtype=dtype_override,
-                    low_cpu_mem_usage=True,
+                    low_cpu_mem_usage=low_cpu,
                     **extra
                 )
             else:
@@ -192,7 +195,7 @@ def run_experiment_for_model(model_id):
                     model_id,
                     device=device,
                     torch_dtype=dtype_override,
-                    low_cpu_mem_usage=True,
+                    low_cpu_mem_usage=low_cpu,
                     **extra
                 )
         except Exception as e:
@@ -204,7 +207,7 @@ def run_experiment_for_model(model_id):
                 model = HookedTransformer.from_pretrained(
                     model_id,
                     torch_dtype=dtype_override,
-                    low_cpu_mem_usage=True,
+                    low_cpu_mem_usage=low_cpu,
                     **extra
                 )
             else:
@@ -212,7 +215,7 @@ def run_experiment_for_model(model_id):
                     model_id,
                     device="cpu",
                     torch_dtype=dtype_override,
-                    low_cpu_mem_usage=True,
+                    low_cpu_mem_usage=low_cpu,
                     **extra
                 )
 
