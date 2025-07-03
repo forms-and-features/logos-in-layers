@@ -158,16 +158,16 @@ def run_experiment_for_model(model_id):
         # Avoid device_map="auto" which causes device mismatch issues
         try:
             # Try loading directly to target device first
-            model = HookedTransformer.from_pretrained(
+            model = HookedTransformer.from_pretrained_no_processing(
                 model_id,
                 # device=device,  # removed in favour of Accelerate sharding
                 device_map="auto",                  # let Accelerate shard
                 torch_dtype=torch.float16,          # full-precision weights
                 max_memory={                       # hard caps
                     0:  "120GiB",                  # GPU (H200)
-                    "cpu": "120GiB",                # host RAM – anything extra spills
+                    "cpu": "110",                # host RAM – anything extra spills
                 },
-                offload_folder="offload_llama3",    # fast local NVMe dir
+                offload_folder="offload",    # fast local NVMe dir
                 offload_state_dict=True,            # stream shards directly
                 low_cpu_mem_usage=True,
                 trust_remote_code=True,
@@ -176,7 +176,7 @@ def run_experiment_for_model(model_id):
             print(f"Direct loading to {device} failed: {e}")
             print("Falling back to CPU loading...")
             # Fallback: load on CPU then move
-            model = HookedTransformer.from_pretrained(
+            model = HookedTransformer.from_pretrained_no_processing(
                 model_id,
                 device="cpu",
                 torch_dtype=dtype,
