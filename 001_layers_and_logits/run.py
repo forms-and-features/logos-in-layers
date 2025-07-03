@@ -371,8 +371,7 @@ def run_experiment_for_model(model_id):
             
             def make_cache_hook(cache_dict):
                 def cache_residual_hook(tensor, hook):
-                    # Only store activations on CPU in fp32, then detach GPU tensor
-                    cache_dict[hook.name] = tensor.to("cpu", dtype=torch.float32)
+                    cache_dict[hook.name] = tensor.half().cpu().detach()
                     return tensor.detach()
                 return cache_residual_hook
             
@@ -458,9 +457,7 @@ def run_experiment_for_model(model_id):
                     print("[diagnostic] Applying real ln1 normalization to embeddings (not synthetic γ=1)")
                     resid = apply_norm_or_skip(resid, model.blocks[0].ln1)
                 
-                # FIXED: Cast to FP32 before unembedding to avoid precision loss
-                # Vectorized unembedding for all positions  
-                resid_cast = resid[0].to(dtype=UNEMBED_DTYPE)
+                resid_cast = resid[0].float#.to(dtype=UNEMBED_DTYPE)
                 logits_all = model.unembed(resid_cast).float()  # [seq, d_vocab]
                 
                 for pos in range(tokens.shape[1]):
@@ -545,9 +542,7 @@ def run_experiment_for_model(model_id):
                                     break
                             resid = apply_norm_or_skip(resid, norm_layer)
                     
-                    # FIXED: Cast to FP32 before unembedding to avoid precision loss
-                    # Vectorized unembedding for all positions
-                    resid_cast = resid[0].to(dtype=UNEMBED_DTYPE)
+                    resid_cast = resid[0].float#to(dtype=UNEMBED_DTYPE)
                     logits_all = model.unembed(resid_cast).float() # [seq, d_vocab]
                     
                     for pos in range(tokens.shape[1]):
