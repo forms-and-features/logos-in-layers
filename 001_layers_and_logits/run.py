@@ -1,4 +1,5 @@
 import os
+os.environ["ACCELERATE_LOAD_CHECKPOINTS_IN_PARALLEL"] = "true"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 os.environ["NCCL_P2P_LEVEL"] = "NVL"
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:64,expandable_segments:True"
