@@ -37,8 +37,8 @@ TOP_K_VERBOSE = 20  # number of tokens to record for verbose slots and answer po
 
 # List of confirmed supported models
 CUDA_ONLY_MODELS = [
-    "01-ai/Yi-34B",
     "meta-llama/Meta-Llama-3-70B",
+    "01-ai/Yi-34B",
     "Qwen/Qwen3-14B",
     "google/gemma-2-27b",
 ]
@@ -171,11 +171,24 @@ def run_experiment_for_model(model_id):
         # Load model directly to target device to minimize memory usage
         # Avoid device_map="auto" which causes device mismatch issues
         try:
-            # Try loading directly to target device first
+            # ------------------------------------------------------------------
+            # 4-bit NF4 quantisation ONLY for the huge 70-B Llama-3 checkpoint
+            # ------------------------------------------------------------------
+            quant_args = {}
+            if model_id.lower() == "meta-llama/meta-llama-3-70b":
+                quant_args = dict(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",          # normal-float-4
+                    bnb_4bit_use_double_quant=True,     # two-step quant improves accuracy
+                    bnb_4bit_compute_dtype=torch.float16,
+                )
+
+            # Try loading directly to target device first            
             model = HookedTransformer.from_pretrained_no_processing(
                 model_id,
                 # device=device,  # removed in favour of Accelerate sharding
                 device_map="auto",                  # let Accelerate shard
+                # 4-bit NF4 quantisation (only supported for Llama)
                 torch_dtype=dtype,                  # use fp16 on CUDA, fp32 on CPU/MPS
                 max_memory={                       # hard caps
                     0:  "120GiB",                  # GPU (H200)
@@ -185,6 +198,7 @@ def run_experiment_for_model(model_id):
                 offload_state_dict=True,            # stream shards directly
                 low_cpu_mem_usage=True,
                 trust_remote_code=True,
+                **quant_arg
             )
         except Exception as e:
             print(f"Direct loading to {device} failed: {e}")
