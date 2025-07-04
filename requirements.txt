@@ -1,8 +1,7 @@
-# Minimal requirements for 001_layers_and_logits experiment
-# Updated versions that support proper device_map loading
-
-torch==2.7.1
-transformers>=4.44.0
-accelerate>=1.8.0
-transformer-lens==2.16.1
-tqdm==4.67.1
+# requirements.txt  – CUDA-12.1 wheel stack
+torch>=2.2.2+cu121        # last PyPI wheel built for CUDA 12.1
+transformers>=4.41.2      # first release that knows about Llama-3
+accelerate>=0.27.2        # stable; 1.x does not exist yet
+transformer-lens>=2.16.1
+bitsandbytes>=0.43.2      # ships cu121 & cu118 kernels
+tqdm>=4.67.1
