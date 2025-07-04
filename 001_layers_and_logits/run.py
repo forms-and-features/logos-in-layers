@@ -128,11 +128,11 @@ def clean_model_name(model_id):
     clean_name = model_id.split('/')[-1]
     return clean_name
 
-def run_experiment_for_model(model_id):
-    """Run the complete experiment for a single model and return output as string"""
+def run_experiment_for_model(model_id, output_files):
+    """Run the complete experiment for a single model and write results to files"""
     
     def evaluate_model():
-        """The actual experiment code - all prints will be captured"""
+        """The actual experiment code - all prints go to console"""
         print(f"\n{'='*60}")
         print(f"EVALUATING MODEL: {model_id}")
         print(f"{'='*60}")
@@ -186,7 +186,7 @@ def run_experiment_for_model(model_id):
 
                 hf_model = AutoModelForCausalLM.from_pretrained(
                     model_id,
-                    device_map="auto",                 # spill whatever doesn’t fit
+                    device_map="auto",                 # spill whatever doesn't fit
                     torch_dtype=torch.float16,         # compute dtype
                     quantization_config=bnb_cfg,
                 )
@@ -320,8 +320,17 @@ def run_experiment_for_model(model_id):
             "context_prompt": context_prompt,
             "target_prediction": "first unseen token (likely 'Berlin')"
         }
-        # Emit prompt record
-        print(json.dumps({"type": "prompt", "context_prompt": context_prompt, "ground_truth": ground_truth}, ensure_ascii=False))
+        # Collect data for JSON output
+        json_data = {
+            "prompt": {"type": "prompt", "context_prompt": context_prompt, "ground_truth": ground_truth},
+            "records": [],
+            "pure_next_token_records": [],
+            "test_prompts": [],
+            "temperature_exploration": [],
+            "diagnostics": None,
+            "final_prediction": None,
+            "model_stats": None
+        }
         IMPORTANT_WORDS = ["Germany", "Berlin", "capital", "Answer", "word", "simply"]
 
         def is_verbose_position(pos, token_str, seq_len):
@@ -335,7 +344,7 @@ def run_experiment_for_model(model_id):
             return False
 
         def print_summary(layer_idx, pos, token_str, entropy_bits, top_tokens, top_probs, is_pure_next_token=False, extra=None):
-            # Emit a JSON Lines record for this layer/position
+            # Collect record data for JSON output
             record = {
                 "type": "pure_next_token_record" if is_pure_next_token else "record",
                 "layer": layer_idx,
@@ -346,7 +355,12 @@ def run_experiment_for_model(model_id):
             }
             if extra:
                 record.update(extra)
-            print(json.dumps(record, ensure_ascii=False))
+            
+            # Add to appropriate collection
+            if is_pure_next_token:
+                json_data["pure_next_token_records"].append(record)
+            else:
+                json_data["records"].append(record)
         
         # Tokenize the context prompt (without "Answer:" to avoid teacher-forcing)
         tokens = model.to_tokens(context_prompt)      # let Accelerate move it
@@ -639,7 +653,7 @@ def run_experiment_for_model(model_id):
                              "L_semantic": L_sem,
                              "delta_layers": None if (L_copy is None or L_sem is None)
                                                   else L_sem - L_copy})
-                print(json.dumps(diag, ensure_ascii=False))   # re-emit updated diagnostics
+                json_data["diagnostics"] = diag
                 
             finally:
                 # Clean up hooks and cache
@@ -655,7 +669,7 @@ def run_experiment_for_model(model_id):
                     torch.cuda.empty_cache()
                     torch.cuda.synchronize()  # Ensure all CUDA operations are complete
             
-            # === stop capturing large activations – probes don’t need them =======
+            # === stop capturing large activations – probes don't need them =======
 
 
             # Let's also see what the actual model would predict (final layer)
@@ -675,13 +689,13 @@ def run_experiment_for_model(model_id):
             final_entropy_nats = -torch.sum(torch.exp(final_log_probs) * final_log_probs)
             final_entropy_bits = max(final_entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
             
-            # Emit final prediction as a JSON Lines record
+            # Collect final prediction data
             final_record = {
                 "type": "final_prediction",
                 "entropy": final_entropy_bits,
                 "topk": [[model.tokenizer.decode([idx]), prob.item()] for prob, idx in zip(final_top_probs, final_top_indices)]
             }
-            print(json.dumps(final_record, ensure_ascii=False))
+            json_data["final_prediction"] = final_record
             
             # Emit additional probing records for test prompts
             # Process test prompts in smaller batches to reduce memory usage
@@ -715,14 +729,14 @@ def run_experiment_for_model(model_id):
                 test_log_probs = torch.log_softmax(test_logits[0, -1, :], dim=0).to(torch.float32)
                 test_entropy_nats = -torch.sum(torch.exp(test_log_probs) * test_log_probs)
                 test_entropy_bits = max(test_entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
-                # Emit JSON Lines record for this test prompt
+                # Collect test prompt data
                 probe_record = {
                     "type": "test_prompt",
                     "prompt": test_prompt,
                     "entropy": test_entropy_bits,
                     "topk": [[model.tokenizer.decode([idx]), prob.item()] for prob, idx in zip(test_top_probs, test_top_indices)]
                 }
-                print(json.dumps(probe_record, ensure_ascii=False))
+                json_data["test_prompts"].append(probe_record)
                 
                 # Clean up tensors immediately
                 del test_tokens, test_logits, test_top_indices, test_full_probs, test_top_probs, test_log_probs
@@ -750,21 +764,21 @@ def run_experiment_for_model(model_id):
                 temp_log_probs = torch.log_softmax(scaled_logits, dim=0).to(torch.float32)
                 temp_entropy_nats = -torch.sum(torch.exp(temp_log_probs) * temp_log_probs)
                 temp_entropy_bits = max(temp_entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
-                # Emit JSON Lines record for this temperature
+                # Collect temperature exploration data
                 temp_record = {
                     "type": "temperature_exploration",
                     "temperature": temp,
                     "entropy": temp_entropy_bits,
                     "topk": [[model.tokenizer.decode([idx]), prob.item()] for prob, idx in zip(temp_top_probs, temp_top_indices)]
                 }
-                print(json.dumps(temp_record, ensure_ascii=False))
+                json_data["temperature_exploration"].append(temp_record)
             
             # Clean up temperature exploration tensors
             del temp_tokens, base_logits
         
         print("=== END OF INSPECTING ==============\n")
         
-        # Emit model stats as a JSON Lines record
+        # Collect model stats data
         stats_record = {
             "type": "model_stats",
             "num_layers": model.cfg.n_layers,
@@ -773,105 +787,31 @@ def run_experiment_for_model(model_id):
             "d_vocab": model.cfg.d_vocab,
             "n_ctx": model.cfg.n_ctx
         }
-        print(json.dumps(stats_record, ensure_ascii=False))
+        json_data["model_stats"] = stats_record
         
         # Clean up model to free memory (though process will end anyway)
         del model
         gc.collect()  # Force garbage collection
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-    
-    try:
-        # Capture output while still showing it in console
-        output_buffer = io.StringIO()
         
-        # Use tee-like behavior: capture to buffer AND show in console
-        with redirect_stdout(output_buffer):
-            evaluate_model()
+        # Write JSON data to files
+        meta_filepath, csv_filepath, pure_csv_filepath = output_files
         
-        # Get all captured output (including human-readable logs and JSONL records)
-        raw = output_buffer.getvalue()
-        # Parse only the JSONL records into Python objects
-        lines = [line for line in raw.splitlines() if line.strip().startswith('{')]
-        objs = [json.loads(line) for line in lines]
-        # Partition into sections
-        diagnostics = [o for o in objs if o.get('type') == 'diagnostics'][-1]  # Get the LAST (updated) diagnostics
-        prompt_rec = next(o for o in objs if o.get('type') == 'prompt')
-        records = [o for o in objs if o.get('type') == 'record']
-        pure_next_token_records = [o for o in objs if o.get('type') == 'pure_next_token_record']
-        final_pred = next(o for o in objs if o.get('type') == 'final_prediction')
-        test_prompts = [o for o in objs if o.get('type') == 'test_prompt']
-        temp_expl = [o for o in objs if o.get('type') == 'temperature_exploration']
-        stats = next(o for o in objs if o.get('type') == 'model_stats')
-        # Assemble full JSON output
-        output_dict = {
-            "diagnostics": diagnostics,
-            "prompt": prompt_rec,  # Keep full prompt record with both context and full versions
-            "records": records,
-            "pure_next_token_records": pure_next_token_records,
-            "final_prediction": final_pred,
-            "test_prompts": test_prompts,
-            "temperature_exploration": temp_expl,
-            "model_stats": stats
-        }
-        return json.dumps(output_dict, ensure_ascii=False, indent=2)
+        # Write main JSON file
+        with open(meta_filepath, 'w', encoding='utf-8') as f:
+            json.dump(json_data, f, ensure_ascii=False, indent=2)
         
-    except Exception as e:
-        error_msg = f"ERROR evaluating {model_id}: {str(e)}"
-        print(error_msg)
-        return error_msg
+        # Write CSV files
+        write_csv_files(json_data, csv_filepath, pure_csv_filepath)
+        
+        return json_data
 
-def run_single_model(model_id):
-    """Run experiment for a single model - used when called as subprocess"""
-    print(f"\n{'='*80}")
-    print(f"🚀 Starting subprocess for model: {model_id}")
-    print(f"{'='*80}")
-    
-    # Set memory limits BEFORE any CUDA operations
-    if torch.cuda.is_available():
-        try:
-            # Use 85% of GPU memory (increased from 80% since we're managing memory better)
-            # torch.cuda.set_per_process_memory_fraction(0.85)
-            # Also set environment variable for better memory management
-            os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
-        except AttributeError:
-            pass
-    
-    # Generate filename components
-    clean_name = clean_model_name(model_id)
-    meta_filename = f"output-{clean_name}.json"
-    csv_filename  = f"output-{clean_name}-records.csv"
-    pure_csv_filename = f"output-{clean_name}-pure-next-token.csv"
-
-    # Determine output directory (parent may pass --out_dir)
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    if CLI_ARGS.out_dir:
-        out_dir = CLI_ARGS.out_dir
-    else:
-        # Stand-alone invocation: create its own timestamped run directory
-        out_dir = os.path.join(script_dir, datetime.now().strftime("run-%Y-%m-%d-%H-%M"))
-    # Ensure directory exists
-    os.makedirs(out_dir, exist_ok=True)
-
-    meta_filepath = os.path.join(out_dir, meta_filename)
-    csv_filepath  = os.path.join(out_dir, csv_filename)
-    pure_csv_filepath = os.path.join(out_dir, pure_csv_filename)
-    
-    try:
-        # Generate full JSON output from the experiment
-        json_str = run_experiment_for_model(model_id)
-        # ── guard against plain-text error strings ───────────────────────────────────
-        if not json_str.lstrip().startswith('{'):
-            raise RuntimeError(f"sub-run returned error string:\n{json_str}")
-        # ─────────────────────────────────────────────────────────────────────────────
-        data = json.loads(json_str)
-        records = data.pop("records", [])
-        pure_next_token_records = data.pop("pure_next_token_records", [])
-
-        # Save JSON metadata (without records)
-        with open(meta_filepath, 'w', encoding='utf-8') as f_json:
-            json.dump(data, f_json, ensure_ascii=False, indent=2)
-
+    def write_csv_files(json_data, csv_filepath, pure_csv_filepath):
+        """Write CSV files from collected JSON data"""
+        records = json_data["records"]
+        pure_next_token_records = json_data["pure_next_token_records"]
+        
         # Save records to CSV
         with open(csv_filepath, 'w', newline='', encoding='utf-8') as f_csv:
             writer = csv.writer(
@@ -944,6 +884,55 @@ def run_single_model(model_id):
                 ])
                 writer.writerow(row)
 
+        try:
+            # Run the experiment and let output print normally
+            return evaluate_model()
+        
+        except Exception as e:
+            error_msg = f"ERROR evaluating {model_id}: {str(e)}"
+            print(error_msg)
+            raise
+
+def run_single_model(model_id):
+    """Run experiment for a single model - used when called as subprocess"""
+    print(f"\n{'='*80}")
+    print(f"🚀 Starting subprocess for model: {model_id}")
+    print(f"{'='*80}")
+    
+    # Set memory limits BEFORE any CUDA operations
+    if torch.cuda.is_available():
+        try:
+            # Use 85% of GPU memory (increased from 80% since we're managing memory better)
+            # torch.cuda.set_per_process_memory_fraction(0.85)
+            # Also set environment variable for better memory management
+            os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
+        except AttributeError:
+            pass
+    
+    # Generate filename components
+    clean_name = clean_model_name(model_id)
+    meta_filename = f"output-{clean_name}.json"
+    csv_filename  = f"output-{clean_name}-records.csv"
+    pure_csv_filename = f"output-{clean_name}-pure-next-token.csv"
+
+    # Determine output directory (parent may pass --out_dir)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if CLI_ARGS.out_dir:
+        out_dir = CLI_ARGS.out_dir
+    else:
+        # Stand-alone invocation: create its own timestamped run directory
+        out_dir = os.path.join(script_dir, datetime.now().strftime("run-%Y-%m-%d-%H-%M"))
+    # Ensure directory exists
+    os.makedirs(out_dir, exist_ok=True)
+
+    meta_filepath = os.path.join(out_dir, meta_filename)
+    csv_filepath  = os.path.join(out_dir, csv_filename)
+    pure_csv_filepath = os.path.join(out_dir, pure_csv_filename)
+    
+    try:
+        # Run the experiment - files are written directly
+        data = run_experiment_for_model(model_id, (meta_filepath, csv_filepath, pure_csv_filepath))
+        
         print(f"✅ Experiment complete. JSON metadata saved to: {meta_filepath}")
         print(f"✅ Records CSV saved to: {csv_filepath}")
         print(f"✅ Pure next-token CSV saved to: {pure_csv_filepath}")
