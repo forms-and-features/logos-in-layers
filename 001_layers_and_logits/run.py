@@ -1,9 +1,12 @@
 import transformer_lens
 from transformer_lens import HookedTransformer
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-import bitsandbytes as bnb
-print("bnb-version:", bnb.__version__)
 import torch
+
+if torch.cuda.is_available():
+    import bitsandbytes as bnb
+    print("bnb-version:", bnb.__version__)
+
 import torch.nn as nn
 import io
 from contextlib import redirect_stdout
@@ -507,7 +510,8 @@ def run_experiment_for_model(model_id, output_files):
                     k = TOP_K_VERBOSE if verbose else TOP_K_RECORD
                     # Get top-k indices from raw logits
                     _, top_indices_k = torch.topk(layer_logits, k, largest=True, sorted=True)
-                    top_probs_k = torch.exp(log_probs[top_indices_k])
+                    full_probs  = torch.softmax(layer_logits, dim=0)
+                    top_probs_k = full_probs[top_indices_k]
                     top_tokens_k = [model.tokenizer.decode([idx]) for idx in top_indices_k]
                     print_summary(0, pos, token_str, entropy_bits, top_tokens_k, top_probs_k)
                     # Verbose console output removed to reduce noise - data still captured in files
@@ -823,14 +827,18 @@ def run_experiment_for_model(model_id, output_files):
         # Extract file paths
         meta_filepath, csv_filepath, pure_csv_filepath = output_files
         
-        # Write main JSON file
-        with open(meta_filepath, 'w', encoding='utf-8') as f:
-            json.dump(json_data, f, ensure_ascii=False, indent=2)
-        
-        # Write CSV files
+        # Write CSV files FIRST (they need the full record lists)
         write_csv_files(json_data, csv_filepath, pure_csv_filepath)
+
+        # Strip bulky per-token records from JSON to keep it compact
+        json_data_compact = {k: v for k, v in json_data.items()
+                             if k not in ("records", "pure_next_token_records")}
         
-        return json_data
+        # Write compact JSON metadata
+        with open(meta_filepath, 'w', encoding='utf-8') as f:
+            json.dump(json_data_compact, f, ensure_ascii=False, indent=2)
+        
+        return json_data_compact
         
     except Exception as e:
         error_msg = f"ERROR evaluating {model_id}: {str(e)}"
@@ -911,8 +919,8 @@ def write_csv_files(json_data, csv_filepath, pure_csv_filepath):
                     rec.get("copy_collapse", ""),
                     rec.get("entropy_collapse", ""),
                     rec.get("is_answer", "")
-                            ])
-            writer.writerow(row)
+                ])
+                writer.writerow(row)
 
 def run_single_model(model_id):
     """Run experiment for a single model - used when called as subprocess"""
