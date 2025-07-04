@@ -177,13 +177,12 @@ def run_experiment_for_model(model_id, output_files):
             # 4-bit NF4 quantisation ONLY for Llama-3-70B
             # ------------------------------------------------------------------
             if "meta-llama-3-70b" in model_id.lower(): 
-                print("4-bit NF4 quantisation for Llama-3-70B …")
+                print("8-bit NF4 quantisation for Llama-3-70B …")
 
                 bnb_cfg = BitsAndBytesConfig(
-                    load_in_4bit            = True,
-                    bnb_4bit_quant_type     = "nf4",
-                    bnb_4bit_use_double_quant = True,
-                    bnb_4bit_compute_dtype  = torch.float16,
+                    load_in_8bit           = True,
+                    llm_int8_threshold    = 6.0,
+                    llm_int8_skip_modules = None,
                 )
 
                 model = HookedTransformer.from_pretrained(
