@@ -130,6 +130,21 @@ def clean_model_name(model_id):
     clean_name = model_id.split('/')[-1]
     return clean_name
 
+def safe_cast_for_unembed(resid, W_U):
+    """
+    Return the residual stream casted to the *right* dtype for the
+    un-embedding.
+
+    * For ordinary models W_U.dtype is fp16 / bf16 / fp32 ⇒ cast as usual.
+    * For 8-bit-quantised weights W_U.dtype is int8  ⇒ keep activations
+      in their original float dtype (INT8 matmul kernels expect that).
+    """
+    if torch.is_floating_point(W_U):       # fp16 / bf16 / fp32 case
+        return resid.to(dtype=W_U.dtype)
+    else:                                  # int8 / 4-bit etc.
+        return resid                       # **no** cast!
+
+
 def run_experiment_for_model(model_id, output_files):
     """Run the complete experiment for a single model and write results to files"""
     
@@ -463,9 +478,8 @@ def run_experiment_for_model(model_id, output_files):
                     print("[diagnostic] Applying real ln1 normalization to embeddings (not synthetic γ=1)")
                     resid = apply_norm_or_skip(resid, model.blocks[0].ln1)
                 
-                # Keep precision
                 # Vectorized unembedding for all positions  
-                resid_cast = resid[0]#.to(dtype=UNEMBED_DTYPE)
+                resid_cast = safe_cast_for_unembed(resid[0], model.unembed.W_U)
                 logits_all = model.unembed(resid_cast).float()  # [seq, d_vocab]
                 
                 for pos in range(tokens.shape[1]):
@@ -554,9 +568,8 @@ def run_experiment_for_model(model_id, output_files):
                             # Use the unified normalization function that handles both LayerNorm and RMSNorm
                             resid = apply_norm_or_skip(resid, norm_layer)
                     
-                    # Keep precision
                     # Vectorized unembedding for all positions
-                    resid_cast = resid[0]#.to(dtype=UNEMBED_DTYPE)
+                    resid_cast = safe_cast_for_unembed(resid[0], model.unembed.W_U)
                     logits_all = model.unembed(resid_cast).float() # [seq, d_vocab]
                     
                     for pos in range(tokens.shape[1]):
