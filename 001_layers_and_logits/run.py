@@ -3,7 +3,6 @@ from transformer_lens import HookedTransformer
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 import bitsandbytes as bnb, torch
 print("bnb-version:", bnb.__version__)
-print("using CUDA kernels:", torch.cuda.is_available() and bnb.functional.is_available())
 import torch
 import torch.nn as nn
 import io
