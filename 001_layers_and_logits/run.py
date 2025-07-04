@@ -200,7 +200,8 @@ def run_experiment_for_model(model_id):
                     trust_remote_code=True,
                 )
             else:
-                # Try loading directly to target device first            
+                # Try loading directly to target device first  
+                print("Loading directly to target device...")          
                 model = HookedTransformer.from_pretrained_no_processing(
                     model_id,
                     # device=device,  # removed in favour of Accelerate sharding
