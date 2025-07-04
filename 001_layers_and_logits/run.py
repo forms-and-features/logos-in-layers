@@ -175,7 +175,7 @@ def run_experiment_for_model(model_id):
             # ------------------------------------------------------------------
             # 4-bit NF4 quantisation ONLY for the huge 70-B Llama-3 checkpoint
             # ------------------------------------------------------------------
-            if model_id.lower() == "meta-llama/Meta-Llama-3-70B":
+            if model_id.lower() == "meta-llama/meta-llama-3-70b":
                 bnb_cfg = BitsAndBytesConfig(
                     load_in_4bit=True,                 # real 4-bit weights
                     bnb_4bit_quant_type="nf4",
