@@ -795,7 +795,13 @@ def run_experiment_for_model(model_id, output_files):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         
-        # Write JSON data to files
+        return json_data
+
+    try:
+        # Run the experiment and let output print normally
+        json_data = evaluate_model()
+        
+        # Extract file paths
         meta_filepath, csv_filepath, pure_csv_filepath = output_files
         
         # Write main JSON file
@@ -806,8 +812,13 @@ def run_experiment_for_model(model_id, output_files):
         write_csv_files(json_data, csv_filepath, pure_csv_filepath)
         
         return json_data
+        
+    except Exception as e:
+        error_msg = f"ERROR evaluating {model_id}: {str(e)}"
+        print(error_msg)
+        raise
 
-    def write_csv_files(json_data, csv_filepath, pure_csv_filepath):
+def write_csv_files(json_data, csv_filepath, pure_csv_filepath):
         """Write CSV files from collected JSON data"""
         records = json_data["records"]
         pure_next_token_records = json_data["pure_next_token_records"]
@@ -881,17 +892,8 @@ def run_experiment_for_model(model_id, output_files):
                     rec.get("copy_collapse", ""),
                     rec.get("entropy_collapse", ""),
                     rec.get("is_answer", "")
-                ])
-                writer.writerow(row)
-
-        try:
-            # Run the experiment and let output print normally
-            return evaluate_model()
-        
-        except Exception as e:
-            error_msg = f"ERROR evaluating {model_id}: {str(e)}"
-            print(error_msg)
-            raise
+                            ])
+            writer.writerow(row)
 
 def run_single_model(model_id):
     """Run experiment for a single model - used when called as subprocess"""
