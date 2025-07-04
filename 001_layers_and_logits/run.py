@@ -186,7 +186,7 @@ def run_experiment_for_model(model_id, output_files):
                     bnb_4bit_compute_dtype  = torch.float16,
                 )
 
-                model = HookedTransformer.from_pretrained_no_processing(
+                model = HookedTransformer.from_pretrained(
                     model_id,
                     device_map        = "auto",
                     torch_dtype       = torch.float16,
