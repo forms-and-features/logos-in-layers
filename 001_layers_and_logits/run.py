@@ -130,6 +130,19 @@ def clean_model_name(model_id):
     clean_name = model_id.split('/')[-1]
     return clean_name
 
+def bits_entropy_from_logits(logits: torch.Tensor) -> float:
+    """
+    Shannon entropy in **bits** computed safely from raw logits.
+    Works on CPU / GPU and never returns NaN.
+    """
+    log_probs = torch.log_softmax(logits, dim=0)          # [V]
+    probs      = torch.exp(log_probs)                     # [V]
+    finite_mask = torch.isfinite(log_probs)               # filter out -inf
+
+    ent_nats = torch.sum(-probs[finite_mask] * log_probs[finite_mask])
+    return (ent_nats / math.log(2)).item()
+
+
 def safe_cast_for_unembed(resid, W_U):
     """
     Return the residual stream casted to the *right* dtype for the
@@ -193,7 +206,6 @@ def run_experiment_for_model(model_id, output_files):
             # ------------------------------------------------------------------
             if "meta-llama-3-70b" in model_id.lower(): 
                 print("8-bit quantisation for Llama-3-70B …")
-                USE_FP32_UNEMBED = True
 
                 bnb_cfg = BitsAndBytesConfig(
                     load_in_8bit           = True,
@@ -486,8 +498,7 @@ def run_experiment_for_model(model_id, output_files):
                     layer_logits = logits_all[pos]
                     # Compute log-probs for entropy and selective probabilities
                     log_probs = torch.log_softmax(layer_logits, dim=0).to(torch.float32)
-                    entropy_nats = -torch.sum(torch.exp(log_probs) * log_probs)
-                    entropy_bits = max(entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
+                    entropy_bits = bits_entropy_from_logits(layer_logits)  # Prevent negative zero
 
                     token_str = str_tokens[pos]
                     # Decide verbosity for this position
@@ -505,12 +516,11 @@ def run_experiment_for_model(model_id, output_files):
                 # This avoids deflated entropy from tokens the model has already seen
                 last_pos = tokens.shape[1] - 1
                 last_logits = logits_all[last_pos]
-                last_log_probs = torch.log_softmax(last_logits, dim=0).to(torch.float32)
-                last_entropy_nats = -torch.sum(torch.exp(last_log_probs) * last_log_probs)
-                last_entropy_bits = max(last_entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
+                last_entropy_bits = bits_entropy_from_logits(last_logits)
+                last_full_probs   = torch.softmax(last_logits, dim=0)
                 last_token_str = "⟨NEXT⟩"  # Pure next-token prediction, not the last prompt token
                 _, last_top_indices = torch.topk(last_logits, TOP_K_RECORD, largest=True, sorted=True)
-                last_top_probs = torch.exp(last_log_probs[last_top_indices])
+                last_top_probs = last_full_probs[last_top_indices]
                 last_top_tokens = [model.tokenizer.decode([idx]) for idx in last_top_indices]
                 
                 # ------------------------------------------------------------------- #
@@ -574,10 +584,10 @@ def run_experiment_for_model(model_id, output_files):
                     
                     for pos in range(tokens.shape[1]):
                         layer_logits = logits_all[pos]
-                        # Compute log-probs for entropy and selective probabilities
-                        log_probs = torch.log_softmax(layer_logits, dim=0).to(torch.float32)
-                        entropy_nats = -torch.sum(torch.exp(log_probs) * log_probs)
-                        entropy_bits = max(entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
+                        # fresh per-token probabilities for THIS layer
+                        full_probs  = torch.softmax(layer_logits, dim=0)
+                        log_probs   = torch.log(full_probs)          # needed only for entropy & top-k
+                        entropy_bits = bits_entropy_from_logits(layer_logits)
 
                         token_str = str_tokens[pos]
                         # Decide verbosity for this position
@@ -586,7 +596,7 @@ def run_experiment_for_model(model_id, output_files):
                         k = TOP_K_VERBOSE if verbose else TOP_K_RECORD
                         # Get top-k indices from raw logits
                         _, top_indices_k = torch.topk(layer_logits, k, largest=True, sorted=True)
-                        top_probs_k = torch.exp(log_probs[top_indices_k])
+                        top_probs_k = full_probs[top_indices_k]
                         top_tokens_k = [model.tokenizer.decode([idx]) for idx in top_indices_k]
                         print_summary(layer + 1, pos, token_str, entropy_bits, top_tokens_k, top_probs_k)
                         # Verbose console output removed to reduce noise - data still captured in files
@@ -595,12 +605,11 @@ def run_experiment_for_model(model_id, output_files):
                     # This avoids deflated entropy from tokens the model has already seen
                     last_pos = tokens.shape[1] - 1
                     last_logits = logits_all[last_pos]
-                    last_log_probs = torch.log_softmax(last_logits, dim=0).to(torch.float32)
-                    last_entropy_nats = -torch.sum(torch.exp(last_log_probs) * last_log_probs)
-                    last_entropy_bits = max(last_entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
+                    last_entropy_bits = bits_entropy_from_logits(last_logits)
+                    last_full_probs   = torch.softmax(last_logits, dim=0)
                     last_token_str = "⟨NEXT⟩"  # Pure next-token prediction, not the last prompt token
                     _, last_top_indices = torch.topk(last_logits, TOP_K_RECORD, largest=True, sorted=True)
-                    last_top_probs = torch.exp(last_log_probs[last_top_indices])
+                    last_top_probs = last_full_probs[last_top_indices]
                     last_top_tokens = [model.tokenizer.decode([idx]) for idx in last_top_indices]
                     
                     # ------------------------------------------------------------------- #
