@@ -1,6 +1,7 @@
 import transformer_lens
 from transformer_lens import HookedTransformer
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+import bitsandbytes as bnb; print(bnb.__version__)
 import torch
 import torch.nn as nn
 import io
