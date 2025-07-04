@@ -1,7 +1,7 @@
 import transformer_lens
 from transformer_lens import HookedTransformer
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-import bitsandbytes as bnb, torch
+import bitsandbytes as bnb
 print("bnb-version:", bnb.__version__)
 import torch
 import torch.nn as nn
@@ -171,52 +171,47 @@ def run_experiment_for_model(model_id, output_files):
         # Set batch_first=False for models that need it (TransformerLens expectation)
         os.environ['TRANSFORMERS_BATCH_FIRST'] = 'False'
             
-        # Load model directly to target device to minimize memory usage
-        # Avoid device_map="auto" which causes device mismatch issues
+        # Load model
         try:
             # ------------------------------------------------------------------
-            # 4-bit NF4 quantisation ONLY for the huge 70-B Llama-3 checkpoint
+            # 4-bit NF4 quantisation ONLY for Llama-3-70B
             # ------------------------------------------------------------------
-            if model_id.lower() == "meta-llama/meta-llama-3-70b":
-                print("4-bit NF4 quantisation for 70-B Llama-3 checkpoint...")
+            if "meta-llama-3-70b" in model_id.lower(): 
+                print("4-bit NF4 quantisation for Llama-3-70B …")
+
                 bnb_cfg = BitsAndBytesConfig(
-                    load_in_4bit=True,                 # real 4-bit weights
-                    bnb_4bit_quant_type="nf4",
-                    bnb_4bit_use_double_quant=True,
-                    bnb_4bit_compute_dtype=torch.float16,
+                    load_in_4bit            = True,
+                    bnb_4bit_quant_type     = "nf4",
+                    bnb_4bit_use_double_quant = True,
+                    bnb_4bit_compute_dtype  = torch.float16,
                 )
 
-                hf_model = AutoModelForCausalLM.from_pretrained(
-                    model_id,
-                    device_map="auto",                 # spill whatever doesn't fit
-                    torch_dtype=torch.float16,         # compute dtype
-                    quantization_config=bnb_cfg,
-                )
-                hf_tok = AutoTokenizer.from_pretrained(model_id)
-
-                # --- convert the HF model to Transformer-Lens -----------------
-                model = HookedTransformer.from_pretrained(
-                    hf_model,                         # pass the in-memory HF model
-                    tokenizer=hf_tok,
-                    device_map="auto",
-                    trust_remote_code=True,
-                )
-            else:
-                # Try loading directly to target device first  
-                print("Loading directly to target device...")          
                 model = HookedTransformer.from_pretrained_no_processing(
                     model_id,
-                    # device=device,  # removed in favour of Accelerate sharding
-                    device_map="auto",                  # let Accelerate shard
-                    torch_dtype=dtype,                  # use fp16 on CUDA, fp32 on CPU/MPS
-                    max_memory={                       # hard caps
-                        0:  "120GiB",                  # GPU (H200)
-                        "cpu": "110GiB",                # host RAM – anything extra spills
-                    },
-                    offload_folder="offload",    # fast local NVMe dir
-                    offload_state_dict=True,            # stream shards directly
-                    low_cpu_mem_usage=True,
-                    trust_remote_code=True
+                    device_map        = "auto",
+                    torch_dtype       = torch.float16,
+                    quantization_config = bnb_cfg,
+                    max_memory        = {0: "120GiB", "cpu": "110GiB"},
+                    offload_folder    = "offload",
+                    offload_state_dict = True,
+                    low_cpu_mem_usage = True,
+                    trust_remote_code = True,
+                )
+
+            # ------------------------------------------------------------------
+            # all other models
+            # ------------------------------------------------------------------
+            else:
+                print("Loading directly to target device…")
+                model = HookedTransformer.from_pretrained_no_processing(
+                    model_id,
+                    device_map      = "auto",
+                    torch_dtype     = dtype,
+                    max_memory      = {0: "120GiB", "cpu": "110GiB"},
+                    offload_folder  = "offload",
+                    offload_state_dict = True,
+                    low_cpu_mem_usage = True,
+                    trust_remote_code = True,
                 )
         except Exception as e:
             print(f"Direct loading to {device} failed: {e}")
