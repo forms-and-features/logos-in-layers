@@ -1,63 +1,17 @@
-import os
 import transformer_lens
 from transformer_lens import HookedTransformer
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 import torch
-import einops  # needed for monkey-patch below
-
-# ---------------------------------------------------------------------------
-# Transformer-Lens tries to treat bitsandbytes 4-bit Linear weight tensors
-# (packed as [rows, cols//64, 16]) as if they were ordinary 2-D matrices and
-# calls `einops.rearrange("m (n h) -> n h m", …)`.  Because the middle
-# dimension is only 1 the reshape fails.  We monkey-patch rearrange so that
-# it quietly squeezes that dummy dimension in this specific situation.
-# ---------------------------------------------------------------------------
-
-_real_rearrange = einops.rearrange
-
-def _safe_rearrange(x, pattern, *axes, **kwargs):
-    """Wrapper that avoids the (n h) reshape error on packed 4-bit weights."""
-    # Intervene **only** for quantised int4/int8 weight tensors (non-floating).
-    if not torch.is_floating_point(x):
-        # Case 1: packed 4-bit weight [rows, 1, 16]
-        if x.ndim == 3 and x.shape[1] == 1 and "(n h)" in pattern:
-            x = x.squeeze(1)                       # → [rows, 16]
-        # Case 2: packed columns [rows, 1]
-        if x.ndim == 2 and x.shape[1] == 1 and "(n h)" in pattern:
-            return x.reshape(1, 1, x.shape[0])
-        # After fix fall through to original rearrange.
-        return _real_rearrange(x, pattern, *axes, **kwargs)
-
-    # For normal fp16/bf16/fp32 tensors use original rearrange unmodified.
-    return _real_rearrange(x, pattern, *axes, **kwargs)
-
-# Patch the function inside einops itself
-einops.rearrange = _safe_rearrange
-
-# If transformer_lens (or anything else) has already imported the symbol via
-# `from einops import rearrange`, we need to overwrite that copy too.
-import sys, importlib
-
-for name, module in list(sys.modules.items()):
-    if name.startswith("transformer_lens"):
-        # overwrite any attribute called `rearrange` that points to einops
-        for attr in ("rearrange",):
-            if hasattr(module, attr):
-                setattr(module, attr, _safe_rearrange)
-        # also patch nested einops submodule if present
-        if hasattr(module, "einops"):
-            module.einops.rearrange = _safe_rearrange
 
 if torch.cuda.is_available():
     import bitsandbytes as bnb
-    print(bnb.__version__)
-    print(bnb.functional.__file__)
-    print("sm_90" in open(bnb.functional.__file__, "rb").read().decode("latin1"))
+    print("bnb-version:", bnb.__version__)
 
 import torch.nn as nn
 import io
 from contextlib import redirect_stdout
 from datetime import datetime
+import os
 import subprocess
 import sys
 import math
@@ -251,19 +205,18 @@ def run_experiment_for_model(model_id, output_files):
         # Load model
         try:
             # ------------------------------------------------------------------
-            # 4-bit NF4 quantisation for Llama-3-70B
+            # 8-bit quantisation ONLY for Llama-3-70B
             # ------------------------------------------------------------------
             if "meta-llama-3-70b" in model_id.lower(): 
-                print("4-bit NF4 quantisation for Llama-3-70B …")
+                print("8-bit quantisation for Llama-3-70B …")
 
                 bnb_cfg = BitsAndBytesConfig(
-                    load_in_4bit              = True,
-                    bnb_4bit_quant_type       = "nf4",
-                    bnb_4bit_use_double_quant = True,
-                    bnb_4bit_compute_dtype    = torch.bfloat16,
+                    load_in_8bit           = True,
+                    llm_int8_threshold    = 6.0,
+                    llm_int8_skip_modules = None,
                 )
 
-                model = HookedTransformer.from_pretrained_no_processing(
+                model = HookedTransformer.from_pretrained(
                     model_id,
                     device_map        = "auto",
                     torch_dtype       = torch.float16,
@@ -307,18 +260,6 @@ def run_experiment_for_model(model_id, output_files):
             model = model.to(device)
             
         model.eval()  # Hygiene: avoid dropout etc.
-        
-        # Up-cast norms to fp32 **only** when the model is quantised (int-8/4-bit).
-        is_quantised = (
-            isinstance(bnb_cfg, BitsAndBytesConfig) and (
-                getattr(bnb_cfg, "load_in_8bit", False) or getattr(bnb_cfg, "load_in_4bit", False)
-            )
-        )
-
-        if is_quantised:
-            for mod in model.modules():
-                if ("RMS" in mod.__class__.__name__) or isinstance(mod, nn.LayerNorm):
-                    mod.to(dtype=torch.float32)
         
         # Clear cache after loading
         if torch.cuda.is_available():
