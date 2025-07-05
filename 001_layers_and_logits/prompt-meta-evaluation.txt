@@ -1,5 +1,7 @@
 You're a top LLM interpretability researcher at a leading AI lab (think OpenAI, Anthropic, Google). You're guiding and consulting an experiment that aims to apply the results of LLM interpretability research to push forward the philosophical debate between nominalism and realism. This is a "hobby" project of a software engineers just getting started with interpretability, but interested in using LLM interpretability to push the debate as far as possible with the tools available.
 
+We are analysing layer-by-layer logit-lens sweeps over seven open-weight base LLMs (Meta-Llama-3-8B, Mistral-7B-v0.1, Gemma-2-9B, Gemma-2-27B, Qwen-3-8B, Qwen-3-14B, Yi-34B).
+
 With the help of an AI co-pilot, the user ran experiments on a few open-weights models:
 - the python script: 
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run.py
@@ -51,26 +53,28 @@ https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/
 
 Your task is to:
 - review the experiment's code: anything wrong about the approach (other than limitations highlighted in model evaluation docs)?
-- review the results and analyses: anything incorrectly interpreted, over-stated, or missed? anything you want to add, based on your knowledge of lastest LLM interpretability research?
-- consider the usefulness of the findings for the realism vs nominalism debate;
+- review the results and analyses: anything incorrectly interpreted, over-stated, or missed?
+- do your own independent deep dive into the results, broadly following the structure of cross-model evaluation reports, and using your knowledge of lastest LLM interpretability research (you may use search for articles, posts and code sources);
+- consider the usefulness of the findings for the realism vs nominalism debate, keeping in mind this is just the first iteration;
 - propose next steps, keeping in mind project context and goals.
+ß
+Use your knowledge of cutting-edge LLM research. Be thorough and specific.
 
-Use your knowledge of cutting-edge LLM research. Be thorough and specific. Make sure that statements are supported by evidence from the txt dump, don't speculate. Contextualize your findings using your broader knowledge of the latest interpretability research, citing sources when appropriate. Always provide links to sources, and verify that sources contain the claims that you're citing; otherwise, reformulate or remove the claim. In any case, never provide a non-existent source.
+Make sure that statements are supported by evidence from the txt dump, don't speculate. Contextualize your findings using your broader knowledge of the latest interpretability research, citing sources when appropriate. Always provide links to sources, and verify that sources contain the claims that you're citing; otherwise, reformulate or remove the claim. In any case, never provide a non-existent source.
 
-We are analysing layer-by-layer logit-lens sweeps over four open-weight base LLMs (Llama-3-8B, Mistral-7B-v0.1, Gemma-2-9B, Qwen-3-8B).
 
 Known limitations of the approach that we accepted in this iteration (but suggestions are appreciated):
 
 The script:
-* **Applies an RMS-norm lens** to every residual stream and projects through the model’s own unembedding matrix.  This keeps activations in the model’s native scale but is *not* a tuned lens; possible systematic bias of RMS lenses is acknowledged but left untouched in this round.
-* **Defines copy-collapse (L\_copy) by prompt-echo**: the first layer whose top-1 *next-token* is a token already present in the prompt **with p > 0.90**.  We deliberately abandoned the earlier “entropy < 1 bit” rule because entropy is vocabulary-size sensitive and produced inconsistent collapse depths.
-* **Defines semantic-collapse (L\_semantic)** as the first layer whose top-1 equals the gold answer token (“Berlin”).  Δ-collapse = L\_semantic − L\_copy captures how long the model clings to surface form before retrieving meaning.
+* **Applies each model's own normaliser** (RMSNorm for RMS models, LayerNorm for LN models) to every residual stream before projecting through the model's unembedding matrix.
+* **Defines copy-collapse (L\_copy) by prompt-echo**: the first layer whose top-1 *next-token* is a token already present in the prompt **with p > 0.90**.  We deliberately abandoned the earlier "entropy < 1 bit" rule because entropy is vocabulary-size sensitive and produced inconsistent collapse depths.
+* **Defines semantic-collapse (L\_semantic)** as the first layer whose top-1 equals the gold answer token ("Berlin").  Δ-collapse = L\_semantic − L\_copy captures how long the model clings to surface form before retrieving meaning.
 * Uses a single fixed prompt
   `Give the city name only, plain text. The capital of Germany is called simply`
-  followed by the logit-lens sweep of the next unseen token (“⟨NEXT⟩”).
+  followed by the logit-lens sweep of the next unseen token ("⟨NEXT⟩").
   The brevity instruction intentionally stresses instruction-following pathways; removing it is known to shift collapse depths but that comparison is out-of-scope here.
-* Runs **CPU inference, float-32 residual cache, FP-32 unembed**, with no seeding; minor ranking ties near p≈0.90 may fluctuate.  Early-layer token decoding sometimes produces garbled Unicode - these artefacts should be treated as noise.
-* Outputs three artefacts per model: a JSON meta file (diagnostics + summary), a full-sequence CSV (“records”) and a pure-next-token CSV (one row per layer) that now includes the flags `copy_collapse`, `entropy_collapse` (legacy) and `is_answer`.
+* Runs on the device selected by `--device` (default **CUDA**).  Residual streams are cached in float-32; the un-embedding matrix is promoted to FP-32 only when the model itself is loaded in FP-32 (CPU path).  The run is deterministically seeded (`SEED = 316`) so ranking ties are reproducible.  Early-layer token decoding may produce garbled Unicode—treat these artefacts as noise.
+* Outputs three artefacts per model: a JSON meta file (diagnostics + summary), a full-sequence CSV ("records") and a pure-next-token CSV (one row per layer) that now includes the flags `copy_collapse`, `entropy_collapse` (legacy) and `is_answer`.
 
 Known limitations to keep in mind:
 
