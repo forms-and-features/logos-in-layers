@@ -8,7 +8,7 @@ INPUTS
 - JSON  – one json file with structured results of the probe of the model (first part of results):
 001_layers_and_logits/run-latest/output-MODEL.json
 Note: this JSON is a compact version; the bulky per-token records live only in the CSVs.
-ß
+
 
 - CSV  - two csv files with detailed layer-level results of the probe of the model (second part of results):
 001_layers_and_logits/run-latest/output-MODEL-records.csv
