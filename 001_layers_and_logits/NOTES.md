@@ -1,44 +1,13 @@
 # Layer-by-Layer Analysis (Experiment 001)
 
-## Overview of experiment runs
-
-### Run at 2025-06-29 21:02 UTC+2
-
-Layer-by-layer analysis (identical prompt, deterministic seed):
-
-– **Gemma-2-9B** (42 layers) Immediate copy-collapse at layer 0 on "simply"; semantic answer "Berlin" only at the final layer (**Δ = 42**).
-
-– **Qwen3-8B** (36 layers) Copy-collapse at layer 25; "Berlin" emerges at layer 31 (**Δ = 6**).
-
-– **Meta-Llama-3-8B** (32 layers) No hard echo; "Berlin" appears at layer 25 (no Δ).
-
-– **Mistral-7B-v0.1** (32 layers) Soft "simply" plateau (<0.9 p), semantic collapse at layer 25 (no Δ).
-
-Cross-model synthesis: see `run-2025-06-29-21-02/evaluation-cross-model.md`.
-
-Meta-evaluation by o3-pro: see `run-2025-06-29-21-02/meta-evaluation.md`.
-
-### Run at 2025-06-29 16:53 UTC+2
-
-Layer-by-layer analysis of how the prediction for *"Give the city name only, plain text. The capital of Germany is called simply"* evolves through four different models:
-
-– **Gemma-2-9B** (42 layers) Copy-collapse happens immediately (layer 0) on the prompt word "simply" and persists through 41 layers; the correct answer "Berlin" only surfaces in the final layer (Δ 42).
-
-– **Qwen3-8B** (36 layers) Echo of "simply" peaks at layer 25 and is replaced by "Berlin" at layer 31, giving a moderate 6-layer gap between copy- and semantic-collapse.
-
-– **Meta-Llama-3-8B** (32 layers) No hard prompt echo; the network drifts through filler tokens and switches straight to "Berlin" at layer 25.
-
-– **Mistral-7B-v0.1** (32 layers) Similar to Llama—extended "simply" plateau without exceeding the copy threshold, then semantic convergence at layer 25.
-
-Cross-model synthesis: see `run-2025-06-29-16-53/evaluation-cross-model.md`.
-
 ## Supported Models
 
 ### ✅ Confirmed Working
-- **Llama 3** (Meta) – 32 layers
-- **Mistral 7B** (Mistral AI) – 32 layers  
-- **Gemma 2** (Google) – 42 layers
-- **Qwen3** (Alibaba) – 36 layers
+- **Llama 3** (Meta)
+- **Mistral 7B** (Mistral AI)  
+- **Gemma 2** (Google)
+- **Qwen3** (Alibaba)
+- **Yi** (01.AI)
 
 ### ❌ Not Supported
 - **GGUF files** – Require raw transformer format
