@@ -225,7 +225,7 @@ def run_experiment_for_model(model_id, output_files):
                     device_map        = "auto",
                     torch_dtype       = torch.float16,
                     quantization_config = bnb_cfg,
-                    max_memory        = {0: "120GiB", "cpu": "110GiB"},
+                    max_memory        = {0: "200GiB", "cpu": "110GiB"},
                     offload_folder    = "offload",
                     offload_state_dict = True,
                     low_cpu_mem_usage = True,
