@@ -259,7 +259,7 @@ def run_experiment_for_model(model_id, output_files):
                     bnb_4bit_compute_dtype    = torch.bfloat16,
                 )
 
-                model = HookedTransformer.from_pretrained(
+                model = HookedTransformer.from_pretrained_no_processing(
                     model_id,
                     device_map        = "auto",
                     torch_dtype       = torch.float16,
@@ -304,16 +304,17 @@ def run_experiment_for_model(model_id, output_files):
             
         model.eval()  # Hygiene: avoid dropout etc.
         
-        # ──────────────────────────────────────────────────────────────────
-        # Up-cast all normalisation layers (RMSNorm / LayerNorm) to fp32
-        # This costs <2 MB but hardens the run against fp16 overflow that
-        # propagates NaNs when hidden size is large (e.g. 8 192 for 70B).
-        # Doing this AFTER model.eval() ensures no parameters require grad.
-        # ──────────────────────────────────────────────────────────────────
-        for mod in model.modules():
-            # Identifying both RMSNorm variants and standard LayerNorm
-            if ("RMS" in mod.__class__.__name__) or isinstance(mod, nn.LayerNorm):
-                mod.to(dtype=torch.float32)
+        # Up-cast norms to fp32 **only** when the model is quantised (int-8/4-bit).
+        is_quantised = (
+            isinstance(bnb_cfg, BitsAndBytesConfig) and (
+                getattr(bnb_cfg, "load_in_8bit", False) or getattr(bnb_cfg, "load_in_4bit", False)
+            )
+        )
+
+        if is_quantised:
+            for mod in model.modules():
+                if ("RMS" in mod.__class__.__name__) or isinstance(mod, nn.LayerNorm):
+                    mod.to(dtype=torch.float32)
         
         # Clear cache after loading
         if torch.cuda.is_available():
