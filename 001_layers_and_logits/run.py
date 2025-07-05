@@ -213,7 +213,7 @@ def run_experiment_for_model(model_id, output_files):
                 bnb_cfg = BitsAndBytesConfig(
                     load_in_8bit            = True,
                     llm_int8_threshold      = 6.0,
-                    llm_int8_compute_dtype  = torch.bfloat16,  # accumulate matmuls in bf16 to avoid overflow
+                    llm_int8_compute_dtype  = torch.float32,  # accumulate matmuls in fp32 to fully eliminate overflows
                     # Leave the first transformer layer in fp16 to avoid early NaNs.
                     llm_int8_skip_modules   = ["model.layers.0"],
                 )
