@@ -127,6 +127,52 @@ def clean_model_name(model_id):
     clean_name = model_id.split('/')[-1]
     return clean_name
 
+def setup_run_latest_directory(script_dir):
+    """
+    Set up the run-latest directory with automatic rotation of previous runs.
+    
+    - If run-latest doesn't exist, create it
+    - If run-latest exists, rename it to run-YYYYMMDD-HHMM based on its timestamp file
+    - Create a new run-latest directory with a current timestamp file
+    
+    Returns the path to the run-latest directory.
+    """
+    run_latest_dir = os.path.join(script_dir, "run-latest")
+    current_timestamp = datetime.now().strftime("%Y%m%d-%H%M")
+    
+    # Check if run-latest already exists
+    if os.path.exists(run_latest_dir):
+        # Look for existing timestamp file to determine rotation name
+        timestamp_files = [f for f in os.listdir(run_latest_dir) if f.startswith("timestamp-")]
+        
+        if timestamp_files:
+            # Extract timestamp from existing file
+            timestamp_file = timestamp_files[0]  # Take the first one if multiple exist
+            old_timestamp = timestamp_file.replace("timestamp-", "")
+            rotated_name = f"run-{old_timestamp}"
+        else:
+            # No timestamp file found, use current time as fallback
+            rotated_name = f"run-{current_timestamp}-rotated"
+        
+        rotated_dir = os.path.join(script_dir, rotated_name)
+        
+        # Rename existing run-latest to rotated name
+        print(f"🔄 Rotating existing run-latest to: {rotated_name}")
+        os.rename(run_latest_dir, rotated_dir)
+    
+    # Create new run-latest directory
+    os.makedirs(run_latest_dir, exist_ok=True)
+    
+    # Create timestamp file in the new run-latest directory
+    timestamp_file = os.path.join(run_latest_dir, f"timestamp-{current_timestamp}")
+    with open(timestamp_file, 'w', encoding='utf-8') as f:
+        f.write(f"Experiment started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    
+    print(f"📁 Created run-latest directory: {run_latest_dir}")
+    print(f"⏰ Created timestamp file: timestamp-{current_timestamp}")
+    
+    return run_latest_dir
+
 def bits_entropy_from_logits(logits: torch.Tensor) -> float:
     """
     Shannon entropy in **bits** computed safely from raw logits.
@@ -203,9 +249,6 @@ def run_experiment_for_model(model_id, output_files):
                 model_id,
                 device_map      = "auto",
                 torch_dtype     = dtype,
-                max_memory      = {0: "120GiB", "cpu": "110GiB"},
-                offload_folder  = "offload",
-                offload_state_dict = True,
                 low_cpu_mem_usage = True,
                 trust_remote_code = True,
             )
@@ -915,8 +958,8 @@ def run_single_model(model_id):
     if CLI_ARGS.out_dir:
         out_dir = CLI_ARGS.out_dir
     else:
-        # Stand-alone invocation: create its own timestamped run directory
-        out_dir = os.path.join(script_dir, datetime.now().strftime("run-%Y-%m-%d-%H-%M"))
+        # Stand-alone invocation: create its own run-latest directory
+        out_dir = setup_run_latest_directory(script_dir)
     # Ensure directory exists
     os.makedirs(out_dir, exist_ok=True)
 
@@ -974,10 +1017,8 @@ def main():
 
     script_path = os.path.abspath(__file__)
 
-    # Create timestamped run directory once per launcher invocation
-    timestamp = datetime.now().strftime("run-%Y-%m-%d-%H-%M")
-    run_dir = os.path.join(os.path.dirname(script_path), timestamp)
-    os.makedirs(run_dir, exist_ok=True)
+    # Set up run-latest directory with automatic rotation
+    run_dir = setup_run_latest_directory(os.path.dirname(script_path))
 
     # Create empty markdown files for evaluation reports
     print(f"📝 Creating empty evaluation markdown files...")
