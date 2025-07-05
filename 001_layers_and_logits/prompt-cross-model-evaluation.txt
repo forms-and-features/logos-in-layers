@@ -13,7 +13,7 @@ INPUTS
 001_layers_and_logits/run-latest/output-gemma-2-27b.json
 001_layers_and_logits/run-latest/output-Yi-34B.json
 001_layers_and_logits/run-latest/output-Qwen3-14B.json
-+Note: each JSON is a compact summary; the bulky per-token records are stored only in the CSVs.
+Note: each JSON is a compact summary; the bulky per-token records are stored only in the CSVs.
 
 - CSV - layer-level results of the probe (part of the results of each probe), one per model:
 001_layers_and_logits/run-latest/output-gemma-2-9b-records.csv
