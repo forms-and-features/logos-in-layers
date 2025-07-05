@@ -3,6 +3,24 @@ import transformer_lens
 from transformer_lens import HookedTransformer
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 import torch
+import einops  # needed for monkey-patch below
+
+# ---------------------------------------------------------------------------
+# Transformer-Lens tries to treat bitsandbytes 4-bit Linear weight tensors
+# (packed as [rows, cols//64, 16]) as if they were ordinary 2-D matrices and
+# calls `einops.rearrange("m (n h) -> n h m", …)`.  Because the middle
+# dimension is only 1 the reshape fails.  We monkey-patch rearrange so that
+# it quietly squeezes that dummy dimension in this specific situation.
+# ---------------------------------------------------------------------------
+
+_real_rearrange = einops.rearrange
+
+def _safe_rearrange(x, pattern, *axes, **kwargs):
+    if x.ndim == 3 and x.shape[1] == 1 and "(n h)" in pattern:
+        x = x.squeeze(1)
+    return _real_rearrange(x, pattern, *axes, **kwargs)
+
+einops.rearrange = _safe_rearrange
 
 if torch.cuda.is_available():
     import bitsandbytes as bnb
