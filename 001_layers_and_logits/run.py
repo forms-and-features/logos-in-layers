@@ -1,5 +1,4 @@
 import os
-os.environ["BITSANDBYTES_FORCE_CUDA_VERSION"] = "120"
 import transformer_lens
 from transformer_lens import HookedTransformer
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -7,8 +6,8 @@ import torch
 
 if torch.cuda.is_available():
     import bitsandbytes as bnb
-    print(bnb.__version__)            # 0.46.1 (or '0.0.0.dev…' for main)
-    print(bnb.functional.__file__)    # …/libbitsandbytes_cuda120.so
+    print(bnb.__version__)
+    print(bnb.functional.__file__)
     print("sm_90" in open(bnb.functional.__file__, "rb").read().decode("latin1"))
 
 import torch.nn as nn
