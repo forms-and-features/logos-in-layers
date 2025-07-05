@@ -212,11 +212,12 @@ def run_experiment_for_model(model_id, output_files):
             if "meta-llama-3-70b" in model_id.lower(): 
                 print("8-bit LLM.int8 quantisation for Llama-3-70B …")
 
+                skip_first_n = 40
                 bnb_cfg = BitsAndBytesConfig(
                     load_in_8bit           = True,
-                    llm_int8_threshold     = 6.0,            # default clipping
-                    llm_int8_compute_dtype = torch.bfloat16, # bf16 accumulators are fine on H200
-                    # leave llm_int8_skip_modules = None      # SM-90 kernels are now safe
+                    llm_int8_threshold     = 6.0,
+                    llm_int8_compute_dtype = torch.float32,
+                    llm_int8_skip_modules  = [f"model.layers.{i}" for i in range(skip_first_n)],
                 )
 
                 model = HookedTransformer.from_pretrained(
