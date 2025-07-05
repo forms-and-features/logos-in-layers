@@ -18,9 +18,10 @@
 ```
 001_layers_and_logits/
 ├── run.py                           # Main experiment script
-├── run-YYYY-MM-DD-HH-MM/            # One timestamped directory per sweep
-│   ├── evaluation-[model].md        # Per-model analyses  
+├── run-latest/                      # Results and evaluation of the latest run
+|   ├── meta-evaluation.md           # Meta-evaluation of the latest run
 │   ├── evaluation-cross-model.md    # Cross-model analysis
+│   ├── evaluation-[model].md        # Per-model analyses  
 │   ├── output-[model].json          # JSON diagnostics
 │   ├── output-[model]-records.csv   # Layer-wise records (all tokens)
 │   ├── output-[model]-pure-next-token.csv  # Clean entropy (next-token only)

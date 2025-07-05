@@ -9,14 +9,9 @@ The first published iteration (`001_layers_and_logits/`) introduces a memory-eff
 
 ## Experiments
 
-### 000: Basic Chat
-**Directory**: `000_basic_chat/`
-**Files**: `run.py`
-
-Basic chat interface for testing model responses and getting familiar with the models.
-
 ### 001: Layer-by-Layer Analysis
-Detailed experiment documentation and findings have moved to `001_layers_and_logits/NOTES.md`.
+
+See `001_layers_and_logits/run-latest/*.md` for evaluation reports of the latest run, and `001_layers_and_logits/NOTES.md` for technical notes.
 
 ## Setup
 
