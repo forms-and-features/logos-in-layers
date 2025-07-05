@@ -2,5 +2,4 @@ torch==2.2.2+cu121          # last PyPI wheel built for CUDA 12.1
 transformers==4.41.2
 accelerate==0.27.2
 transformer-lens==2.16.1
-bitsandbytes==0.43.2        # not available on mac os!
 tqdm==4.67.1

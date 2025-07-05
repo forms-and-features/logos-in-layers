@@ -5,7 +5,9 @@ import torch
 
 if torch.cuda.is_available():
     import bitsandbytes as bnb
-    print("bnb-version:", bnb.__version__)
+    print(bnb.__version__)            # 0.46.1 (or '0.0.0.dev…' for main)
+    print(bnb.functional.__file__)    # …/libbitsandbytes_cuda120.so
+    print("sm_90" in open(bnb.functional.__file__, "rb").read().decode("latin1"))
 
 import torch.nn as nn
 import io
@@ -205,16 +207,16 @@ def run_experiment_for_model(model_id, output_files):
         # Load model
         try:
             # ------------------------------------------------------------------
-            # 4-bit quantisation ONLY for Llama-3-70B
+            # 8-bit quantisation for Llama-3-70B
             # ------------------------------------------------------------------
             if "meta-llama-3-70b" in model_id.lower(): 
-                print("4-bit NF4 quantisation for Llama-3-70B …")
+                print("8-bit LLM.int8 quantisation for Llama-3-70B …")
 
                 bnb_cfg = BitsAndBytesConfig(
-                    load_in_4bit              = True,
-                    bnb_4bit_quant_type       = "nf4",
-                    bnb_4bit_use_double_quant = True,
-                    bnb_4bit_compute_dtype    = torch.bfloat16,
+                    load_in_8bit           = True,
+                    llm_int8_threshold     = 6.0,            # default clipping
+                    llm_int8_compute_dtype = torch.bfloat16, # bf16 accumulators are fine on H200
+                    # leave llm_int8_skip_modules = None      # SM-90 kernels are now safe
                 )
 
                 model = HookedTransformer.from_pretrained(
