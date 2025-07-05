@@ -17,8 +17,14 @@ _real_rearrange = einops.rearrange
 
 def _safe_rearrange(x, pattern, *axes, **kwargs):
     """Wrapper that avoids the (n h) reshape error on packed 4-bit weights."""
+    # Case 1: packed 4-bit weight comes in as [rows, 1, 16] -> ndim == 3.
     if x.ndim == 3 and x.shape[1] == 1 and "(n h)" in pattern:
-        x = x.squeeze(1)
+        x = x.squeeze(1)                       # → [rows, 16]
+
+    # Case 2: bitsandbytes returns [rows, 1] (cols packed) – ndim == 2.
+    if x.ndim == 2 and x.shape[1] == 1 and "(n h)" in pattern:
+        # Provide a minimal [n, h, m] = [1, 1, rows] tensor so TL code can continue.
+        return x.reshape(1, 1, x.shape[0])
     return _real_rearrange(x, pattern, *axes, **kwargs)
 
 # Patch the function inside einops itself
