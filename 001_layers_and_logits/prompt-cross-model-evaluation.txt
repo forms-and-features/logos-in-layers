@@ -6,29 +6,43 @@ INPUTS
 - SCRIPT – probing script:
 
 - JSON – structured results of the probe (part of the results of each probe), one file per model:
-001_layers_and_logits/run-2025-06-29-21-02/output-gemma-2-9b.json
-001_layers_and_logits/run-2025-06-29-21-02/output-Meta-Llama-3-8B.json
-001_layers_and_logits/run-2025-06-29-21-02/output-Mistral-7B-v0.1.json
-001_layers_and_logits/run-2025-06-29-21-02/output-Qwen3-8B.json
+001_layers_and_logits/run-latest/output-gemma-2-9b.json
+001_layers_and_logits/run-latest/output-Meta-Llama-3-8B.json
+001_layers_and_logits/run-latest/output-Mistral-7B-v0.1.json
+001_layers_and_logits/run-latest/output-Qwen3-8B.json
+001_layers_and_logits/run-latest/output-gemma-2-27b.json
+001_layers_and_logits/run-latest/output-Yi-34B.json
+001_layers_and_logits/run-latest/output-Qwen3-14B.json
++Note: each JSON is a compact summary; the bulky per-token records are stored only in the CSVs.
 
 - CSV - layer-level results of the probe (part of the results of each probe), one per model:
-001_layers_and_logits/run-2025-06-29-21-02/output-gemma-2-9b-records.csv
-001_layers_and_logits/run-2025-06-29-21-02/output-Meta-Llama-3-8B-records.csv
-001_layers_and_logits/run-2025-06-29-21-02/output-Mistral-7B-v0.1-records.csv
-001_layers_and_logits/run-2025-06-29-21-02/output-Qwen3-8B-records.csv
+001_layers_and_logits/run-latest/output-gemma-2-9b-records.csv
+001_layers_and_logits/run-latest/output-Meta-Llama-3-8B-records.csv
+001_layers_and_logits/run-latest/output-Mistral-7B-v0.1-records.csv
+001_layers_and_logits/run-latest/output-Qwen3-8B-records.csv
+001_layers_and_logits/run-latest/output-gemma-2-27b-records.csv
+001_layers_and_logits/run-latest/output-Yi-34B-records.csv
+001_layers_and_logits/run-latest/output-Qwen3-14B-records.csv
 
 - CSV - pure next-token results (part of the results of each probe) – one per model:
-001_layers_and_logits/run-2025-06-29-21-02/output-gemma-2-9b-pure-next-token.csv
-001_layers_and_logits/run-2025-06-29-21-02/output-Meta-Llama-3-8B-pure-next-token.csv
-001_layers_and_logits/run-2025-06-29-21-02/output-Mistral-7B-v0.1-pure-next-token.csv
-001_layers_and_logits/run-2025-06-29-21-02/output-Qwen3-8B-pure-next-token.csv
-
+001_layers_and_logits/run-latest/output-gemma-2-9b-pure-next-token.csv
+001_layers_and_logits/run-latest/output-Meta-Llama-3-8B-pure-next-token.csv
+001_layers_and_logits/run-latest/output-Mistral-7B-v0.1-pure-next-token.csv
+001_layers_and_logits/run-latest/output-Qwen3-8B-pure-next-token.csv
+001_layers_and_logits/run-latest/output-gemma-2-27b-pure-next-token.csv
+001_layers_and_logits/run-latest/output-Qwen3-14B-pure-next-token.csv
+001_layers_and_logits/run-latest/output-Yi-34B-pure-next-token.csv
++Both CSV flavours now contain a `rest_mass` column (probability mass not covered by the top-k tokens).
++The pure-next-token CSV also adds boolean flags `copy_collapse`, `entropy_collapse`, and `is_answer` that the script computes for every layer.
 
 - EVALS – evaluations of probe results, one per model:
-001_layers_and_logits/run-2025-06-29-21-02/evaluation-gemma-2-9b.md
-001_layers_and_logits/run-2025-06-29-21-02/evaluation-Meta-Llama-3-8B.md
-001_layers_and_logits/run-2025-06-29-21-02/evaluation-Mistral-7B-v0.1.md
-001_layers_and_logits/run-2025-06-29-21-02/evaluation-Qwen3-8B.md
+001_layers_and_logits/run-latest/evaluation-gemma-2-9b.md
+001_layers_and_logits/run-latest/evaluation-Meta-Llama-3-8B.md
+001_layers_and_logits/run-latest/evaluation-Mistral-7B-v0.1.md
+001_layers_and_logits/run-latest/evaluation-Qwen3-8B.md
+001_layers_and_logits/run-latest/evaluation-gemma-2-27b.md
+001_layers_and_logits/run-latest/evaluation-Qwen3-14B.md
+001_layers_and_logits/run-latest/evaluation-Yi-34B.md
 
 - Your own expertise.
 
@@ -38,26 +52,31 @@ Draw only from SCRIPT, EVALS files (they are your key input), JSON and CSV (as n
 The result of your evaluation must be in that file, don't put it into your response to me.
 
 1. Result synthesis  
-Paragraphs that correlate quantitative patterns across models, drawing on your extensive knowledge of LLM interpretability research (cite sources). Quote EVAL line numbers or raw JSON or CSV snippets as needed.
-Report Δ-collapse = L_semantic − L_copy (prompt-token criterion).
-Compare Δ (copy-reflex lag) across models; highlight any outlier > 10 layers.
+Paragraphs that correlate quantitative patterns across models, drawing on your extensive knowledge of LLM interpretability research (cite sources).
+Quote EVAL line numbers or raw JSON or CSV snippets as needed.
+Compare copy-reflex across models using the `copy_collapse` flags in the pure-next-token CSVs; highlight any outlier.
+Investigate and write a paragraph about notable similarities and differences between models of the same family ()
++Use `L_copy` (or fallback `L_copy_H`) and `L_semantic` from each model's `diagnostics` block for consistent Δ calculation.
 
 2. Misinterpretations in existing EVALS
 Bullet each over‑statement or error you found; cite the exact EVAL line.
 
-3. Usefulness for the Realism ↔ Nominalism project  
-Paragraphs framed as an open research question or potential signal, not a conclusion.
-
-4. Limitations  
-Concrete reasons the present data can mislead.
+3. Limitations
+These limitations are known and accepted:
+* RMS-lens can distort absolute probabilities; comparisons should stay within-model, not across differing normalisation schemes.
+* Single-prompt probing risks over-fitting to tokenizer quirks; copy-collapse counts may swing if we tweak wording or punctuation.
+* Attention patterns and MLP activations are not inspected—only residual projections—so entropy bumps caused by internal gating may be mis-attributed.
++* Un-embed weights may be promoted to FP32 in some models (`use_fp32_unembed=true`), slightly shrinking entropy gaps; keep comparisons qualitative.
+So focus on concrete reasons - these limitations aside - the present data can mislead.
 
 STYLE GUIDELINES
 - Be conscise but thorough; no tables; prefer paragraphs over lists.  
-- Quote lines with L‑numbers; keep quotes short.  
+- Quote lines with L-numbers; keep quotes short.  
+- Entropy in CSVs is already in bits; no conversion required.  
 - Cite external papers only with DOI/arXiv; skip if unsure.  
 - Avoid normative language; focus on actionable analysis.
 
-Where helpful, briefly relate a model’s collapse-depth (Δ) to its public factual-reasoning scores (e.g. MMLU, ARC-C) or to whether it is base vs. instruction-tuned; see the following table for scores:
+Briefly relate a model's collapse-depth (Δ) to its public factual-reasoning scores (e.g. MMLU, ARC-C) or to whether it is base vs. instruction-tuned; see the following table for scores:
 
 | Model           | Params | Release | MMLU-5shot |  ARC-C | Licence  |
 | --------------- | -----: | ------- | ---------: | -----: | -------- |
@@ -65,6 +84,9 @@ Where helpful, briefly relate a model’s collapse-depth (Δ) to its public fact
 | Mistral-7B-v0.1 |    7 B | 2023-09 |     60.1 % | 66.6 % | Apache-2 |
 | Gemma-2-9B      |    9 B | 2024-02 |       57 % |   63 % | Apache-2 |
 | Qwen-3-8B       |    8 B | 2025-05 | **64 %**\* |   72 % | Apache-2 |
+| Gemma-2-27B    |   27 B | 2024-02 |     63 % |   69 % | Apache-2 |
+| Yi-34B         |   34 B | 2023-11 | **76.3 %** | **80 %** | Apache-2 |
+| Qwen-3-14B      |   14 B | 2025-05 | **66 %** | **74 %** | Apache-2 |
 
 
 At the end of the markdown file, add the following:
