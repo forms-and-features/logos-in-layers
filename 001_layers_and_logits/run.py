@@ -212,7 +212,7 @@ def run_experiment_for_model(model_id, output_files):
             if "meta-llama-3-70b" in model_id.lower(): 
                 print("8-bit LLM.int8 quantisation for Llama-3-70B …")
 
-                skip_first_n = 40
+                skip_first_n = 20
                 bnb_cfg = BitsAndBytesConfig(
                     load_in_8bit           = True,
                     llm_int8_threshold     = 6.0,
