@@ -1,3 +1,5 @@
+import os
+os.environ["BITSANDBYTES_FORCE_CUDA_VERSION"] = "120"
 import transformer_lens
 from transformer_lens import HookedTransformer
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -13,7 +15,6 @@ import torch.nn as nn
 import io
 from contextlib import redirect_stdout
 from datetime import datetime
-import os
 import subprocess
 import sys
 import math
