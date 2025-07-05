@@ -178,11 +178,10 @@ def bits_entropy_from_logits(logits: torch.Tensor) -> float:
     Shannon entropy in **bits** computed safely from raw logits.
     Works on CPU / GPU and never returns NaN.
     """
-    log_probs = torch.log_softmax(logits, dim=0)          # [V]
-    probs      = torch.exp(log_probs)                     # [V]
-    finite_mask = torch.isfinite(log_probs)               # filter out -inf
-
-    ent_nats = torch.sum(-probs[finite_mask] * log_probs[finite_mask])
+    eps = 1e-40                                  # prevents log(0)
+    probs = logits.softmax(dim=-1).double()
+    log_probs = (probs + eps).log()
+    ent_nats = -(probs * log_probs).sum()
     return (ent_nats / math.log(2)).item()
 
 
@@ -195,7 +194,9 @@ def safe_cast_for_unembed(resid, W_U):
     * For 8-bit-quantised weights W_U.dtype is int8  ⇒ keep activations
       in their original float dtype (INT8 matmul kernels expect that).
     """
-    if torch.is_floating_point(W_U):       # fp16 / bf16 / fp32 case
+    if CLI_ARGS.fp32_unembed and W_U.dtype == torch.float32:
+        return resid.float()               # ensure activations match W_U dtype
+    elif torch.is_floating_point(W_U):     # fp16 / bf16 / fp32 case
         return resid.to(dtype=W_U.dtype)
     else:                                  # int8 / 4-bit etc.
         return resid                       # **no** cast!
@@ -289,6 +290,8 @@ def run_experiment_for_model(model_id, output_files):
         USE_FP32_UNEMBED = (dtype == torch.float32)   # only promote when the *rest* of the model is FP32
 
         
+        UNEMBED_DTYPE = model.unembed.W_U.dtype  # define early so it's always in scope
+        
         # Promote unembedding weights to FP32 if requested for true precision gain
         if USE_FP32_UNEMBED and model.unembed.W_U.dtype != torch.float32:
             print(f"🔬 Promoting unembed weights to FP32 for research-grade precision (was {model.unembed.W_U.dtype})")
@@ -304,6 +307,15 @@ def run_experiment_for_model(model_id, output_files):
                     requires_grad=False
                 )
             UNEMBED_DTYPE = torch.float32  # refresh after promotion
+        
+        # Apply CLI-based FP32 unembed promotion if requested
+        if CLI_ARGS.fp32_unembed:
+            with torch.no_grad():
+                model.unembed.W_U.data = model.unembed.W_U.data.float()
+                if hasattr(model.unembed, 'b_U') and model.unembed.b_U is not None:
+                    model.unembed.b_U.data = model.unembed.b_U.data.float()
+            print(f"🔬 CLI: Promoted unembed weights to FP32 (was {UNEMBED_DTYPE})")
+        
         UNEMBED_DTYPE = model.unembed.W_U.dtype   # match actual weight dtype
         
         context_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
@@ -401,6 +413,9 @@ def run_experiment_for_model(model_id, output_files):
         # Tokenize the context prompt (without "Answer:" to avoid teacher-forcing)
         tokens = model.to_tokens(context_prompt)      # let Accelerate move it
         
+        # Prepare prompt token IDs for stronger copy-collapse detection
+        prompt_token_ids = set(model.tokenizer(context_prompt, add_special_tokens=False)["input_ids"])
+        
         # Storage to collect pure_next_token_records for L_copy/L_semantic computation
         collected_pure_records = []
         
@@ -415,9 +430,9 @@ def run_experiment_for_model(model_id, output_files):
             def make_cache_hook(cache_dict):
                 def cache_residual_hook(tensor, hook):
                     # Only store the tensor we need, detached from computation graph
-                    # Store activations in fp32 for numerical stability and full sequence
                     # Keep activations on their original device to preserve device_map="auto" layout
-                    cache_dict[hook.name] = tensor.to(dtype=torch.float32).detach()
+                    # Keep original dtype to minimize memory usage
+                    cache_dict[hook.name] = tensor.detach()
                 return cache_residual_hook
             
             # Create the hook function with explicit cache reference
@@ -476,15 +491,12 @@ def run_experiment_for_model(model_id, output_files):
                     print("Using RAW residual stream (normalization disabled)")
                 print("Note: Shown probabilities are from full softmax (calibrated and comparable)")
                 print("copy-collapse: first layer where top-1 token is in prompt & p>0.9")
+                if CLI_ARGS.keep_residuals:
+                    print("💾 Saving residual tensors to disk (--keep-residuals enabled)")
                 print("-" * 60)
                 
                 # Get string representations of tokens for labeling output
                 str_tokens = model.to_str_tokens(context_prompt)
-
-                # Collect prompt tokens for copy-collapse detection
-                prompt_token_set = {
-                    tok.strip() for tok in model.to_str_tokens(context_prompt)
-                }
 
                 # Layer 0: embeddings (+ positional embeddings if available)
                 print("Layer  0 (embeddings):")
@@ -505,6 +517,15 @@ def run_experiment_for_model(model_id, output_files):
                 # Vectorized unembedding for all positions  
                 resid_cast = safe_cast_for_unembed(resid[0], model.unembed.W_U)
                 logits_all = model.unembed(resid_cast).float()  # [seq, d_vocab]
+                
+                # Save residuals if requested
+                if CLI_ARGS.keep_residuals:
+                    clean_name = clean_model_name(model_id)
+                    resid_filename = f"{clean_name}_00_resid.pt"
+                    resid_path = os.path.join(os.path.dirname(meta_filepath), resid_filename)
+                    resid_cpu = resid.to(dtype=model.cfg.dtype if hasattr(model.cfg, 'dtype') else torch.float32).cpu()
+                    torch.save(resid_cpu, resid_path)
+                    del resid_cpu
                 
                 for pos in range(tokens.shape[1]):
                     layer_logits = logits_all[pos]
@@ -540,11 +561,22 @@ def run_experiment_for_model(model_id, output_files):
                 #  1.  Is this layer "copy-collapsed" (prompt echo)?   -> L_copy
                 #  2.  Does top-1 equal the ground-truth answer token? -> L_semantic
                 # ------------------------------------------------------------------- #
-                # --- NEW copy-collapse rule (prompt echo) ---------------------------
+                # --- STRONGER copy-collapse rule (prompt echo with margin) ----------
+                last_top2_probs, last_top2_indices = torch.topk(last_logits, 2, largest=True, sorted=True)
+                last_top2_probs = last_full_probs[last_top2_indices]
+                token_id_1, token_id_2 = last_top2_indices[0].item(), last_top2_indices[1].item()
+                prob_1, prob_2 = last_top2_probs[0].item(), last_top2_probs[1].item()
+                
                 copy_collapse = (
-                    last_top_tokens[0].strip() in prompt_token_set
-                    and last_top_probs[0].item() > 0.90
+                    token_id_1 in prompt_token_ids and
+                    prob_1 > CLI_ARGS.copy_threshold and
+                    (prob_1 - prob_2) > CLI_ARGS.copy_margin
                 )
+                
+                # (optional) fallback: treat entropy < 1 bit as copy as well
+                if not copy_collapse and last_entropy_bits < 1.0:
+                    copy_collapse = True
+                
                 entropy_collapse = last_entropy_bits <= 1.0      # keep for reference
                 # use new criterion for L_copy
                 collapsed = copy_collapse
@@ -595,6 +627,15 @@ def run_experiment_for_model(model_id, output_files):
                     resid_cast = safe_cast_for_unembed(resid[0], model.unembed.W_U)
                     logits_all = model.unembed(resid_cast).float() # [seq, d_vocab]
                     
+                    # Save residuals if requested
+                    if CLI_ARGS.keep_residuals:
+                        clean_name = clean_model_name(model_id)
+                        resid_filename = f"{clean_name}_{layer+1:02d}_resid.pt"
+                        resid_path = os.path.join(os.path.dirname(meta_filepath), resid_filename)
+                        resid_cpu = resid.to(dtype=model.cfg.dtype if hasattr(model.cfg, 'dtype') else torch.float32).cpu()
+                        torch.save(resid_cpu, resid_path)
+                        del resid_cpu
+                    
                     for pos in range(tokens.shape[1]):
                         layer_logits = logits_all[pos]
                         # fresh per-token probabilities for THIS layer
@@ -629,11 +670,22 @@ def run_experiment_for_model(model_id, output_files):
                     #  1.  Is this layer "copy-collapsed" (prompt echo)?   -> L_copy
                     #  2.  Does top-1 equal the ground-truth answer token? -> L_semantic
                     # ------------------------------------------------------------------- #
-                    # --- NEW copy-collapse rule (prompt echo) ---------------------------
+                    # --- STRONGER copy-collapse rule (prompt echo with margin) ----------
+                    last_top2_probs, last_top2_indices = torch.topk(last_logits, 2, largest=True, sorted=True)
+                    last_top2_probs = last_full_probs[last_top2_indices]
+                    token_id_1, token_id_2 = last_top2_indices[0].item(), last_top2_indices[1].item()
+                    prob_1, prob_2 = last_top2_probs[0].item(), last_top2_probs[1].item()
+                    
                     copy_collapse = (
-                        last_top_tokens[0].strip() in prompt_token_set
-                        and last_top_probs[0].item() > 0.90
+                        token_id_1 in prompt_token_ids and
+                        prob_1 > CLI_ARGS.copy_threshold and
+                        (prob_1 - prob_2) > CLI_ARGS.copy_margin
                     )
+                    
+                    # (optional) fallback: treat entropy < 1 bit as copy as well
+                    if not copy_collapse and last_entropy_bits < 1.0:
+                        copy_collapse = True
+                    
                     entropy_collapse = last_entropy_bits <= 1.0      # keep for reference
                     # use new criterion for L_copy
                     collapsed = copy_collapse
@@ -994,6 +1046,16 @@ def parse_cli():
                    default="cuda",
                    choices=["cuda", "mps", "cpu"],
                    help="compute device to run on (default: cuda)")
+    p.add_argument("--fp32-unembed",
+                   action="store_true",
+                   help="Up-cast the model's un-embedding matrix to float32")
+    p.add_argument("--keep-residuals",
+                   action="store_true",
+                   help="Dump full residual tensors; if absent, keep only per-layer logits")
+    p.add_argument("--copy-threshold", type=float, default=0.90,
+                   help="Minimum P(top-1) for copy collapse")
+    p.add_argument("--copy-margin", type=float, default=0.05,
+                   help="Require P(top-1) − P(top-2) > margin for copy collapse")
     p.add_argument("model_id", nargs="?", default=None,
                    help="Model ID for single-run (when invoking as subprocess)")
     p.add_argument("--out_dir",
@@ -1040,13 +1102,22 @@ def main():
         
         try:
             # Launch subprocess
-            result = subprocess.run([
+            cmd = [
                 sys.executable,
                 script_path,
                 "--device", CLI_ARGS.device,   # forward the flag
                 "--out_dir", run_dir,          # ensure all subprocesses share same dir
-                model_id
-            ], capture_output=False, text=True, check=False)
+            ]
+            if CLI_ARGS.fp32_unembed:
+                cmd.append("--fp32-unembed")   # forward the fp32-unembed flag
+            if CLI_ARGS.keep_residuals:
+                cmd.append("--keep-residuals") # forward the keep-residuals flag
+            # Forward copy-collapse parameters
+            cmd.extend(["--copy-threshold", str(CLI_ARGS.copy_threshold)])
+            cmd.extend(["--copy-margin", str(CLI_ARGS.copy_margin)])
+            cmd.append(model_id)
+            
+            result = subprocess.run(cmd, capture_output=False, text=True, check=False)
             
             if result.returncode == 0:
                 print(f"✅ Process {i} completed successfully")
