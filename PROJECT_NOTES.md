@@ -1,59 +1,97 @@
 # Interpretability Project - Development Notes for AI assistant
 
-## Next steps
+# Next steps
 
-### Track the shape of the logit distribution, not just entropy.
+### ■ Quick wins
 
-Entropy-in-bits alone can hide whether probability mass is flowing into a single answer token or into a small cluster of semantically-related tokens. Many groups now plot:
-- top-1 prob,
-- cumulative top-5 prob,
+* **Sub‑word aware copy‑collapse.**
+  Replace the current string‑level check with a detokenised comparison or a lower probability threshold.  Implementation: edit the `copy_collapse` block of `run.py` to join contiguous BPE tokens before membership testing.  *Philosophical leverage*: small, but removes a known artefact that could mislead later analyses.([raw.githubusercontent.com][1])
 
-### KL divergence to the final-layer distribution (the “convergence curve”, § 4 in Belrose et al. 2023, arXiv 2303.08112).
-Add two extra columns to the pure-next-token CSV (top-1 p, KL) and comment on where each curve bends.
+* **Add top‑1 p, top‑5 cumulative p and KL‑to‑final‑layer to the CSV.**
+  You already compute logits per layer; add three floating‑point columns and write them out beside `entropy_bits`.  Two extra `torch.topk` calls and one line for `F.kl_div`.  *Leverage*: moderate – lets you see whether entropy drops because a *single* answer wins or a cluster of near‑synonyms emerges.  This distinction matters when arguing whether a model uses a “type” vs. “token” representation.
 
-### Add a causal-tracing sanity pass.
+* **Representation‑drift curve.**
+  For each layer compute `cos_sim(û_ℓ, û_final)` where `û` is the Berlin logit direction.  Add a small routine after the forward sweep.  *Leverage*: moderate; if early layers already point in roughly the right direction, realism has a stronger foothold.
 
-With the same residuals already cached you can do “activation patching” (Meng et al. 2022, 2205.14135): replace layer ℓ’s residual with that from a corrupted prompt (“The capital of Germany is Paris”) and measure how soon the output flips. Report the earliest causal L_semantic next to the diagnostic L_semantic. Reviewers can then note mismatches (often ±1-2 layers).
+* **Negative‑control prompts (“France → Berlin?”).**
+  Duplicate the run with a swapped subject/object.  If Berlin ever outranks Paris, log a warning.  Ten‑minute change; high reviewer confidence dividend.
 
-### Check representation drift across depth.
-Logit-lens probes occasionally mis-report “early meaning” because the token’s direction already exists but then rotates away. Computing the cosine similarity between the un-embedded Berlin logit vector at layer ℓ and at the final layer reveals whether the concept is stabilising or drifting. A simple line-plot inserted in Section 3 lets reviewers call out unstable models.
+* **Ablate instruction fluff (`simply`).**
+  Run the same prompt without stylistic fillers and record any shift in collapse depth, especially for Gemma.  Half‑hour tweak; might falsify the “copy reflex” hypothesis.
 
-### Probe negative controls.
+---
 
-Include one extra row in the test-prompt set that mentions France or Paris. If the answer token Berlin ever outranks Paris in that control, the reviewer should flag “semantic leakage”. This is a lightweight check for over-reliance on string cues.
+### ■ One‑evening tasks
 
-### Switch to a Tuned‑Lens baseline
+* **Drop‑in Tuned Lens or Logit Prism.**
+  `pip install tuned‑lens`, freeze the backbone, train affine probes on ≈50 k tokens.  Replace the raw un‑embedding call with `lens(hidden_states)`.  Solves the RMS‑mismatch (γ applied to the wrong residual) and basis‑rotation issues highlighted by reviewers.([raw.githubusercontent.com][1], [arxiv.org][2])
+  *Leverage*: high – it de‑noises all other metrics and makes cross‑model comparisons fair.
 
-Train affine probes on the frozen weights (10‑min per model) to remove norm‑lens bias and to quantify representation drift (Belrose et al. 2023).
+* **Raw‑activation lens sanity check.**
+  Flip `USE_NORM_LENS=False` and rerun once.  If semantics suddenly “appear” earlier the current conclusions may be lens‑artefacts.  Implementation is a flag; plotting the delta is trivial.  *Leverage*: high for epistemic rigor.
 
-### Extend the prompt battery
+* **Top‑k trajectory plots.**
+  Produce one matplotlib figure per model with curves for entropy, top‑1 p, KL, cosine drift.  The user‑visible code can live in a Jupyter cell.  *Leverage*: moderate; plots make emergent patterns obvious to outside reviewers.
 
-Pull 1 000 – 5 000 (subject, relation, object) triples from WikiData; include synonyms and homographs to see if collapse depth tracks lexical ambiguity.
+---
 
-### Causal tracing
+### ■ Weekend projects
 
-Use activation patching: overwrite the residual stream at layer ℓ with that from a corrupted prompt (“Paris is…”) and measure the KL divergence at the output. The earliest layer where patching flips the answer gives a causal L_sem that is immune to rank‑1 accidents.
+* **Activation patching / causal tracing pass.**
+  Cache clean activations, corrupt the prompt (“Germany → Paris”), replay with layer‑wise patches.  Report the earliest ℓ where the answer flips (`causal_L_sem`).  Libraries such as `activation‑patching` or `TransformerLens` already implement the boiler‑plate.  *Leverage*: very high – gives *causal* rather than correlational evidence about where meaning is fixed.  Key for the realism argument: a universal that can be transplanted layer‑by‑layer is closer to a “real” entity.
 
-### Concept geometry tests
+* **Prompt battery from WikiData.**
+  Auto‑generate 1 000 (subject, relation, object) triples in the same “Give the city name only …” template plus multilingual variants.  Store metrics per triple and study the distribution of `Δ-collapse`.  *Leverage*: high – lets you test whether semantic depth tracks ambiguity or linguistic form, informing the nominalism thesis.
 
-Apply CCA or probing heads across models to check if the latent Berlin vectors align in a shared sub‑space. Strong cross‑model alignment would bolster a realist account.
+* **Attention‑head fingerprinting near L\_sem.**
+  Capture attention patterns at layers ℓ ∈ {L\_sem − 2 … L\_sem}.  Search for heads whose query ⊗ key scores align “Germany ↔ Berlin”.  The `HookedTransformer` tracing API already exists.  *Leverage*: moderate‑to‑high – identifying a dedicated relation head would support a realist reading (a reusable “capital‑of” relation).
 
-### Ablate filler tokens
+---
 
-Drop the word simply and examine whether Gemma still collapses at L 42. If not, this supports the hypothesis that copy‑reflex hinges on the “instruction‑style” flanker.
+### ■ Deep dives
 
-### Philosophical leverage
+* **Concept vector extraction and portability test.**
+  Use the causal basis method (Belrose 2023 App. C) to isolate a low‑rank subspace that pushes probability mass toward Berlin.  Patch that vector into unrelated prompts (“The capital of Poland is …”) and measure side effects.  If the vector generalises, that’s evidence for a *portable* universal.  Engineering: train the basis on \~20 prompts, write a small `torch.nn` module that adds the vector at configurable strength.  *Leverage*: very high – directly tests whether the model stores abstract properties independently of token strings.
 
-Formulate a concrete argument map: If concepts = clusters that (i) are decodable across prompts, (ii) survive translation between tokenisations, and (iii) causally drive correct behaviour, then evidence (ii) & (iii) would undermine nominalism. The next experimental cycle should focus on (ii) and (iii).
+* **Cross‑model concept CCA.**
+  Collect per‑layer Berlin activations from all seven models, align with CCA or Procrustes, and test whether a shared sub‑space emerges.  Requires dumping large tensors; recommend subsampling 5 k token contexts to keep RAM manageable.  *Leverage*: high – convergent geometry across independent training runs would be compelling evidence for realism.
 
-## Experiment Notes
+* **No‑rotation tuned lens (Logit Prism).**
+  Train a shared whitening + rotation that decodes *all* layers with a common probe (Nguyen 2024).  Gives a single latent basis, reducing degrees of freedom and making “universal vectors” easier to compare across depth and models.  Time mainly in GPU hours; implementation very similar to tuned lens.
+
+---
+
+### ■ Meta / organisational steps
+
+* **Philosophical annotation notebook.**
+  After each empirical run, append a short section: *Interpretation wrt universals.*  Forces clarity about how each metric bears on the realism vs nominalism debate and creates a living document philosophers can engage with.  *Leverage*: moderate; cost is writing time, not compute.
+
+* **Automated regression harness.**
+  Wire each run into a lightweight CI (e.g. GitHub Actions with `--dry-run` on CPU) to ensure metrics don’t silently shift after refactors.  Protects against accidental inconsistencies when you integrate tuned lens or new probes.
+
+---
+
+## How this roadmap advances the debate
+
+* **Measurement fixes** (tuned/prism lens, drift curves, better copy detection) ensure you are not arguing metaphysics from numerical noise.
+* **Causal interventions** (activation patching, concept vectors) probe *what the network needs* for the answer, not just what correlates with it – crucial for claims about “real” internal structure.
+* **Breadth tests** (prompt battery, multilingual variants) address the nominalist worry that any one prompt over‑fits to surface form.
+* **Cross‑model geometry** directly tackles a key realist intuition: universals should be stable across instances.
+
+Executing the “quick wins” and “one‑evening tasks” will already raise the interpretability rigour to current best practice; the “weekend” projects put causal teeth into the analysis; and the “deep dives” can generate genuinely novel evidence relevant to the longstanding philosophical dispute.
+
+[1]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/main/001_layers_and_logits/run.py "raw.githubusercontent.com"
+[2]: https://arxiv.org/abs/2303.08112?utm_source=chatgpt.com "Eliciting Latent Predictions from Transformers with the Tuned Lens"
+
+
+# Experiment Notes
 Detailed technical notes for experiment `001_layers_and_logits` have been moved to `001_layers_and_logits/NOTES.md`.
 
-## Philosophical Project Context
+# Philosophical Project Context
 - **Goal**: Use interpretability to inform nominalism vs realism debate
 - **Current evidence**: Layer-relative perspective (early = nominalist templates, late = realist concepts)
 
-## User Context
+# User Context
 - Software engineer, growing ML interpretability knowledge
 - No formal ML background but learning through implementation
 - Prefers systematic, reproducible experiments with clear documentation
