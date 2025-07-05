@@ -62,6 +62,7 @@ Use your knowledge of cutting-edge LLM research. Be thorough and specific.
 
 Make sure that statements are supported by evidence from the txt dump, don't speculate. Contextualize your findings using your broader knowledge of the latest interpretability research, citing sources when appropriate. Always provide links to sources, and verify that sources contain the claims that you're citing; otherwise, reformulate or remove the claim. In any case, never provide a non-existent source.
 
+Do not use tables unless for the cases explicitly requested in this prompt.
 
 Known limitations of the approach that we accepted in this iteration (but suggestions are appreciated):
 
