@@ -16,11 +16,27 @@ import einops  # needed for monkey-patch below
 _real_rearrange = einops.rearrange
 
 def _safe_rearrange(x, pattern, *axes, **kwargs):
+    """Wrapper that avoids the (n h) reshape error on packed 4-bit weights."""
     if x.ndim == 3 and x.shape[1] == 1 and "(n h)" in pattern:
         x = x.squeeze(1)
     return _real_rearrange(x, pattern, *axes, **kwargs)
 
+# Patch the function inside einops itself
 einops.rearrange = _safe_rearrange
+
+# If transformer_lens (or anything else) has already imported the symbol via
+# `from einops import rearrange`, we need to overwrite that copy too.
+import sys, importlib
+
+for name, module in list(sys.modules.items()):
+    if name.startswith("transformer_lens"):
+        # overwrite any attribute called `rearrange` that points to einops
+        for attr in ("rearrange",):
+            if hasattr(module, attr):
+                setattr(module, attr, _safe_rearrange)
+        # also patch nested einops submodule if present
+        if hasattr(module, "einops"):
+            module.einops.rearrange = _safe_rearrange
 
 if torch.cuda.is_available():
     import bitsandbytes as bnb
