@@ -178,11 +178,9 @@ def bits_entropy_from_logits(logits: torch.Tensor) -> float:
     Shannon entropy in **bits** computed safely from raw logits.
     Works on CPU / GPU and never returns NaN.
     """
-    log_probs = torch.log_softmax(logits, dim=0)          # [V]
-    probs      = torch.exp(log_probs)                     # [V]
-    finite_mask = torch.isfinite(log_probs)               # filter out -inf
-
-    ent_nats = torch.sum(-probs[finite_mask] * log_probs[finite_mask])
+    probs = logits.softmax(dim=-1)
+    log_probs = probs.log()
+    ent_nats = torch.sum((-probs.double()) * log_probs.double())
     return (ent_nats / math.log(2)).item()
 
 
@@ -195,6 +193,8 @@ def safe_cast_for_unembed(resid, W_U):
     * For 8-bit-quantised weights W_U.dtype is int8  ⇒ keep activations
       in their original float dtype (INT8 matmul kernels expect that).
     """
+    if CLI_ARGS.fp32_unembed:
+        return resid.float()
     if torch.is_floating_point(W_U):       # fp16 / bf16 / fp32 case
         return resid.to(dtype=W_U.dtype)
     else:                                  # int8 / 4-bit etc.
@@ -284,25 +284,16 @@ def run_experiment_for_model(model_id, output_files):
         # Toggle for using normalized lens (recommended for accurate interpretation)
         USE_NORM_LENS = True
         
-        # Toggle for FP32 unembedding (recommended for research-grade precision)
-        # Prevents under-resolving logit gaps < 1e-5 at cost of ~50MB memory
-        USE_FP32_UNEMBED = (dtype == torch.float32)   # only promote when the *rest* of the model is FP32
+        # Toggle for FP32 unembedding via CLI flag
+        USE_FP32_UNEMBED = CLI_ARGS.fp32_unembed
 
-        
         # Promote unembedding weights to FP32 if requested for true precision gain
         if USE_FP32_UNEMBED and model.unembed.W_U.dtype != torch.float32:
             print(f"🔬 Promoting unembed weights to FP32 for research-grade precision (was {model.unembed.W_U.dtype})")
-            # Ensure we preserve device when promoting to FP32
-            model.unembed.W_U = torch.nn.Parameter(
-                model.unembed.W_U.to(dtype=torch.float32), 
-                requires_grad=False
-            )
-            # Unembedding bias may be a plain tensor (not a Parameter); move it too.
-            if hasattr(model.unembed, 'b_U') and model.unembed.b_U is not None:
-                model.unembed.b_U = torch.nn.Parameter(
-                    model.unembed.b_U.to(dtype=torch.float32),
-                    requires_grad=False
-                )
+            with torch.no_grad():
+                model.unembed.W_U.data = model.unembed.W_U.data.float()
+                if hasattr(model.unembed, 'b_U') and model.unembed.b_U is not None:
+                    model.unembed.b_U.data = model.unembed.b_U.data.float()
             UNEMBED_DTYPE = torch.float32  # refresh after promotion
         UNEMBED_DTYPE = model.unembed.W_U.dtype   # match actual weight dtype
         
@@ -508,8 +499,6 @@ def run_experiment_for_model(model_id, output_files):
                 
                 for pos in range(tokens.shape[1]):
                     layer_logits = logits_all[pos]
-                    # Compute log-probs for entropy and selective probabilities
-                    log_probs = torch.log_softmax(layer_logits, dim=0).to(torch.float32)
                     entropy_bits = bits_entropy_from_logits(layer_logits)  # Prevent negative zero
 
                     token_str = str_tokens[pos]
@@ -599,7 +588,6 @@ def run_experiment_for_model(model_id, output_files):
                         layer_logits = logits_all[pos]
                         # fresh per-token probabilities for THIS layer
                         full_probs  = torch.softmax(layer_logits, dim=0)
-                        log_probs   = torch.log(full_probs)          # needed only for entropy & top-k
                         entropy_bits = bits_entropy_from_logits(layer_logits)
 
                         token_str = str_tokens[pos]
@@ -717,8 +705,9 @@ def run_experiment_for_model(model_id, output_files):
             final_top_probs = final_full_probs[final_top_indices]
             
             # Calculate final entropy efficiently (convert to bits)
-            final_log_probs = torch.log_softmax(final_logits, dim=0).to(torch.float32)
-            final_entropy_nats = -torch.sum(torch.exp(final_log_probs) * final_log_probs)
+            final_probs = final_logits.softmax(dim=0)
+            final_log_probs = final_probs.log()
+            final_entropy_nats = torch.sum((-final_probs.double()) * final_log_probs.double())
             final_entropy_bits = max(final_entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
             
             # Collect final prediction data
@@ -756,10 +745,11 @@ def run_experiment_for_model(model_id, output_files):
                 _, test_top_indices = torch.topk(test_logits[0, -1, :], 10, largest=True, sorted=True)
                 test_full_probs = torch.softmax(test_logits[0, -1, :], dim=0)
                 test_top_probs = test_full_probs[test_top_indices]
-                
+
                 # Calculate entropy for this prompt efficiently (convert to bits)
-                test_log_probs = torch.log_softmax(test_logits[0, -1, :], dim=0).to(torch.float32)
-                test_entropy_nats = -torch.sum(torch.exp(test_log_probs) * test_log_probs)
+                test_probs = test_logits[0, -1, :].softmax(dim=0)
+                test_log_probs = test_probs.log()
+                test_entropy_nats = torch.sum((-test_probs.double()) * test_log_probs.double())
                 test_entropy_bits = max(test_entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
                 # Collect test prompt data
                 probe_record = {
@@ -793,8 +783,9 @@ def run_experiment_for_model(model_id, output_files):
                 temp_top_probs = temp_full_probs[temp_top_indices]
                 
                 # Calculate entropy at this temperature efficiently (convert to bits)
-                temp_log_probs = torch.log_softmax(scaled_logits, dim=0).to(torch.float32)
-                temp_entropy_nats = -torch.sum(torch.exp(temp_log_probs) * temp_log_probs)
+                temp_probs = scaled_logits.softmax(dim=0)
+                temp_log_probs = temp_probs.log()
+                temp_entropy_nats = torch.sum((-temp_probs.double()) * temp_log_probs.double())
                 temp_entropy_bits = max(temp_entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
                 # Collect temperature exploration data
                 temp_record = {
@@ -999,6 +990,10 @@ def parse_cli():
     p.add_argument("--out_dir",
                    default=None,
                    help="Output directory to save CSV & JSON results (default: current script directory or value forwarded by parent launcher)")
+    p.add_argument(
+        "--fp32-unembed",
+        action="store_true",
+        help="Up-cast the model's un-embedding matrix to float32")
     return p.parse_args()
 
 # Parse once and promote to module-global so run_single_model and main can see it
@@ -1040,13 +1035,16 @@ def main():
         
         try:
             # Launch subprocess
-            result = subprocess.run([
+            cmd = [
                 sys.executable,
                 script_path,
-                "--device", CLI_ARGS.device,   # forward the flag
-                "--out_dir", run_dir,          # ensure all subprocesses share same dir
-                model_id
-            ], capture_output=False, text=True, check=False)
+                "--device", CLI_ARGS.device,
+                "--out_dir", run_dir,
+            ]
+            if CLI_ARGS.fp32_unembed:
+                cmd.append("--fp32-unembed")
+            cmd.append(model_id)
+            result = subprocess.run(cmd, capture_output=False, text=True, check=False)
             
             if result.returncode == 0:
                 print(f"✅ Process {i} completed successfully")
