@@ -2,11 +2,6 @@ import transformer_lens
 from transformer_lens import HookedTransformer
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 import torch
-
-if torch.cuda.is_available():
-    import bitsandbytes as bnb
-    print("bnb-version:", bnb.__version__)
-
 import torch.nn as nn
 import io
 from contextlib import redirect_stdout
@@ -43,7 +38,6 @@ TOP_K_VERBOSE = 20  # number of tokens to record for verbose slots and answer po
 
 # List of confirmed supported models
 CUDA_ONLY_MODELS = [
-    "meta-llama/Meta-Llama-3-70B",
     "01-ai/Yi-34B",
     "Qwen/Qwen3-14B",
     "google/gemma-2-27b",
@@ -204,45 +198,17 @@ def run_experiment_for_model(model_id, output_files):
             
         # Load model
         try:
-            # ------------------------------------------------------------------
-            # 8-bit quantisation ONLY for Llama-3-70B
-            # ------------------------------------------------------------------
-            if "meta-llama-3-70b" in model_id.lower(): 
-                print("8-bit quantisation for Llama-3-70B …")
-
-                bnb_cfg = BitsAndBytesConfig(
-                    load_in_8bit           = True,
-                    llm_int8_threshold    = 6.0,
-                    llm_int8_skip_modules = None,
-                )
-
-                model = HookedTransformer.from_pretrained(
-                    model_id,
-                    device_map        = "auto",
-                    torch_dtype       = torch.float16,
-                    quantization_config = bnb_cfg,
-                    max_memory        = {0: "120GiB", "cpu": "110GiB"},
-                    offload_folder    = "offload",
-                    offload_state_dict = True,
-                    low_cpu_mem_usage = True,
-                    trust_remote_code = True,
-                )
-
-            # ------------------------------------------------------------------
-            # all other models
-            # ------------------------------------------------------------------
-            else:
-                print("Loading directly to target device…")
-                model = HookedTransformer.from_pretrained_no_processing(
-                    model_id,
-                    device_map      = "auto",
-                    torch_dtype     = dtype,
-                    max_memory      = {0: "120GiB", "cpu": "110GiB"},
-                    offload_folder  = "offload",
-                    offload_state_dict = True,
-                    low_cpu_mem_usage = True,
-                    trust_remote_code = True,
-                )
+            print("Loading directly to target device…")
+            model = HookedTransformer.from_pretrained_no_processing(
+                model_id,
+                device_map      = "auto",
+                torch_dtype     = dtype,
+                max_memory      = {0: "120GiB", "cpu": "110GiB"},
+                offload_folder  = "offload",
+                offload_state_dict = True,
+                low_cpu_mem_usage = True,
+                trust_remote_code = True,
+            )
         except Exception as e:
             print(f"Direct loading to {device} failed: {e}")
             print("Falling back to CPU loading...")
