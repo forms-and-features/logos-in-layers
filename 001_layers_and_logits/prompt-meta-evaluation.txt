@@ -76,7 +76,6 @@ Known limitations to keep in mind:
 
 * RMS-lens can distort absolute probabilities; comparisons should stay within-model, not across differing normalisation schemes.
 * Single-prompt probing risks over-fitting to tokenizer quirks; copy-collapse counts may swing if we tweak wording or punctuation.
-* The >0.90 threshold is heuristic; lowering it would classify Mistral’s long “simply” plateau as copy-collapse, raising its Δ by \~20 layers.
 * Attention patterns and MLP activations are not inspected—only residual projections—so entropy bumps caused by internal gating may be mis-attributed.
 
 Accept these constraints as *scoping guards*: they keep this run self-consistent even if they leave some systematic bias uncorrected.
