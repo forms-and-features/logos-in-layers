@@ -9,7 +9,9 @@ Items are ordered by the approximate engineering lift required.
 
 ---
 
-### 1. Fix the RMS/LN scaling path (γ + ε placement)
+## 1. Get the measurement right
+
+### 1.1. Fix the RMS/LN scaling path (γ + ε placement)
 
 **Why**
 If you normalise a *different* residual stream (post‑block) with γ that was trained for the *pre‑block* stream, logits are systematically mis‑scaled; early‑layer activations can be inflated by >10 ×.  An incorrect ε outside the square‑root likewise shifts all norms upward.  These distortions then propagate through the logit lens, giving spurious “early meaning” or hiding true signal.  RMSNorm’s official formula places ε **inside** the √ and multiplies by γ afterwards ([arxiv.org][1]).
@@ -37,7 +39,7 @@ If you normalise a *different* residual stream (post‑block) with γ that was t
 
 ---
 
-### 2. Sub‑word‑aware copy‑collapse detector
+### 1.2. Sub‑word‑aware copy‑collapse detector
 
 **Why**
 For BPE/WordPiece vocabularies the answer “Berlin” may surface as two tokens “Ber ▁lin”.  The current string‑match misses that, under‑counting copy events and making Gemma look unique when it may not be.
@@ -67,7 +69,7 @@ For BPE/WordPiece vocabularies the answer “Berlin” may surface as two tokens
 
 ---
 
-### 3. Record top‑1 p, top‑5 p\_cumulative, and KL‑to‑final
+### 1.3. Record top‑1 p, top‑5 p\_cumulative, and KL‑to‑final
 
 **Why**
 Entropy alone conflates “one spike” vs “five near‑ties”.  KL(ℓ ∥ final) is the metric used in the tuned‑lens paper to show convergence ([arxiv.org][2]).  These curves tell you whether the model is already *near* its final answer direction (supporting realism) or still exploring (supporting nominalism).
@@ -91,7 +93,7 @@ Entropy alone conflates “one spike” vs “five near‑ties”.  KL(ℓ ∥
 
 ---
 
-### 4. Raw‑activation lens toggle
+### 1.4. Raw‑activation lens toggle
 
 **Why**
 If “early meaning” disappears when you skip normalisation, that meaning was an artefact of the lens, not the model.
@@ -111,7 +113,7 @@ If “early meaning” disappears when you skip normalisation, that meaning was 
 
 ---
 
-### 5. Representation‑drift cosine curve
+### 1.5. Representation‑drift cosine curve
 
 **Why**
 A realist reading predicts an answer‑token direction that exists early and merely grows in magnitude; a nominalist picture predicts the direction rotates into place late.  Cosine similarity across depth quantifies which is true.
@@ -136,7 +138,7 @@ A realist reading predicts an answer‑token direction that exists early and mer
 
 ---
 
-### 6. Negative‑control prompt
+### 1.6. Negative‑control prompt
 
 **Why**
 If Berlin outranks Paris in “The capital of *France* is …”, your probe is leaking string co‑occurrence, invalidating any metaphysical claim.
@@ -152,7 +154,7 @@ If Berlin outranks Paris in “The capital of *France* is …”, your probe is 
 
 ---
 
-### 7. Ablate stylistic filler (`simply`)
+### 1.7. Ablate stylistic filler (`simply`)
 
 **Why**
 Gemma’s early copy‑collapse may be triggered by instruction‑style cues, not semantics.  Removing “simply” tests that hypothesis.
@@ -168,7 +170,7 @@ Gemma’s early copy‑collapse may be triggered by instruction‑style cues, no
 
 ---
 
-### 8. Lightweight CI / regression harness
+### 1.8. Lightweight CI / regression harness
 
 **Why**
 As soon as you integrate tuned lens or refactor, you need guard‑rails ensuring that numbers do not silently drift.
@@ -187,7 +189,7 @@ As soon as you integrate tuned lens or refactor, you need guard‑rails ensuring
 
 ---
 
-### 9. Integrate a Tuned Lens
+### 1.9. Integrate a Tuned Lens
 
 **Why**
 Tuned Lens learns an affine probe per layer that automatically compensates for scaling and basis rotation, reducing KL by an order of magnitude and eliminating garbled early‑layer strings ([arxiv.org][2]).
@@ -221,7 +223,7 @@ Tuned Lens learns an affine probe per layer that automatically compensates for s
 
 ---
 
-### 10. *(Optional)* Logit Prism shared decoder
+### 1.10. *(Optional)* Logit Prism shared decoder
 
 **Why**
 A single whitening + rotation matrix (`W_prism`) that works for *all* layers makes cross‑layer geometry directly comparable and reduces probe freedom ([neuralblog.github.io][3]).
@@ -252,7 +254,7 @@ Executing these ten items upgrades the measurement pipeline from an informative 
 
 ---
 
-## 2 .  Straight‑forward experimental variations on the current design
+## 2.  Straight‑forward experimental variations on the current design
 
 > **Philosophical background referenced**
 >
@@ -264,7 +266,7 @@ Keeping those distinctions in view, each variation below probes whether an LLM�
 
 ---
 
-### 1. Threshold sweep for copy‑collapse
+### 2.1. Threshold sweep for copy‑collapse
 
 **Why**
 Copy‑collapse is meant to record when the network *re‑uses a token already present in the prompt*—i.e. when it relies on **particular** lexical material.  If that layer changes drastically when the probability threshold moves from 0.90 to 0.70, the phenomenon is fragile and more consonant with nominalist “name matching” than with an entrenched universal.
@@ -277,7 +279,7 @@ Compute `p_top1` per layer, evaluate the three inequalities, write booleans, and
 
 ---
 
-### 2. Multilingual prompt study
+### 2.2. Multilingual prompt study
 
 **Why**
 Language‑independent behaviour is *compatible* with realism (a universal instantiated across linguistic frameworks) but *not mandated by it*.  Conversely, if depth systematically depends on language, that is prima facie evidence that the model’s “relation” is tied to particular linguistic encodings—more in line with class‑nominalism, where each language’s term picks out its own class of particulars ([plato.stanford.edu][5]).
@@ -290,7 +292,7 @@ Maintain a YAML file of prompts keyed by ISO codes; run sweeps; bar‑plot and 
 
 ---
 
-### 3. Property‑vs‑Kind probe (monadic universals)
+### 2.3. Property‑vs‑Kind probe (monadic universals)
 
 **Why**
 Universals divide into **properties** (adjectival “is‑black”) and **kinds** (substantial “is‑a‑city”).  SEP’s entry on *properties* notes that some nominalists treat adjectival cases via resemblance but prefer class constructions for kind membership ([plato.stanford.edu][4]).  Comparing collapse depth across these two monadic types asks whether the network treats them alike or differently.
@@ -306,7 +308,7 @@ Hand‑collect adjectives and noun kinds or mine WikiData.  Tag `univ_type = pro
 
 ---
 
-### 10. (Optional) Trope‑sensitivity probe
+### 2.4. (Optional) Trope‑sensitivity probe
 
 **Why**
 If the model’s representation is *trope‑like*, each instance of “black‑ness” in a sentence should be tied to context.  Replacing one black object with another visually different black object should therefore increase semantic collapse depth—because the resemblance net needs recalibrating.
@@ -332,10 +334,10 @@ None of these experiments *conclusively* vindicates realism or nominalism.  What
 
 ---
 
-## 3 .  Advanced interpretability interventions
+## 3.  Advanced interpretability interventions
 
 
-### 1. Layer‑wise activation patching (“causal tracing”)
+### 3.1. Layer‑wise activation patching (“causal tracing”)
 
 **Why**
 Correlation‑based probes can be fooled by coincidental features.  Activation patching — copying hidden state ℓ from a *corrupted* prompt (e.g. “The capital of Germany is Paris”) into the *clean* run — tests whether that layer *causally* fixes the prediction.  If a *single late layer* is decisive across many (subject, object) pairs, that looks like a reusable internal relation (realist‑friendly).  If influence is diffuse or depends on token idiosyncrasies, it fits resemblance‑ or class‑nominalism ([arxiv.org][8]).
@@ -352,7 +354,7 @@ Correlation‑based probes can be fooled by coincidental features.  Activation p
 
 ---
 
-### 2. Attention‑head fingerprinting near L sem
+### 3.2. Attention‑head fingerprinting near L sem
 
 **Why**
 If the binary relation *capital‑of* corresponds to a *specialised head* that consistently attends from the subject token to the object token, that is evidence of a discrete internal mechanism (akin to a realist universal).  If instead attention routes vary per prompt, the relation may be an emergent resemblance class ([arxiv.org][9], [neelnanda.io][10]).
@@ -374,7 +376,7 @@ Store a JSON manifest `relation_heads.json` listing `(layer, head)` tuples for e
 
 ---
 
-### 3. Concept‑vector extraction via Causal Basis (CBE)
+### 3.3. Concept‑vector extraction via Causal Basis (CBE)
 
 **Why**
 Belrose et al. show a low‑rank subspace can *causally* steer the model’s logits ([arxiv.org][11]).  Extracting a “Berlin direction” and transplanting it into prompts about Poland probes whether the *capital‑of* universal is carried by a portable vector (strong realist evidence) or whether it is context‑bound.
@@ -392,7 +394,7 @@ Belrose et al. show a low‑rank subspace can *causally* steer the model’s
 
 ---
 
-### 4. Attribution patching for scalable causal maps
+### 3.4. Attribution patching for scalable causal maps
 
 **Why**
 Full activation‑patch grids scale O(L²) runs; attribution patching (gradient‑based approximation) gets the entire layer×token causal heat‑map from *three* passes ([neelnanda.io][12]).  This enables causal tracing over the entire WikiData battery without prohibitive compute.  More data gives better evidence on whether causal responsibility clusters in reusable sub‑modules (realist) or is diffuse (nominalist).
@@ -409,7 +411,7 @@ Full activation‑patch grids scale O(L²) runs; attribution patching (gradient�
 
 ---
 
-### 5. Cross‑model concept alignment (CCA / Procrustes)
+### 3.5. Cross‑model concept alignment (CCA / Procrustes)
 
 **Why**
 If *capital‑of‑Germany* evokes **the same activation geometry across independently trained models**, that strongly suggests an architecture‑internal universal rather than model‑specific trope.  Conversely, divergent sub‑spaces reinforce a nominalist picture of idiosyncratic classes ([arxiv.org][13]).
@@ -430,7 +432,7 @@ If *capital‑of‑Germany* evokes **the same activation geometry across indepen
 
 ---
 
-### 6. (Optional) Causal scrubbing of candidate circuits
+### 3.6. (Optional) Causal scrubbing of candidate circuits
 
 **Why**
 Causal scrubbing replaces multiple intermediate signals at once to test entire hypothesised *circuits* for necessity and sufficiency.  It can falsify the “single relation head” story by showing the answer still emerges when that head’s output is replaced with noise.
@@ -462,13 +464,13 @@ Together, these interventions push the project from **descriptive** lens diagnos
 [12]: https://www.neelnanda.io/mechanistic-interpretability/attribution-patching?utm_source=chatgpt.com "Attribution Patching: Activation Patching At Industrial Scale"
 [13]: https://arxiv.org/html/2310.12794v2?utm_source=chatgpt.com "Are Structural Concepts Universal in Transformer Language Models ..."
 
-## “Ontology‑Focused Evaluations Using Causal & Representational Metrics”
+## 4. Ontology‑Focused Evaluations Using Causal & Representational Metrics
 
 These studies go beyond first‑pass collapse‑depth checks. They require the advanced techniques from Group 3 (tuned lens, layer‑wise activation patching, attention‑head fingerprinting, concept‑vector extraction). Each experiment asks whether the network’s internal machinery behaves more like a stable universal or like an assemblage of particulars once those richer metrics are in hand.
 
 ---
 
-### 1.  Instruction‑Language Ablation with Causal Metrics
+### 4.1.  Instruction‑Language Ablation with Causal Metrics
 
 **Why**
 Pragmatic words (“please”, “simply”) are speech‑act particulars. We need to know whether they merely nudge surface probabilities or actually change *where* the model fixes the **capital‑of** relation.
@@ -489,7 +491,7 @@ Run the original prompt and a “plain” prompt; record
 
 ---
 
-### 2.  English Paraphrase Robustness via Causal L\_sem and Vector Alignment
+### 4.2.  English Paraphrase Robustness via Causal L\_sem and Vector Alignment
 
 **Why**
 Nominalists would expect relation processing to hinge on close lexical resemblance; realists expect stability across paraphrases.
@@ -511,7 +513,7 @@ Visualise variance; compute coefficient of variation (CV) of causal L\_sem.
 
 ---
 
-### 3.  Multilingual Prompt Study with Concept‑Vector Consistency
+### 4.3.  Multilingual Prompt Study with Concept‑Vector Consistency
 
 **Why**
 If an LLM hosts an *immanent* universal for **capital‑of**, the Berlin direction in German, Spanish, Arabic, etc. should align up to rotation.
@@ -531,7 +533,7 @@ Five language versions of the prompt. Measure:
 
 ---
 
-### 4.  Large WikiData “Capital‑of” Battery with Causal Statistics
+### 4.4.  Large WikiData “Capital‑of” Battery with Causal Statistics
 
 **Why**
 A universal should work across hundreds of particulars. We want the distribution of **causal L\_sem** and whether token‑level features predict it.
@@ -552,7 +554,7 @@ Interpret whether β‑coefficients are near zero (token features irrelevant) or
 
 ---
 
-### 5.  Lexical‑Ambiguity Stress Test with Entropy Plateau & Head Timing
+### 4.5.  Lexical‑Ambiguity Stress Test with Entropy Plateau & Head Timing
 
 **Why**
 Ambiguous names instantiate multiple resemblance classes. If the model delays commitment (maintains high entropy) or fires relation heads later, that suggests on‑the‑fly disambiguation.
@@ -573,7 +575,7 @@ Statistical test: Wilcoxon on each metric.
 
 ---
 
-### 6.  Instruction‑Style Grid with Causal Metrics
+### 4.6.  Instruction‑Style Grid with Causal Metrics
 
 **Why**
 Separates predicate content from pragmatics on a large scale.
@@ -594,7 +596,7 @@ Heat‑map the three statistics.
 
 ---
 
-### 7.  Property vs Kind Probe Using Vector Rank & Separability
+### 4.7.  Property vs Kind Probe Using Vector Rank & Separability
 
 **Why**
 The SEP notes that properties and kinds are different metaphysical categories; do LLMs reflect that in their internal geometry?
@@ -613,7 +615,7 @@ The SEP notes that properties and kinds are different metaphysical categories; d
 
 ---
 
-### 8.  Symmetric vs Asymmetric Relations via Head Structure and Causality
+### 4.8.  Symmetric vs Asymmetric Relations via Head Structure and Causality
 
 **Why**
 A symmetric universal (“distance‑between”) might be encoded by a single bidirectional head; an asymmetric one (“west‑of”) may need polarity encoding.
@@ -632,7 +634,7 @@ Measure causal log‑prob drop when that head is ablated.
 
 ---
 
-### 9.  (Optional) Trope‑Sensitivity Probe with Context‑Specific Vectors
+### 4.9.  (Optional) Trope‑Sensitivity Probe with Context‑Specific Vectors
 
 **Why**
 Trope theory holds that each instantiation of a property is particularised. If injecting a “blackness” vector learned on one object raises log‑prob for *another* black object, that undercuts trope accounts.
