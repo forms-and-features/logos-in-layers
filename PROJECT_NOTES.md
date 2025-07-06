@@ -277,38 +277,10 @@ Compute `p_top1` per layer, evaluate the three inequalities, write booleans, and
 
 ---
 
-### 2. Remove instruction framing
+### 2. Multilingual prompt study
 
 **Why**
-Realist arguments apply to *predicate content* (“capital‑of”) not to metalinguistic directives (“give the answer plainly”).  Instruction tokens are closer to speech‑act particulars; their removal tests whether collapse depths depend on such particulars.
-
-**What**
-Use prompt variant:
-`The capital of Germany is`
-Run the full sweep; report differences in `L_copy`, `L_sem`, `Δ-collapse`.
-
-**How**
-Tag with `prompt_variant="plain"`, rerun, and diff against baseline.
-
----
-
-### 3. Paraphrase set in one language
-
-**Why**
-Resemblance‑nominalists say that general terms apply because their instances resemble one another; if small wording changes push the semantic‑collapse layer wildly, that would indicate the model tracks *surface resemblance* rather than an invariant internal relation.
-
-**What**
-Ten human‑written paraphrases (changing mood, syntax, synonyms); produce distribution plots of `L_sem`.
-
-**How**
-Store paraphrases in YAML; sweeping loop iterates; analysis notebook aggregates and visualises.
-
----
-
-### 4. Multilingual prompt study
-
-**Why**
-Language‑independent behaviour is *compatible* with realism (a universal instantiated across linguistic frameworks) but *not mandated by it*.  Conversely, if depth systematically depends on language, that is prima facie evidence that the model’s “relation” is tied to particular linguistic encodings—more in line with class‑nominalism, where each language’s term picks out its own class of particulars ([plato.stanford.edu][2]).
+Language‑independent behaviour is *compatible* with realism (a universal instantiated across linguistic frameworks) but *not mandated by it*.  Conversely, if depth systematically depends on language, that is prima facie evidence that the model’s “relation” is tied to particular linguistic encodings—more in line with class‑nominalism, where each language’s term picks out its own class of particulars ([plato.stanford.edu][5]).
 
 **What**
 Translate the prompt into five major languages with equivalent subject–predicate order.  Record normalised `L_sem / n_layers` and visualise variance.
@@ -318,49 +290,10 @@ Maintain a YAML file of prompts keyed by ISO codes; run sweeps; bar‑plot and 
 
 ---
 
-### 5. WikiData capital‑of battery
+### 3. Property‑vs‑Kind probe (monadic universals)
 
 **Why**
-Treating **(capital, country)** pairs en masse operationalises the *binary relation* without privileging any single particular.  If the distribution of `L_sem` is narrow and unrelated to token idiosyncrasies, that suggests the model employs an internal pattern applicable across particulars—closer to an immanent universal.  If depth is predicted by token length or frequency, that supports a nominalist or trope‑style account where processing hinges on the micro‑features of each instantiation.
-
-**What**
-SPARQL‑extract up to 5 000 capital pairs, run sweeps, and regress `L_sem` on answer‑token length, log frequency, rarity, etc.  Include histograms of `Δ-collapse`.
-
-**How**
-Batch prompts through the existing pipeline; analytics in pandas; output Markdown with R² and plots.
-
----
-
-### 6. Lexical‑ambiguity stress test
-
-**Why**
-Ambiguous names (“Georgia”) instantiate multiple resemblance‑classes of particulars.  Nominalists predict the model must delay commitment when resemblance is insufficient to disambiguate.  Realists could still say the *universal* capital‑of‑Georgia exists, but why the network reaches it later becomes an empirical question.
-
-**What**
-50 ambiguous and 50 control prompts.  Compute median `L_sem` per set; Wilcoxon signed‑rank test for shift.
-
-**How**
-Curate list manually or by regex; tag prompts; run.  A notebook prints p‑value and effect size.
-
----
-
-### 7. Instruction‑style ablation grid
-
-**Why**
-Speech‑act features (“please”, “in one word”) are neither universals nor particulars of the capital‑relation—they are pragmatic cues.  If they systematically move `L_sem`, the probe is partly reading pragmatics, not ontology.
-
-**What**
-12 prompt variants (4 style modifiers × 3 sentence moods).  Produce a heat map of `L_sem` averaged over WikiData battery.
-
-**How**
-Generate prompts programmatically; tag with `style`, `mood`; sweep; pivot‑table to heat map.
-
----
-
-### 8. Property‑vs‑Kind probe (monadic universals)
-
-**Why**
-Universals divide into **properties** (adjectival “is‑black”) and **kinds** (substantial “is‑a‑city”).  SEP’s entry on *properties* notes that some nominalists treat adjectival cases via resemblance but prefer class constructions for kind membership ([plato.stanford.edu][1]).  Comparing collapse depth across these two monadic types asks whether the network treats them alike or differently.
+Universals divide into **properties** (adjectival “is‑black”) and **kinds** (substantial “is‑a‑city”).  SEP’s entry on *properties* notes that some nominalists treat adjectival cases via resemblance but prefer class constructions for kind membership ([plato.stanford.edu][4]).  Comparing collapse depth across these two monadic types asks whether the network treats them alike or differently.
 
 **What**
 Create prompt families:
@@ -370,22 +303,6 @@ Run 200 instances of each; compare median depths.
 
 **How**
 Hand‑collect adjectives and noun kinds or mine WikiData.  Tag `univ_type = property/kind`; run sweeps; simple stats.
-
----
-
-### 9. Symmetric vs asymmetric relations
-
-**Why**
-The SEP’s account of universals notes that relations can be symmetric (being 878 km‑from) or asymmetric (being west‑of) ([plato.stanford.edu][7]).  If the network encodes polarity as an additional feature layered on top of an otherwise shared relation representation, asymmetric prompts may collapse later than symmetric ones.
-
-**What**
-Prompt pairs:
-`Berlin is 878 km from` ⟨NEXT⟩ → “Paris” (symmetric)
-`Berlin is east of` ⟨NEXT⟩ → “Paris” (asymmetric)
-Measure `L_sem` across 100 such pairs, plot depth distributions.
-
-**How**
-Use OpenStreetMap API for city distances/bearings; generate prompts; tag `relation_symmetry`; run sweeps; plot violin.
 
 ---
 
@@ -412,8 +329,6 @@ None of these experiments *conclusively* vindicates realism or nominalism.  What
 [4]: https://plato.stanford.edu/entries/properties/?utm_source=chatgpt.com "Properties - Stanford Encyclopedia of Philosophy"
 [5]: https://plato.stanford.edu/entries/nominalism-metaphysics/?utm_source=chatgpt.com "Nominalism in Metaphysics - Stanford Encyclopedia of Philosophy"
 [6]: https://plato.stanford.edu/entries/tropes/?utm_source=chatgpt.com "Tropes - Stanford Encyclopedia of Philosophy"
-[7]: https://plato.stanford.edu/entries/universals-medieval/?utm_source=chatgpt.com "The Medieval Problem of Universals"
-
 
 ---
 
@@ -546,6 +461,207 @@ Together, these interventions push the project from **descriptive** lens diagnos
 [11]: https://arxiv.org/abs/2303.08112?utm_source=chatgpt.com "Eliciting Latent Predictions from Transformers with the Tuned Lens"
 [12]: https://www.neelnanda.io/mechanistic-interpretability/attribution-patching?utm_source=chatgpt.com "Attribution Patching: Activation Patching At Industrial Scale"
 [13]: https://arxiv.org/html/2310.12794v2?utm_source=chatgpt.com "Are Structural Concepts Universal in Transformer Language Models ..."
+
+## “Ontology‑Focused Evaluations Using Causal & Representational Metrics”
+
+These studies go beyond first‑pass collapse‑depth checks. They require the advanced techniques from Group 3 (tuned lens, layer‑wise activation patching, attention‑head fingerprinting, concept‑vector extraction). Each experiment asks whether the network’s internal machinery behaves more like a stable universal or like an assemblage of particulars once those richer metrics are in hand.
+
+---
+
+### 1.  Instruction‑Language Ablation with Causal Metrics
+
+**Why**
+Pragmatic words (“please”, “simply”) are speech‑act particulars. We need to know whether they merely nudge surface probabilities or actually change *where* the model fixes the **capital‑of** relation.
+
+**What**
+Run the original prompt and a “plain” prompt; record
+\* (a) the tuned‑lens KL‑curve inflection,
+\* (b) **causal L\_sem** obtained by single‑layer activation patching, and
+\* (c) Δ log‑prob when the top two “style heads” (found via head fingerprinting) are zeroed.
+
+**How**
+
+1. Generate both prompts; tag `variant=instruct/plain`.
+2. For each, sweep layers, patch the corrupted prompt at ℓ until the answer flips; store causal L\_sem.
+3. During the clean run, zero candidate style heads and measure answer log‑prob drop.
+4. Summarise:
+   `Gemma‑9B — causal L_sem unchanged (45→45); style‑head ablation −0.1 bits ⇒ semantics robust to pragmatics.`
+
+---
+
+### 2.  English Paraphrase Robustness via Causal L\_sem and Vector Alignment
+
+**Why**
+Nominalists would expect relation processing to hinge on close lexical resemblance; realists expect stability across paraphrases.
+
+**What**
+Ten English paraphrases. For each:
+\* (a) causal L\_sem,
+\* (b) cosine similarity of the answer‑logit direction to the canonical Berlin vector after whitening,
+\* (c) tuned‑lens KL divergence at L\_sem.
+
+Visualise variance; compute coefficient of variation (CV) of causal L\_sem.
+
+**How**
+
+1. Store paraphrases in YAML.
+2. Batch‑run; cache residuals for concept‑vector whitening.
+3. Use the concept‑vector module to obtain Berlin direction per paraphrase; compute cosines.
+4. Plot violin of causal L\_sem; print `CV = 0.06` (low) or `CV = 0.32` (high).
+
+---
+
+### 3.  Multilingual Prompt Study with Concept‑Vector Consistency
+
+**Why**
+If an LLM hosts an *immanent* universal for **capital‑of**, the Berlin direction in German, Spanish, Arabic, etc. should align up to rotation.
+
+**What**
+Five language versions of the prompt. Measure:
+\* (a) tuned‑lens KL inflection layer,
+\* (b) cosine between each language’s Berlin vector and the English one *after the language‑specific whitening transforms*,
+\* (c) causal L\_sem.
+
+**How**
+
+1. Verify translations keep subject–predicate order.
+2. Extract concept vectors; apply whitening per language.
+3. Compute pairwise cosines; output a short Markdown table of `⟨cos⟩ = 0.71 ± 0.05` or similar.
+4. Flag languages whose causal L\_sem deviates > 10 % of depth.
+
+---
+
+### 4.  Large WikiData “Capital‑of” Battery with Causal Statistics
+
+**Why**
+A universal should work across hundreds of particulars. We want the distribution of **causal L\_sem** and whether token‑level features predict it.
+
+**What**
+1 000–5 000 (country, capital) prompts. For each: causal L\_sem, answer token length, frequency.
+Output:
+\* Histogram of causal L\_sem,
+\* OLS regression `L_sem ∼ len + log_freq`.
+Interpret whether β‑coefficients are near zero (token features irrelevant) or large (token features matter → nominalist reading).
+
+**How**
+
+1. Use activation patching in batched mode (two passes per prompt: clean & patch grid).
+2. Compute causal L\_sem for each.
+3. Fit regression; print `R²`.
+4. Store results in `battery_capital.csv`.
+
+---
+
+### 5.  Lexical‑Ambiguity Stress Test with Entropy Plateau & Head Timing
+
+**Why**
+Ambiguous names instantiate multiple resemblance classes. If the model delays commitment (maintains high entropy) or fires relation heads later, that suggests on‑the‑fly disambiguation.
+
+**What**
+50 ambiguous vs 50 control prompts. Metrics:
+\* (a) entropy plateau height (mean entropy over layers before causal L\_sem),
+\* (b) first‑firing layer of the dominant relation head (from fingerprinting).
+
+Statistical test: Wilcoxon on each metric.
+
+**How**
+
+1. Curate ambiguous list (“Georgia”, “Jordan”).
+2. Run sweeps with attention recording.
+3. Detect dominant head per prompt (`attn_weight > 0.2`).
+4. Compute layer index; perform paired non‑parametric test; print p‑values.
+
+---
+
+### 6.  Instruction‑Style Grid with Causal Metrics
+
+**Why**
+Separates predicate content from pragmatics on a large scale.
+
+**What**
+12 prompt styles (4 modifiers × 3 moods) run over the WikiData battery. For each cell:
+\* mean causal L\_sem,
+\* mean log‑prob drop when style heads are ablated,
+\* mean tuned‑lens KL at L\_sem.
+
+Heat‑map the three statistics.
+
+**How**
+
+1. Auto‑generate prompt grid.
+2. Batch activation patching; reuse style‑head list.
+3. Aggregate per cell; render three matplotlib heat‑maps.
+
+---
+
+### 7.  Property vs Kind Probe Using Vector Rank & Separability
+
+**Why**
+The SEP notes that properties and kinds are different metaphysical categories; do LLMs reflect that in their internal geometry?
+
+**What**
+200 property sentences (`The cat is black.`) and 200 kind sentences (`Berlin is a city.`). Metrics:
+\* (a) rank of correct answer in tuned‑lens logits at layer ℓ = 0.5 · n\_layers,
+\* (b) linear‑probe AUC that separates property vs kind token directions in early layers,
+\* (c) causal L\_sem per prompt.
+
+**How**
+
+1. Collect adjective and noun lists.
+2. Extract hidden states at mid‑stack; train logistic classifier.
+3. Record rank and AUC; compare distributions property vs kind.
+
+---
+
+### 8.  Symmetric vs Asymmetric Relations via Head Structure and Causality
+
+**Why**
+A symmetric universal (“distance‑between”) might be encoded by a single bidirectional head; an asymmetric one (“west‑of”) may need polarity encoding.
+
+**What**
+100 city pairs with distance & bearing. For each relation class:
+\* dominant head layer index,
+\* head‑polarity test: swap query and key positions and see if attention persists.
+Measure causal log‑prob drop when that head is ablated.
+
+**How**
+
+1. Build prompts: `Berlin is 878 km from` ⟨NEXT⟩ vs `Berlin is east of` ⟨NEXT⟩.
+2. Record attention maps; detect polarity.
+3. Ablate head and recompute logits; log Δ.
+
+---
+
+### 9.  (Optional) Trope‑Sensitivity Probe with Context‑Specific Vectors
+
+**Why**
+Trope theory holds that each instantiation of a property is particularised. If injecting a “blackness” vector learned on one object raises log‑prob for *another* black object, that undercuts trope accounts.
+
+**What**
+50 noun pairs with property adjective (“black pawn”, “black asphalt”).
+Metrics:
+\* (a) cosine similarity between black‑vectors extracted in each context,
+\* (b) causal increase in p(“black”) when vector from A is patched into B.
+
+**How**
+
+1. Use concept‑vector extraction per sentence.
+2. Compute cross‑context cosines; perform activation patching.
+3. Report mean Δ log‑prob and compare to intra‑context baseline.
+
+---
+
+### Implementation Dependency Notice
+
+All experiments above **presuppose** that the following Group‑3 capabilities are available and validated:
+
+\* **Tuned / Prism lens** for reliable logits and KL curves.
+\* **Layer‑wise activation patching** to determine causal L\_sem and to test vector transplant effects.
+\* **Attention‑head fingerprinting** for relation‑ and style‑head discovery.
+\* **Concept‑vector extraction** (CBE) for measuring vector similarity and portability.
+
+Without those, the metrics would revert to raw collapse depth and lose their interpretive bite.
+
 
 # User Context
 - Software engineer, growing ML interpretability knowledge
