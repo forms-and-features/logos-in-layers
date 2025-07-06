@@ -1,5 +1,8 @@
 # Interpretability Project - Development Notes for AI assistant
 
+# Philosophical Project Context
+**Goal**: Use interpretability to inform nominalism vs realism debate.
+
 # Next steps
 
 Items are ordered by the approximate engineering lift required.
@@ -543,10 +546,6 @@ Together, these interventions push the project from **descriptive** lens diagnos
 [4]: https://arxiv.org/abs/2303.08112?utm_source=chatgpt.com "Eliciting Latent Predictions from Transformers with the Tuned Lens"
 [5]: https://www.neelnanda.io/mechanistic-interpretability/attribution-patching?utm_source=chatgpt.com "Attribution Patching: Activation Patching At Industrial Scale"
 [6]: https://arxiv.org/html/2310.12794v2?utm_source=chatgpt.com "Are Structural Concepts Universal in Transformer Language Models ..."
-
-# Philosophical Project Context
-- **Goal**: Use interpretability to inform nominalism vs realism debate
-- **Current evidence**: Layer-relative perspective (early = nominalist templates, late = realist concepts)
 
 # User Context
 - Software engineer, growing ML interpretability knowledge
