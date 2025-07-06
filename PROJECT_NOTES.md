@@ -256,9 +256,9 @@ Executing these ten items upgrades the measurement pipeline from an informative 
 
 > **Philosophical background referenced**
 >
-> * Realists hold that universals exist mind‑independently; immanent realists say they exist “in” particulars, transcendent realists say they can exist uninstantiated ([plato.stanford.edu][1]).
-> * Nominalists reject universals, often replacing them with classes, predicates, or resemblance networks of particulars ([plato.stanford.edu][2]).
-> * Trope theorists accept only *particularised* properties (tropes) and treat cross‑object similarity as exact resemblance between tropes ([plato.stanford.edu][3]).
+> * Realists hold that universals exist mind‑independently; immanent realists say they exist “in” particulars, transcendent realists say they can exist uninstantiated ([plato.stanford.edu][4]).
+> * Nominalists reject universals, often replacing them with classes, predicates, or resemblance networks of particulars ([plato.stanford.edu][5]).
+> * Trope theorists accept only *particularised* properties (tropes) and treat cross‑object similarity as exact resemblance between tropes ([plato.stanford.edu][6]).
 
 Keeping those distinctions in view, each variation below probes whether an LLM’s internal processing looks more like a single stable entity (universal) or a patchwork of particular‑tied cues (nominalist or trope‑like).
 
@@ -376,7 +376,7 @@ Hand‑collect adjectives and noun kinds or mine WikiData.  Tag `univ_type = pro
 ### 9. Symmetric vs asymmetric relations
 
 **Why**
-The SEP’s account of universals notes that relations can be symmetric (being 878 km‑from) or asymmetric (being west‑of) ([plato.stanford.edu][4]).  If the network encodes polarity as an additional feature layered on top of an otherwise shared relation representation, asymmetric prompts may collapse later than symmetric ones.
+The SEP’s account of universals notes that relations can be symmetric (being 878 km‑from) or asymmetric (being west‑of) ([plato.stanford.edu][7]).  If the network encodes polarity as an additional feature layered on top of an otherwise shared relation representation, asymmetric prompts may collapse later than symmetric ones.
 
 **What**
 Prompt pairs:
@@ -409,10 +409,10 @@ Select 50 noun pairs differing in visual form; run sweeps; compute per‑pair de
 
 None of these experiments *conclusively* vindicates realism or nominalism.  What they can do is chart **which kinds of linguistic variation the network treats as superficial and which provoke deeper representational work**.  Mapping that pattern against the philosophical taxonomy of universals, properties, and relations tells us *where* realist or nominalist readings gain empirical traction.
 
-[1]: https://plato.stanford.edu/entries/properties/?utm_source=chatgpt.com "Properties - Stanford Encyclopedia of Philosophy"
-[2]: https://plato.stanford.edu/entries/nominalism-metaphysics/?utm_source=chatgpt.com "Nominalism in Metaphysics - Stanford Encyclopedia of Philosophy"
-[3]: https://plato.stanford.edu/entries/tropes/?utm_source=chatgpt.com "Tropes - Stanford Encyclopedia of Philosophy"
-[4]: https://plato.stanford.edu/entries/universals-medieval/?utm_source=chatgpt.com "The Medieval Problem of Universals"
+[4]: https://plato.stanford.edu/entries/properties/?utm_source=chatgpt.com "Properties - Stanford Encyclopedia of Philosophy"
+[5]: https://plato.stanford.edu/entries/nominalism-metaphysics/?utm_source=chatgpt.com "Nominalism in Metaphysics - Stanford Encyclopedia of Philosophy"
+[6]: https://plato.stanford.edu/entries/tropes/?utm_source=chatgpt.com "Tropes - Stanford Encyclopedia of Philosophy"
+[7]: https://plato.stanford.edu/entries/universals-medieval/?utm_source=chatgpt.com "The Medieval Problem of Universals"
 
 
 ---
@@ -423,7 +423,7 @@ None of these experiments *conclusively* vindicates realism or nominalism.  What
 ### 1. Layer‑wise activation patching (“causal tracing”)
 
 **Why**
-Correlation‑based probes can be fooled by coincidental features.  Activation patching — copying hidden state ℓ from a *corrupted* prompt (e.g. “The capital of Germany is Paris”) into the *clean* run — tests whether that layer *causally* fixes the prediction.  If a *single late layer* is decisive across many (subject, object) pairs, that looks like a reusable internal relation (realist‑friendly).  If influence is diffuse or depends on token idiosyncrasies, it fits resemblance‑ or class‑nominalism ([arxiv.org][1]).
+Correlation‑based probes can be fooled by coincidental features.  Activation patching — copying hidden state ℓ from a *corrupted* prompt (e.g. “The capital of Germany is Paris”) into the *clean* run — tests whether that layer *causally* fixes the prediction.  If a *single late layer* is decisive across many (subject, object) pairs, that looks like a reusable internal relation (realist‑friendly).  If influence is diffuse or depends on token idiosyncrasies, it fits resemblance‑ or class‑nominalism ([arxiv.org][8]).
 
 **What**
 *Given a prompt pair (clean, corrupted), produce a CSV of “causal Δ log‑prob” per layer and record `causal_L_sem` = first layer whose patch flips the top‑1 token.*
@@ -440,7 +440,7 @@ Correlation‑based probes can be fooled by coincidental features.  Activation p
 ### 2. Attention‑head fingerprinting near L sem
 
 **Why**
-If the binary relation *capital‑of* corresponds to a *specialised head* that consistently attends from the subject token to the object token, that is evidence of a discrete internal mechanism (akin to a realist universal).  If instead attention routes vary per prompt, the relation may be an emergent resemblance class ([arxiv.org][2], [neelnanda.io][3]).
+If the binary relation *capital‑of* corresponds to a *specialised head* that consistently attends from the subject token to the object token, that is evidence of a discrete internal mechanism (akin to a realist universal).  If instead attention routes vary per prompt, the relation may be an emergent resemblance class ([arxiv.org][9], [neelnanda.io][10]).
 
 **What**
 *Catalogue all heads in layers L\_sem − 2 … L\_sem for which:*
@@ -455,14 +455,14 @@ Store a JSON manifest `relation_heads.json` listing `(layer, head)` tuples for e
 1. Hook attention weights in the forward pass; identify subject and candidate answer positions.
 2. Compute head‑specific importance by zeroing its output vector and re‑running the remainder of the model.
 3. Save heads meeting both criteria; visualise with a simple heat map.
-4. Optional: run CHG (Causal Head Gating) to refine head attribution ([arxiv.org][2]).
+4. Optional: run CHG (Causal Head Gating) to refine head attribution ([arxiv.org][9]).
 
 ---
 
 ### 3. Concept‑vector extraction via Causal Basis (CBE)
 
 **Why**
-Belrose et al. show a low‑rank subspace can *causally* steer the model’s logits ([arxiv.org][4]).  Extracting a “Berlin direction” and transplanting it into prompts about Poland probes whether the *capital‑of* universal is carried by a portable vector (strong realist evidence) or whether it is context‑bound.
+Belrose et al. show a low‑rank subspace can *causally* steer the model’s logits ([arxiv.org][11]).  Extracting a “Berlin direction” and transplanting it into prompts about Poland probes whether the *capital‑of* universal is carried by a portable vector (strong realist evidence) or whether it is context‑bound.
 
 **What**
 
@@ -480,7 +480,7 @@ Belrose et al. show a low‑rank subspace can *causally* steer the model’s
 ### 4. Attribution patching for scalable causal maps
 
 **Why**
-Full activation‑patch grids scale O(L²) runs; attribution patching (gradient‑based approximation) gets the entire layer×token causal heat‑map from *three* passes ([neelnanda.io][5]).  This enables causal tracing over the entire WikiData battery without prohibitive compute.  More data gives better evidence on whether causal responsibility clusters in reusable sub‑modules (realist) or is diffuse (nominalist).
+Full activation‑patch grids scale O(L²) runs; attribution patching (gradient‑based approximation) gets the entire layer×token causal heat‑map from *three* passes ([neelnanda.io][12]).  This enables causal tracing over the entire WikiData battery without prohibitive compute.  More data gives better evidence on whether causal responsibility clusters in reusable sub‑modules (realist) or is diffuse (nominalist).
 
 **What**
 *A script `attribution_patch.py` that, for a batch of prompts, outputs an HDF5 tensor `attr[L, T]` of estimated causal contributions for every layer L and token position T, plus a notebook that plots token‑level heat‑maps.*
@@ -497,7 +497,7 @@ Full activation‑patch grids scale O(L²) runs; attribution patching (gradient�
 ### 5. Cross‑model concept alignment (CCA / Procrustes)
 
 **Why**
-If *capital‑of‑Germany* evokes **the same activation geometry across independently trained models**, that strongly suggests an architecture‑internal universal rather than model‑specific trope.  Conversely, divergent sub‑spaces reinforce a nominalist picture of idiosyncratic classes ([arxiv.org][6]).
+If *capital‑of‑Germany* evokes **the same activation geometry across independently trained models**, that strongly suggests an architecture‑internal universal rather than model‑specific trope.  Conversely, divergent sub‑spaces reinforce a nominalist picture of idiosyncratic classes ([arxiv.org][13]).
 
 **What**
 
@@ -535,17 +535,17 @@ Encode a circuit hypothesis (subject‑head→MLP→answer) in a Python spec and
 
 * **Causal patching** distinguishes *where* the model irrevocably instantiates the capital‑of relation, countering the nominalist claim that apparent universals are artefacts of shallow token overlap.
 * **Head fingerprinting** and **concept vectors** probe whether that relation is localised and portable—the hallmarks of a realist universal—versus being context‑specific.
-* **Cross‑model alignment** asks whether the same entity recurs across distinct training histories, a requirement for *trans‑instance* universality stressed in SEP’s discussion of immanent realism ([arxiv.org][4]).
+* **Cross‑model alignment** asks whether the same entity recurs across distinct training histories, a requirement for *trans‑instance* universality stressed in SEP’s discussion of immanent realism ([arxiv.org][11]).
 * **Attribution patching** and **causal scrubbing** broaden the evidence base from one prompt to thousands, mitigating cherry‑picking and allowing statistical arguments.
 
 Together, these interventions push the project from **descriptive** lens diagnostics to **manipulative** evidence about the inner ontology of LLMs—crucial ground for any serious engagement with the realism‑versus‑nominalism debate.
 
-[1]: https://arxiv.org/abs/2202.05262?utm_source=chatgpt.com "Locating and Editing Factual Associations in GPT"
-[2]: https://www.arxiv.org/pdf/2505.13737?utm_source=chatgpt.com "[PDF] A Framework for Interpreting Roles of Attention Heads in Transformers"
-[3]: https://www.neelnanda.io/mechanistic-interpretability/glossary?utm_source=chatgpt.com "A Comprehensive Mechanistic Interpretability Explainer & Glossary"
-[4]: https://arxiv.org/abs/2303.08112?utm_source=chatgpt.com "Eliciting Latent Predictions from Transformers with the Tuned Lens"
-[5]: https://www.neelnanda.io/mechanistic-interpretability/attribution-patching?utm_source=chatgpt.com "Attribution Patching: Activation Patching At Industrial Scale"
-[6]: https://arxiv.org/html/2310.12794v2?utm_source=chatgpt.com "Are Structural Concepts Universal in Transformer Language Models ..."
+[8]: https://arxiv.org/abs/2202.05262?utm_source=chatgpt.com "Locating and Editing Factual Associations in GPT"
+[9]: https://www.arxiv.org/pdf/2505.13737?utm_source=chatgpt.com "[PDF] A Framework for Interpreting Roles of Attention Heads in Transformers"
+[10]: https://www.neelnanda.io/mechanistic-interpretability/glossary?utm_source=chatgpt.com "A Comprehensive Mechanistic Interpretability Explainer & Glossary"
+[11]: https://arxiv.org/abs/2303.08112?utm_source=chatgpt.com "Eliciting Latent Predictions from Transformers with the Tuned Lens"
+[12]: https://www.neelnanda.io/mechanistic-interpretability/attribution-patching?utm_source=chatgpt.com "Attribution Patching: Activation Patching At Industrial Scale"
+[13]: https://arxiv.org/html/2310.12794v2?utm_source=chatgpt.com "Are Structural Concepts Universal in Transformer Language Models ..."
 
 # User Context
 - Software engineer, growing ML interpretability knowledge
