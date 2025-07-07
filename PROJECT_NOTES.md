@@ -89,7 +89,7 @@ Entropy alone conflates “one spike” vs “five near‑ties”.  KL(ℓ ∥
    kl = torch.kl_div(probs.log(), final_probs, reduction="sum") / math.log(2)  # bits
    ```
 3. Append to the CSV writer.
-4. Update `output-gemma-2-9b-pure-next-token.csv` schema version number so downstream notebooks fail loudly if they expect old columns.
+4. Store kl_to_final_bits even when the tuned lens is active (it then measures residual mismatch, not absolute).
 
 ---
 
@@ -279,10 +279,12 @@ Compute `p_top1` per layer, evaluate the three inequalities, write booleans, and
 
 ---
 
-### 2.2. Multilingual prompt study
+### 2.2. Multilingual prompt – preliminary pass
 
 **Why**
 Language‑independent behaviour is *compatible* with realism (a universal instantiated across linguistic frameworks) but *not mandated by it*.  Conversely, if depth systematically depends on language, that is prima facie evidence that the model’s “relation” is tied to particular linguistic encodings—more in line with class‑nominalism, where each language’s term picks out its own class of particulars ([plato.stanford.edu][5]).
+
+A full causal/representational variant appears in Group 4; use this preliminary pass only as a quick consistency check until Group 3 tools are ready.
 
 **What**
 Translate the prompt into five major languages with equivalent subject–predicate order.  Record normalised `L_sem / n_layers` and visualise variance.
@@ -292,41 +294,13 @@ Maintain a YAML file of prompts keyed by ISO codes; run sweeps; bar‑plot and 
 
 ---
 
-### 2.3. Property‑vs‑Kind probe (monadic universals)
-
-**Why**
-Universals divide into **properties** (adjectival “is‑black”) and **kinds** (substantial “is‑a‑city”).  SEP’s entry on *properties* notes that some nominalists treat adjectival cases via resemblance but prefer class constructions for kind membership ([plato.stanford.edu][4]).  Comparing collapse depth across these two monadic types asks whether the network treats them alike or differently.
-
-**What**
-Create prompt families:
-*Property:* `The cat is` ⟨NEXT⟩ → “black”.
-*Kind:* `Berlin is a` ⟨NEXT⟩ → “city”.
-Run 200 instances of each; compare median depths.
-
-**How**
-Hand‑collect adjectives and noun kinds or mine WikiData.  Tag `univ_type = property/kind`; run sweeps; simple stats.
-
----
-
-### 2.4. (Optional) Trope‑sensitivity probe
-
-**Why**
-If the model’s representation is *trope‑like*, each instance of “black‑ness” in a sentence should be tied to context.  Replacing one black object with another visually different black object should therefore increase semantic collapse depth—because the resemblance net needs recalibrating.
-
-**What**
-Craft prompts pairwise:
-`The chess pawn is black.`
-`The asphalt is black.`
-Remove the object and ask for the adjective.  Compare `L_sem` when the surrounding context is varied.
-
-**How**
-Select 50 noun pairs differing in visual form; run sweeps; compute per‑pair depth deltas; perform paired t‑test.
-
----
-
 ### Closing note on epistemic modesty
 
 None of these experiments *conclusively* vindicates realism or nominalism.  What they can do is chart **which kinds of linguistic variation the network treats as superficial and which provoke deeper representational work**.  Mapping that pattern against the philosophical taxonomy of universals, properties, and relations tells us *where* realist or nominalist readings gain empirical traction.
+
+### Caution on metrics
+
+Raw “semantic‑collapse depth” (the layer where the gold token first becomes top‑1) is a correlational signal. Before drawing philosophical conclusions, validate any depth‑based claim with at least one causal or representational check (activation patching, tuned‑lens KL, concept‑vector alignment). See Group 3 & 4 tasks.
 
 [4]: https://plato.stanford.edu/entries/properties/?utm_source=chatgpt.com "Properties - Stanford Encyclopedia of Philosophy"
 [5]: https://plato.stanford.edu/entries/nominalism-metaphysics/?utm_source=chatgpt.com "Nominalism in Metaphysics - Stanford Encyclopedia of Philosophy"
@@ -362,7 +336,7 @@ If the binary relation *capital‑of* corresponds to a *specialised head* that c
 **What**
 *Catalogue all heads in layers L\_sem − 2 … L\_sem for which:*
 
-* `attn_weight(subject→answer) > 0.20` and
+* `attn_weight ≥ top‑k(0.8 quantile)` across heads for that layer and
 * Zero‑ablation of the head drops answer log‑prob by ≥ 0.5 bits.
 
 Store a JSON manifest `relation_heads.json` listing `(layer, head)` tuples for every model.
@@ -665,7 +639,7 @@ All experiments above **presuppose** that the following Group‑3 capabilities a
 Without those, the metrics would revert to raw collapse depth and lose their interpretive bite.
 
 
-# User Context
+# Audience
 - Software engineer, growing ML interpretability knowledge
 - No formal ML background but learning through implementation
 - Prefers systematic, reproducible experiments with clear documentation
