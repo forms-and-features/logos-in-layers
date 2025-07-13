@@ -503,7 +503,7 @@ Five language versions of the prompt. Measure:
 1. Verify translations keep subject–predicate order.
 2. Extract concept vectors; apply whitening per language.
 3. Compute pairwise cosines; output a short Markdown table of `⟨cos⟩ = 0.71 ± 0.05` or similar.
-4. Flag languages whose causal L\_sem deviates > 10 % of depth.
+4. Flag languages whose causal L\_sem deviates > 10 % of total layer count.
 
 ---
 

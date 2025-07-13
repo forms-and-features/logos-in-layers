@@ -1,11 +1,12 @@
 # λόγος in layers
 
-Systematic probing of open-weight LLMs to trace **where** and **how** concepts crystallise across transformer layers - groundwork for the nominalism ↔ realism debate.
+An experiment in LLM interpretability to provide empirical evidence for nominalism vs realism debate.
 
 ## Overview
 
-This project runs **iterative, self-contained experiments** (see the `000_`, `001_`, … directories) that dissect transformer behaviour from multiple angles.  
-The first published iteration (`001_layers_and_logits/`) introduces a memory-efficient logit-lens to measure token-level entropy across layers. It examines four models — Gemma-2-9B, Qwen-3-8B, Mistral-7B-v0.1 and Llama-3-8B — revealing a shared entropy **collapse → rebound** signature around factual recall. 
+The first experimental suite (001_layers_and_logits/) introduces a lightweight logit-lens that tracks per-layer token-entropy in seven open-weight models.
+
+Across all four, we see the typical "copy plateau, then sharp entropy drop" that coincides with factual recall. These measurements form the baseline for the causal and cross-modal probes planned in later stages.
 
 ## Experiments
 
@@ -52,7 +53,7 @@ python run.py
 
 ## Further Reading
 
-For implementation details, developer-focused toggles, and methodology notes, see `PROJECT_NOTES.md`. 
+For details and methodology notes, see `PROJECT_NOTES.md`. 
 
 ## License
 
