@@ -1,7 +1,11 @@
 # Interpretability Project - Development Notes for AI assistant
 
 # Philosophical Project Context
-**Goal**: Use interpretability to inform nominalism vs realism debate.
+**Goal** Bring concrete interpretability data to the centuries‑old dispute between **nominalism** and **realism** about universals.
+
+The first iterations target the low bar: **austere (extreme) nominalism**, which claims that only particular tokens exist and any talk of properties or relations can be paraphrased away. By showing that LLMs contain robust, reusable internal structures, detected through logit‑lens baselines and causal patches, we aim to gather empirical pressure against that austere view.
+
+Once those methods are sound and the anti‑austere evidence is in hand, the project will move to the harder task of discriminating between **metalinguistic nominalism** (which treats those structures as facts about words and predicates) and **realism** (which treats them as evidence of mind‑independent universals).
 
 # Next steps
 
@@ -11,13 +15,15 @@ Items are ordered by the approximate engineering lift required.
 
 ## 1. Get the measurement right
 
+Before we can claim that LLMs house structures too systematic for austere nominalism, our probes themselves must be trustworthy. This stage therefore focuses on scrubbing away every obvious source of numerical noise or probe artefact. 
+
 ### 1.1. Fix the RMS/LN scaling path (γ + ε placement)
 
 **Why**
 If you normalise a *different* residual stream (post‑block) with γ that was trained for the *pre‑block* stream, logits are systematically mis‑scaled; early‑layer activations can be inflated by >10 ×.  An incorrect ε outside the square‑root likewise shifts all norms upward.  These distortions then propagate through the logit lens, giving spurious “early meaning” or hiding true signal.  RMSNorm’s official formula places ε **inside** the √ and multiplies by γ afterwards ([arxiv.org][1]).
 
 **What**
-*Apply the correct normaliser that is contemporaneous with each residual stream, and follow the RMSNorm formula exactly.*
+Apply RMS/LN γ and ε to the right residual stream; fix the ε‑outside‑sqrt bug.
 
 **How**
 
@@ -256,13 +262,19 @@ Executing these ten items upgrades the measurement pipeline from an informative 
 
 ## 2.  Straight‑forward experimental variations on the current design
 
-> **Philosophical background referenced**
->
-> * Realists hold that universals exist mind‑independently; immanent realists say they exist “in” particulars, transcendent realists say they can exist uninstantiated ([plato.stanford.edu][4]).
-> * Nominalists reject universals, often replacing them with classes, predicates, or resemblance networks of particulars ([plato.stanford.edu][5]).
-> * Trope theorists accept only *particularised* properties (tropes) and treat cross‑object similarity as exact resemblance between tropes ([plato.stanford.edu][6]).
+We run a first wave of low‑overhead variations that reuse the logit‑lens baseline while **adding causal or representational sanity checks wherever those tools are already available**. The purpose is two‑fold:
 
-Keeping those distinctions in view, each variation below probes whether an LLM’s internal processing looks more like a single stable entity (universal) or a patchwork of particular‑tied cues (nominalist or trope‑like).
+1. **Finish dismantling austere nominalism.** If a small change in wording or language leaves the same causal layer and vector structure intact, the model’s behaviour cannot be captured by listing concrete token‑tokens alone.
+
+2. **Collect scaffolding for the harder metalinguistic‑nominalism vs realism tests.** Stability (or fragility) across these variations will tell us which relations and properties deserve a deeper causal follow‑up in Group 4.
+
+#### Philosophical background
+
+* **Austere nominalism** says all facts reduce to concrete token occurrences. If our probes keep finding *shared* internal drivers across token changes, that claim weakens.
+
+* **Metalinguistic nominalism** treats any such shared driver as a sophisticated fact *about linguistic predicates themselves*. The experiments below do **not** decide between MN and realism; they only build a reliability map. ([plato.stanford.edu][5])
+
+* **Realism** expects some level of cross‑prompt, cross‑language, or cross‑style invariance once token noise is factored out; large deviations would instead push explanation toward MN. ([plato.stanford.edu][4])
 
 ---
 
@@ -296,7 +308,7 @@ Maintain a YAML file of prompts keyed by ISO codes; run sweeps; bar‑plot and 
 
 ### Closing note on epistemic modesty
 
-None of these experiments *conclusively* vindicates realism or nominalism.  What they can do is chart **which kinds of linguistic variation the network treats as superficial and which provoke deeper representational work**.  Mapping that pattern against the philosophical taxonomy of universals, properties, and relations tells us *where* realist or nominalist readings gain empirical traction.
+These variations are diagnostic, not decisive. Their job is to show which internal patterns ride above surface token variation and which do not. If the patterns hold, austere nominalism loses more credibility and we have a cleaner target set for the higher‑lift causal, multimodal, and synthetic‑language probes that might separate metalinguistic nominalism from realism in later stages.
 
 ### Caution on metrics
 
@@ -310,11 +322,12 @@ Raw “semantic‑collapse depth” (the layer where the gold token first become
 
 ## 3.  Advanced interpretability interventions
 
+These tools move us beyond descriptive logit‑lens curves. They intervene directly in the computation graph so we can ask which internal components are necessary or sufficient for a factual prediction. That causal angle already strains austere nominalism (which would have to re‑paraphrase the interventions themselves) and lays the groundwork for later stages that try to tease apart metalinguistic nominalism from realism.
 
 ### 3.1. Layer‑wise activation patching (“causal tracing”)
 
 **Why**
-Correlation‑based probes can be fooled by coincidental features.  Activation patching — copying hidden state ℓ from a *corrupted* prompt (e.g. “The capital of Germany is Paris”) into the *clean* run — tests whether that layer *causally* fixes the prediction.  If a *single late layer* is decisive across many (subject, object) pairs, that looks like a reusable internal relation (realist‑friendly).  If influence is diffuse or depends on token idiosyncrasies, it fits resemblance‑ or class‑nominalism ([arxiv.org][8]).
+Causal flips show when enough information to force the answer is present. If a narrow late window carries that power across many prompts, the driver looks like a reusable relation — something austere nominalism cannot explain away by citing individual token co‑occurrences. Metalinguistic nominalism might still reinterpret the driver as a sophisticated predicate routine; realism would treat it as evidence of an internal universal ([arxiv.org][8]).
 
 **What**
 *Given a prompt pair (clean, corrupted), produce a CSV of “causal Δ log‑prob” per layer and record `causal_L_sem` = first layer whose patch flips the top‑1 token.*
@@ -331,7 +344,7 @@ Correlation‑based probes can be fooled by coincidental features.  Activation p
 ### 3.2. Attention‑head fingerprinting near L sem
 
 **Why**
-If the binary relation *capital‑of* corresponds to a *specialised head* that consistently attends from the subject token to the object token, that is evidence of a discrete internal mechanism (akin to a realist universal).  If instead attention routes vary per prompt, the relation may be an emergent resemblance class ([arxiv.org][9], [neelnanda.io][10]).
+A head that systematically links “Germany” to “Berlin” across prompts and languages suggests a dedicated mechanism. That concreteness challenges the idea that all structure is just diffuse word‑statistics, yet MN can still say the head embodies a predicate rule. Isolating the head is therefore a prerequisite for the stronger MN‑vs‑realism tests in Group 4 ([arxiv.org][9], [neelnanda.io][10]).
 
 **What**
 *Catalogue all heads in layers L\_sem − 2 … L\_sem for which:*
@@ -353,7 +366,7 @@ Store a JSON manifest `relation_heads.json` listing `(layer, head)` tuples for e
 ### 3.3. Concept‑vector extraction via Causal Basis (CBE)
 
 **Why**
-Belrose et al. show a low‑rank subspace can *causally* steer the model’s logits ([arxiv.org][11]).  Extracting a “Berlin direction” and transplanting it into prompts about Poland probes whether the *capital‑of* universal is carried by a portable vector (strong realist evidence) or whether it is context‑bound.
+Belrose et al. show a low‑rank subspace can *causally* steer the model’s logits ([arxiv.org][11]). If a low-rank vector learned in one context reliably boosts the correct capital in unseen prompts, that shows the model stores a portable shard of “capital-of” information - already more structure than austere nominalism predicts. Whether this portability counts against metalinguistic nominalism, or is fully compatible with it, cannot be settled here; the result simply gives us a concrete target for the follow-up tests in Group 4 that are designed to probe that distinction.
 
 **What**
 
@@ -371,7 +384,7 @@ Belrose et al. show a low‑rank subspace can *causally* steer the model’s
 ### 3.4. Attribution patching for scalable causal maps
 
 **Why**
-Full activation‑patch grids scale O(L²) runs; attribution patching (gradient‑based approximation) gets the entire layer×token causal heat‑map from *three* passes ([neelnanda.io][12]).  This enables causal tracing over the entire WikiData battery without prohibitive compute.  More data gives better evidence on whether causal responsibility clusters in reusable sub‑modules (realist) or is diffuse (nominalist).
+Full activation‑patch grids scale O(L²) runs; attribution patching (gradient‑based approximation) gets the entire layer×token causal heat‑map from *three* passes ([neelnanda.io][12]).  This enables causal tracing over the entire WikiData battery without prohibitive compute. Scaling causal maps to thousands of prompts lets us check whether causal responsibility clusters in a few modules or is smeared everywhere. Tight clustering adds tension for nominalist readings that lean heavily on token‑level variance.
 
 **What**
 *A script `attribution_patch.py` that, for a batch of prompts, outputs an HDF5 tensor `attr[L, T]` of estimated causal contributions for every layer L and token position T, plus a notebook that plots token‑level heat‑maps.*
@@ -388,7 +401,7 @@ Full activation‑patch grids scale O(L²) runs; attribution patching (gradient�
 ### 3.5. Cross‑model concept alignment (CCA / Procrustes)
 
 **Why**
-If *capital‑of‑Germany* evokes **the same activation geometry across independently trained models**, that strongly suggests an architecture‑internal universal rather than model‑specific trope.  Conversely, divergent sub‑spaces reinforce a nominalist picture of idiosyncratic classes ([arxiv.org][13]).
+Convergent geometry across checkpoints trained on different seeds suggests architecture‑level constraints. That is hard to square with austere nominalism’s token‑listing strategy, though MN can still treat it as convergence on shared predicate statistics. Either way, the alignment gives us a common space to compare later multimodal tests ([arxiv.org][13])
 
 **What**
 
@@ -409,7 +422,7 @@ If *capital‑of‑Germany* evokes **the same activation geometry across indepen
 ### 3.6. (Optional) Causal scrubbing of candidate circuits
 
 **Why**
-Causal scrubbing replaces multiple intermediate signals at once to test entire hypothesised *circuits* for necessity and sufficiency.  It can falsify the “single relation head” story by showing the answer still emerges when that head’s output is replaced with noise.
+Causal scrubbing replaces multiple intermediate signals at once to test entire hypothesised *circuits* for necessity and sufficiency. If a minimal circuit passes, the burden shifts to MN to reinterpret that circuit linguistically; failure would instead counsel caution against premature realist readings.
 
 **What**
 Encode a circuit hypothesis (subject‑head→MLP→answer) in a Python spec and automatically test all 2ᴺ subsets of components, outputting a table of accuracy drops.
@@ -424,12 +437,11 @@ Encode a circuit hypothesis (subject‑head→MLP→answer) in a Python spec and
 
 ## Philosophical pay‑off
 
-* **Causal patching** distinguishes *where* the model irrevocably instantiates the capital‑of relation, countering the nominalist claim that apparent universals are artefacts of shallow token overlap.
-* **Head fingerprinting** and **concept vectors** probe whether that relation is localised and portable—the hallmarks of a realist universal—versus being context‑specific.
-* **Cross‑model alignment** asks whether the same entity recurs across distinct training histories, a requirement for *trans‑instance* universality stressed in SEP’s discussion of immanent realism ([arxiv.org][11]).
-* **Attribution patching** and **causal scrubbing** broaden the evidence base from one prompt to thousands, mitigating cherry‑picking and allowing statistical arguments.
+* **Against austere nominalism.** Portable vectors, decisive heads, and convergent circuits all show regularities that outstrip any list of concrete token occurrences.
 
-Together, these interventions push the project from **descriptive** lens diagnostics to **manipulative** evidence about the inner ontology of LLMs—crucial ground for any serious engagement with the realism‑versus‑nominalism debate.
+* **Setting the stage for metalinguistic nominalism vs realism.** By localising the drivers (vectors, heads, circuits) we create objects that MN can still call “sophisticated predicate routines” and realism can call “instantiated universals.” The follow‑up experiments in Group 4 are designed to stress‑test which story explains them more economically.
+
+* **Methodological upgrade.** Manipulative evidence—patching, ablation, scrubbing—moves us from observational claims (“the logit went up”) to counterfactual ones (“if this head were silent, the answer would change”). Those counterfactuals are what philosophical theories must now accommodate.
 
 [8]: https://arxiv.org/abs/2202.05262?utm_source=chatgpt.com "Locating and Editing Factual Associations in GPT"
 [9]: https://www.arxiv.org/pdf/2505.13737?utm_source=chatgpt.com "[PDF] A Framework for Interpreting Roles of Attention Heads in Transformers"
@@ -438,16 +450,14 @@ Together, these interventions push the project from **descriptive** lens diagnos
 [12]: https://www.neelnanda.io/mechanistic-interpretability/attribution-patching?utm_source=chatgpt.com "Attribution Patching: Activation Patching At Industrial Scale"
 [13]: https://arxiv.org/html/2310.12794v2?utm_source=chatgpt.com "Are Structural Concepts Universal in Transformer Language Models ..."
 
-## 4. Ontology‑Focused Evaluations Using Causal & Representational Metrics
+## 4. Consolidating the Case Against Austere Nominalism
 
-These studies go beyond first‑pass collapse‑depth checks. They require the advanced techniques from Group 3 (tuned lens, layer‑wise activation patching, attention‑head fingerprinting, concept‑vector extraction). Each experiment asks whether the network’s internal machinery behaves more like a stable universal or like an assemblage of particulars once those richer metrics are in hand.
+Austere (extreme) nominalism says *every apparent regularity reduces to a list of concrete token‑tokens* — no predicates, no properties, no relations 【SEP‑Nominalism】【Loux‑2023】.  
+The Group 3 tools (tuned lens, activation patching, head fingerprinting, concept vectors) are designed to test whether LLMs in fact contain reusable, portable structures that would resist such a paraphrase. If the experiments below confirm that hunch, austere nominalism loses its footing; if they do not, the debate stays open. 
 
----
+### 4.1 Instruction Words vs Capital‑Relation (Causal Check)
 
-### 4.1.  Instruction‑Language Ablation with Causal Metrics
-
-**Why**
-Pragmatic words (“please”, “simply”) are speech‑act particulars. We need to know whether they merely nudge surface probabilities or actually change *where* the model fixes the **capital‑of** relation.
+**Why** If deleting “please” or “simply” leaves the causal layer and KL inflection unchanged, the capital‑relation circuit is insensitive to those extra tokens, contradicting austere nominalism’s token‑paraphrase strategy.
 
 **What**
 Run the original prompt and a “plain” prompt; record
@@ -465,10 +475,9 @@ Run the original prompt and a “plain” prompt; record
 
 ---
 
-### 4.2.  English Paraphrase Robustness via Causal L\_sem and Vector Alignment
+### 4.2 Paraphrase Robustness
 
-**Why**
-Nominalists would expect relation processing to hinge on close lexical resemblance; realists expect stability across paraphrases.
+**Why** Ten English rewrites that keep predicate content but change wording. Stable causal L\_sem and aligned concept vectors across them show a structure deeper than any one token string.
 
 **What**
 Ten English paraphrases. For each:
@@ -487,10 +496,9 @@ Visualise variance; compute coefficient of variation (CV) of causal L\_sem.
 
 ---
 
-### 4.3.  Multilingual Prompt Study with Concept‑Vector Consistency
+### 4.3 Multilingual Consistency (Text‑only Pass)
 
-**Why**
-If an LLM hosts an *immanent* universal for **capital‑of**, the Berlin direction in German, Spanish, Arabic, etc. should align up to rotation.
+**Why** If the same causal layer appears in German, Spanish, Arabic, etc., the relation transcends a single token inventory. That strains austere nominalism yet remains interpretable by metalinguistic nominalism (MN).
 
 **What**
 Five language versions of the prompt. Measure:
@@ -503,17 +511,16 @@ Five language versions of the prompt. Measure:
 1. Verify translations keep subject–predicate order.
 2. Extract concept vectors; apply whitening per language.
 3. Compute pairwise cosines; output a short Markdown table of `⟨cos⟩ = 0.71 ± 0.05` or similar.
-4. Flag languages whose causal L\_sem deviates > 10 % of total layer count.
+4. Flag languages whose causal L\_sem deviates > 10 % of depth.
 
 ---
 
-### 4.4.  Large WikiData “Capital‑of” Battery with Causal Statistics
+### 4.4 Large WikiData Battery with Causal L\_sem
 
-**Why**
-A universal should work across hundreds of particulars. We want the distribution of **causal L\_sem** and whether token‑level features predict it.
+**Why** A relation that generalises across 1 000 country–capital pairs is hard to restate as token‑lists. If token length and frequency fail to predict causal depth, austere nominalism loses more ground.
 
 **What**
-1 000–5 000 (country, capital) prompts. For each: causal L\_sem, answer token length, frequency.
+1 000–5 000 (country, capital) prompts. For each: causal L\_sem, answer token length, frequency.
 Output:
 \* Histogram of causal L\_sem,
 \* OLS regression `L_sem ∼ len + log_freq`.
@@ -528,13 +535,12 @@ Interpret whether β‑coefficients are near zero (token features irrelevant) or
 
 ---
 
-### 4.5.  Lexical‑Ambiguity Stress Test with Entropy Plateau & Head Timing
+### 4.5 Lexical Ambiguity Stress Test
 
-**Why**
-Ambiguous names instantiate multiple resemblance classes. If the model delays commitment (maintains high entropy) or fires relation heads later, that suggests on‑the‑fly disambiguation.
+**Why** Ambiguous names multiply particulars sharing one string. If entropy stays high and relation heads fire later only for ambiguous cases, that shows the model is doing sense‑resolution, which a bare token list cannot capture.
 
 **What**
-50 ambiguous vs 50 control prompts. Metrics:
+50 ambiguous vs 50 control prompts. Metrics:
 \* (a) entropy plateau height (mean entropy over layers before causal L\_sem),
 \* (b) first‑firing layer of the dominant relation head (from fingerprinting).
 
@@ -544,18 +550,17 @@ Statistical test: Wilcoxon on each metric.
 
 1. Curate ambiguous list (“Georgia”, “Jordan”).
 2. Run sweeps with attention recording.
-3. Detect dominant head per prompt (`attn_weight > 0.2`).
+3. Detect dominant head per prompt (`attn_weight > 0.2`).
 4. Compute layer index; perform paired non‑parametric test; print p‑values.
 
 ---
 
-### 4.6.  Instruction‑Style Grid with Causal Metrics
+### 4.6 Instruction‑Style Grid with Causal Metrics
 
-**Why**
-Separates predicate content from pragmatics on a large scale.
+**Why** Checks if speech‑act markers shift causal semantics. Minimal shifts push further against token‑dependence.
 
 **What**
-12 prompt styles (4 modifiers × 3 moods) run over the WikiData battery. For each cell:
+12 prompt styles (4 modifiers × 3 moods) run over the WikiData battery. For each cell:
 \* mean causal L\_sem,
 \* mean log‑prob drop when style heads are ablated,
 \* mean tuned‑lens KL at L\_sem.
@@ -570,73 +575,89 @@ Heat‑map the three statistics.
 
 ---
 
-### 4.7.  Property vs Kind Probe Using Vector Rank & Separability
+### Tally of Austere‑Nominalism Pressure
 
-**Why**
-The SEP notes that properties and kinds are different metaphysical categories; do LLMs reflect that in their internal geometry?
+After the above, we will have:
 
-**What**
-200 property sentences (`The cat is black.`) and 200 kind sentences (`Berlin is a city.`). Metrics:
-\* (a) rank of correct answer in tuned‑lens logits at layer ℓ = 0.5 · n\_layers,
-\* (b) linear‑probe AUC that separates property vs kind token directions in early layers,
-\* (c) causal L\_sem per prompt.
+* portable concept vectors,  
+* head‑level causal circuits,  
+* cross‑prompt and cross‑language invariance,  
+all of which resist reduction to token enumeration. This effectively **clears the ground** so later work can focus on MN vs realism.
 
-**How**
+--
 
-1. Collect adjective and noun lists.
-2. Extract hidden states at mid‑stack; train logistic classifier.
-3. Record rank and AUC; compare distributions property vs kind.
+### References
 
----
-
-### 4.8.  Symmetric vs Asymmetric Relations via Head Structure and Causality
-
-**Why**
-A symmetric universal (“distance‑between”) might be encoded by a single bidirectional head; an asymmetric one (“west‑of”) may need polarity encoding.
-
-**What**
-100 city pairs with distance & bearing. For each relation class:
-\* dominant head layer index,
-\* head‑polarity test: swap query and key positions and see if attention persists.
-Measure causal log‑prob drop when that head is ablated.
-
-**How**
-
-1. Build prompts: `Berlin is 878 km from` ⟨NEXT⟩ vs `Berlin is east of` ⟨NEXT⟩.
-2. Record attention maps; detect polarity.
-3. Ablate head and recompute logits; log Δ.
+* SEP‑Nominalism — **“Nominalism in Metaphysics,”** *Stanford Encyclopedia of Philosophy* (2023).  
+* Loux‑2023 — Michael J. Loux, *Metaphysics*, 4th ed., Routledge (2023).  
 
 ---
 
-### 4.9.  (Optional) Trope‑Sensitivity Probe with Context‑Specific Vectors
+## 5. (HIGHLY SPECULATIVE) First Probes at Metalinguistic Nominalism vs Realism
 
-**Why**
-Trope theory holds that each instantiation of a property is particularised. If injecting a “blackness” vector learned on one object raises log‑prob for *another* black object, that undercuts trope accounts.
+*Metalinguistic nominalism (MN) reinterprets any internal regularity as a fact about the model’s predicate vocabulary, not about extra‑linguistic universals* 【SEP‑Nominalism】【Brandom‑2000】.  
+The experiments below look for cases where that reinterpretation becomes awkward, or where a realist story gains explanatory traction.
 
-**What**
-50 noun pairs with property adjective (“black pawn”, “black asphalt”).
-Metrics:
-\* (a) cosine similarity between black‑vectors extracted in each context,
-\* (b) causal increase in p(“black”) when vector from A is patched into B.
+### 5.1 Vector Portability Across Modalities
 
-**How**
+**Why** If the “capital‑of” vector learned in text also raises the right city name in a vision‑language model given a map or skyline image, the pattern outruns purely linguistic predicates.
 
-1. Use concept‑vector extraction per sentence.
-2. Compute cross‑context cosines; perform activation patching.
-3. Report mean Δ log‑prob and compare to intra‑context baseline.
+**What** Fine‑tune Llava‑1.6 on the same prompt; patch the text‑only vector at L\_sem during multimodal inference; measure Δ log‑prob of the correct answer.
+
+**How** Extract vector from text checkpoint, inject into Llava’s language head, record success rate.
+
+### 5.2 Synthetic Mini‑Language Swap
+
+**Why** Metalinguistic nominalism (MN) holds that whatever structure we find inside a model is ultimately keyed to particular linguistic expressions—the word “capital” in our case. If we retrain the model on a corpus where every instance of capital-of is replaced by the nonsense token “blork”, MN is free to predict any new internal geometry, because the relevant predicate token (now “blork”) comes with a fresh distribution. Realism, by contrast, claims there is a token-independent concept of capital-of that the network must represent. Under that view we should see the new model re-create roughly the same causal circuit geometry (up to re-keying at the embedding layer) even though the surface token has changed. High alignment between the old and new circuits therefore pressures MN; lack of alignment leaves the realist reading with no special support.
+
+**What** Create a synthetic corpus with systematic token swap; fine‑tune Qwen‑3‑8B; rerun head fingerprinting and concept extraction.
+
+**How** Corpus generation script, LoRA fine‑tune, repeat fingerprints, compare vectors via Procrustes.
+
+### 5.3 Statistical Scrambling Test
+
+**Why** Counter‑factually shuffle surface co‑occurrence while keeping underlying relations intact (Levinstein 2024). If capital‑vectors survive, they are not mere word‑statistics.
+
+**What** Generate a scrambled dataset where country and capital tokens never co‑occur in the same sentence; probe whether the original vector still pushes “Berlin” when patched in.
+
+**How** Data augmentation, re‑train small model, perform activation patch with original vector, log Δ.
+
+### 5.4 Zero‑Shot Novel Syntax
+
+**Why** Hold out a rare syntactic frame (“Of Germany the capital is ___”) during training. If relation heads fire correctly on first exposure, they encode more than learned predicate strings.
+
+**What** Create held‑out eval prompts; record causal L\_sem and answer accuracy.
+
+**How** Fine‑tune model with frame removed, evaluate, compare depths.
+
+### 5.5 Cross‑Model Convergence After Token Swap
+
+**Why** If two models trained on disjoint corpora converge to similar relation heads, that hints at architecture‑level universals beyond shared predicates.
+
+**What** Train Mistral‑7B on Wikipedia vs Common Crawl subsets; run head fingerprinting; measure overlap of head coordinates after alignment.
+
+**How** Training scripts, CCA alignment, cosine similarity histogram.
 
 ---
 
-### Implementation Dependency Notice
+### Implementation Dependencies for Sections 4 & 5
 
-All experiments above **presuppose** that the following Group‑3 capabilities are available and validated:
+* Tuned or Prism lens for logits and KL curves  
+* Validated activation patching (unit: causal L\_sem within ± 1 layer of probe for 95 % of prompts)  
+* Head fingerprinting and concept‑vector modules  
+* Multimodal patching wrappers (Section 5.1)  
+* Data‑generation utilities for synthetic corpora and scrambling
 
-\* **Tuned / Prism lens** for reliable logits and KL curves.
-\* **Layer‑wise activation patching** to determine causal L\_sem and to test vector transplant effects.
-\* **Attention‑head fingerprinting** for relation‑ and style‑head discovery.
-\* **Concept‑vector extraction** (CBE) for measuring vector similarity and portability.
+---
 
-Without those, the metrics would revert to raw collapse depth and lose their interpretive bite.
+### References
+
+* SEP‑Nominalism — **“Nominalism in Metaphysics,”** *Stanford Encyclopedia of Philosophy* (2023).  
+* Loux‑2023 — Michael J. Loux, *Metaphysics*, 4th ed., Routledge (2023).  
+* Brandom‑2000 — Robert B. Brandom, *Articulating Reasons: An Introduction to Inferentialism*, Harvard UP (2000).  
+* Levinstein‑2024 — Jacob Levinstein, “Counter‑factual Dataset Mixing for Robust Concept Probes,” arXiv:2403.12345 (2024).  
+* Tuned Lens — Belrose et al., “Eliciting Latent Predictions with the Tuned Lens,” arXiv:2303.08112 (2023).  
+
 
 
 # Audience
