@@ -593,14 +593,15 @@ all of which resist reduction to token enumeration. This effectively **clears t
 
 ---
 
-## 5. (HIGHLY SPECULATIVE) First Probes at Metalinguistic Nominalism vs Realism
+## 5. First Probes at Metalinguistic Nominalism vs Realism  (and a Trope Check)
 
-*Metalinguistic nominalism (MN) reinterprets any internal regularity as a fact about the model’s predicate vocabulary, not about extra‑linguistic universals* 【SEP‑Nominalism】【Brandom‑2000】.  
-The experiments below look for cases where that reinterpretation becomes awkward, or where a realist story gains explanatory traction.
+*Metalinguistic nominalism (MN)* treats any internal regularity as a fact about the model’s predicate vocabulary rather than a mind-independent universal 【SEP-Nominalism】【Brandom-2000】.  
+*Trope theory* replaces universals with many particularised property-instances (tropes) that resemble one another 【SEP-Tropes 2023】.  
+The experiments below look for patterns that strain an MN paraphrase or favour a trope interpretation, and where a realist story might do better. They remain speculative; negative or ambiguous results will still be philosophically useful.
 
 ### 5.1 Vector Portability Across Modalities
 
-**Why** If the “capital‑of” vector learned in text also raises the right city name in a vision‑language model given a map or skyline image, the pattern outruns purely linguistic predicates.
+**Why**  If a capital-of vector learned from text alone also raises the right city name in a vision-language model when shown a map, the underlying pattern is not tied to any specific word‐token. That stretches MN, whose story centres on language, more than a realist reading. (If the vector fails to port, the result remains compatible with both MN and trope theory.)
 
 **What** Fine‑tune Llava‑1.6 on the same prompt; patch the text‑only vector at L\_sem during multimodal inference; measure Δ log‑prob of the correct answer.
 
@@ -608,7 +609,7 @@ The experiments below look for cases where that reinterpretation becomes awkward
 
 ### 5.2 Synthetic Mini‑Language Swap
 
-**Why** Metalinguistic nominalism (MN) holds that whatever structure we find inside a model is ultimately keyed to particular linguistic expressions—the word “capital” in our case. If we retrain the model on a corpus where every instance of capital-of is replaced by the nonsense token “blork”, MN is free to predict any new internal geometry, because the relevant predicate token (now “blork”) comes with a fresh distribution. Realism, by contrast, claims there is a token-independent concept of capital-of that the network must represent. Under that view we should see the new model re-create roughly the same causal circuit geometry (up to re-keying at the embedding layer) even though the surface token has changed. High alignment between the old and new circuits therefore pressures MN; lack of alignment leaves the realist reading with no special support.
+**Why**  MN predicts that changing every occurrence of the predicate token (“capital”) to a nonsense token (“blork”) should licence the model to build a new, potentially different circuit, because the linguistic anchor has changed. A realist would expect the model to reconstruct a similar geometry for the underlying concept, merely keyed to a new embedding. Trope theory is agnostic: it allows many similar—but non-identical—instantiated circuits. Measuring geometric overlap therefore places the explanatory burden on whichever view ends up with the more complex paraphrase.
 
 **What** Create a synthetic corpus with systematic token swap; fine‑tune Qwen‑3‑8B; rerun head fingerprinting and concept extraction.
 
@@ -638,6 +639,24 @@ The experiments below look for cases where that reinterpretation becomes awkward
 
 **How** Training scripts, CCA alignment, cosine similarity histogram.
 
+### 5.6 Trope-Sensitivity Probe
+
+**Why**  Trope theory expects each context to instantiate its *own* “blackness” or “capital-of” trope. If concept vectors extracted in different sentences diverge significantly and fail to transfer causally, that supports a trope interpretation; tight clustering and high transferability favour realism or MN.
+
+**What**  Fifty noun-adjective pairs (“black pawn”, “black asphalt”, …). For each context:  
+* extract a blackness vector with CBE;  
+* measure cosine dispersion across contexts;  
+* patch each vector into every other context and log Δ log-prob for the adjective “black”.
+
+**How**  
+1. Run CBE per sentence at L sem.  
+2. Compute pair-wise cosines; report mean and standard deviation.  
+3. Patch vectors cross-context; if median Δ log-prob > 0.5 bits in ≥ 70 % of cases, portability is high (anti-trope); otherwise low portability supports a trope reading.
+
+---
+
+*Fictionalism*, which treats all universal talk as useful but literally false, can in principle accommodate any of the outcomes; strong results will therefore be framed in terms of explanatory indispensability rather than outright refutation 【SEP-Fictionalism 2021】.
+
 ---
 
 ### Implementation Dependencies for Sections 4 & 5
@@ -653,12 +672,12 @@ The experiments below look for cases where that reinterpretation becomes awkward
 ### References
 
 * SEP‑Nominalism — **“Nominalism in Metaphysics,”** *Stanford Encyclopedia of Philosophy* (2023).  
+* SEP-Tropes — **“Tropes,”** *Stanford Encyclopedia of Philosophy* (2023).  
+* SEP-Fictionalism — **“Fictionalism,”** *Stanford Encyclopedia of Philosophy* (2021).  
 * Loux‑2023 — Michael J. Loux, *Metaphysics*, 4th ed., Routledge (2023).  
 * Brandom‑2000 — Robert B. Brandom, *Articulating Reasons: An Introduction to Inferentialism*, Harvard UP (2000).  
 * Levinstein‑2024 — Jacob Levinstein, “Counter‑factual Dataset Mixing for Robust Concept Probes,” arXiv:2403.12345 (2024).  
 * Tuned Lens — Belrose et al., “Eliciting Latent Predictions with the Tuned Lens,” arXiv:2303.08112 (2023).  
-
-
 
 # Audience
 - Software engineer, growing ML interpretability knowledge
