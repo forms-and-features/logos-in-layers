@@ -14,6 +14,7 @@ import json
 import csv
 import argparse
 import gc  # For garbage collection
+import copy
 
 # --- deterministic bootstrap -------------------------------------------------
 import random, numpy as np
@@ -67,49 +68,40 @@ def _get_rms_scale(norm_mod):
     params = list(norm_mod.parameters(recurse=False))
     return params[0] if len(params) == 1 else None
 
-def get_correct_norm_module(model, layer_idx, probe_after_block=True, architecture=None):
+def get_correct_norm_module(model, layer_idx, probe_after_block=True):
     """
     Select the correct normalization module based on probe timing and architecture.
+    
+    This is the critical fix from PROJECT_NOTES.md section 1.1:
+    - Pre-norm: Use NEXT block's ln1 (or ln_final for last layer)  
+    - Post-norm: Use current block's ln2
     
     Args:
         model: The transformer model
         layer_idx: Which layer we're probing
         probe_after_block: Whether probing after block completion
-        architecture: Model architecture ('pre_norm' or 'post_norm'), detected if None
     
     Returns:
         The appropriate normalization module or None
     """
-    if architecture is None:
-        architecture = detect_model_architecture(model)
-    
     if layer_idx >= len(model.blocks):
-        # Final layer - use final norm
         return getattr(model, 'ln_final', None)
-    
-    if architecture == 'pre_norm':
-        # Pre-norm: residual stream will be normalized by the NEXT block's ln1
-        # (or ln_final for the last layer)
-        if probe_after_block:
-            if layer_idx == len(model.blocks) - 1:
-                # Last layer: use ln_final
-                return getattr(model, 'ln_final', None)
+
+    post_norm = detect_model_architecture(model) == 'post_norm'
+
+    if probe_after_block:
+        if post_norm:
+            # Post-norm: use current block's ln2
+            return getattr(model.blocks[layer_idx], 'ln2', None)
+        else:
+            # Pre-norm: use NEXT block's ln1, or ln_final for last block
+            if layer_idx + 1 < len(model.blocks):
+                return getattr(model.blocks[layer_idx + 1], 'ln1', None)
             else:
-                # Use next block's ln1
-                next_block = model.blocks[layer_idx + 1]
-                return getattr(next_block, 'ln1', None)
-        else:
-            # Probing before block: use current block's ln1
-            block = model.blocks[layer_idx]
-            return getattr(block, 'ln1', None)
-    
-    else:  # post_norm
-        # Post-norm: use the current block's normalization
-        block = model.blocks[layer_idx]
-        if probe_after_block and hasattr(block, 'ln2'):
-            return block.ln2
-        else:
-            return getattr(block, 'ln1', None)
+                return getattr(model, 'ln_final', None)
+    else:
+        # Probing before block: always use current block's ln1
+        return getattr(model.blocks[layer_idx], 'ln1', None)
 
 def detect_model_architecture(model):
     """
@@ -336,6 +328,14 @@ def run_experiment_for_model(model_id, output_files):
             model = model.to(device)
             
         model.eval()  # Hygiene: avoid dropout etc.
+        
+        # Run KL sanity test if requested
+        if CLI_ARGS.self_test:
+            test_passed = run_kl_sanity_test(model, tokenizer)
+            if not test_passed:
+                print("❌ Self-test failed - normalization scaling is incorrect!")
+                return {"error": "Self-test failed"}
+            print("Continuing with normal evaluation...\n")
         
         # Clear cache after loading
         if torch.cuda.is_available():
@@ -580,7 +580,7 @@ def run_experiment_for_model(model_id, output_files):
                     print("[diagnostic] Applying real ln1 normalization to embeddings (not synthetic γ=1)")
                     if 'detected_architecture' not in locals():
                         detected_architecture = detect_model_architecture(model)
-                    norm_module = get_correct_norm_module(model, 0, probe_after_block=False, architecture=detected_architecture)
+                    norm_module = get_correct_norm_module(model, 0, probe_after_block=False)
                     resid = apply_norm_or_skip(resid, norm_module)
                 
                 # Vectorized unembedding for all positions  
@@ -686,7 +686,7 @@ def run_experiment_for_model(model_id, output_files):
                     # Apply normalization if requested
                     if USE_NORM_LENS:
                         # Use the correct normalization module based on probe timing and architecture
-                        norm_module = get_correct_norm_module(model, layer, probe_after_block=True, architecture=detected_architecture)
+                        norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
                         resid = apply_norm_or_skip(resid, norm_module)
                     
                     # Vectorized unembedding for all positions
@@ -1128,7 +1128,90 @@ def parse_cli():
     p.add_argument("--out_dir",
                    default=None,
                    help="Output directory to save CSV & JSON results (default: current script directory or value forwarded by parent launcher)")
+    p.add_argument("--self-test",
+                   action="store_true",
+                   help="Run KL sanity test to validate normalization scaling (PROJECT_NOTES.md section 1.1)")
     return p.parse_args()
+
+def run_kl_sanity_test(model, tokenizer):
+    """
+    KL sanity test from PROJECT_NOTES.md section 1.1:
+    Decode layer 0 twice: once with γ=1, once with learned γ.
+    The KL between them should match KL between raw hidden states with/without γ.
+    """
+    print("\n" + "="*50)
+    print("RUNNING KL SANITY TEST (Section 1.1)")
+    print("="*50)
+    
+    test_prompt = "The capital of Germany is"
+    tokens = tokenizer.encode(test_prompt, return_tensors="pt").to(model.device)
+    
+    architecture = detect_model_architecture(model)
+    print(f"Architecture: {architecture}")
+    
+    with torch.no_grad():
+        # Get embeddings and run through first block
+        logits = model(tokens, output_hidden_states=True)
+        layer_0_resid = logits.hidden_states[1]  # After first transformer block
+        
+        # Test: Get correct norm module for layer 0 post-block
+        norm_module = get_correct_norm_module(model, 0, probe_after_block=True)
+        print(f"Using norm module: {norm_module}")
+        if norm_module is None:
+            print("❌ No norm module found - test cannot proceed")
+            return False
+        
+        # Test 1: Decode with learned γ
+        normalized_learned = apply_norm_or_skip(layer_0_resid, norm_module)
+        logits_learned = model.lm_head(normalized_learned)
+        
+        # Test 2: Decode with γ=1 (create modified norm module)
+        norm_module_unit = copy.deepcopy(norm_module)
+        if hasattr(norm_module_unit, 'weight'):
+            original_weight = norm_module_unit.weight.data.clone()
+            norm_module_unit.weight.data.fill_(1.0)
+        elif hasattr(norm_module_unit, 'scale'):
+            original_weight = norm_module_unit.scale.data.clone()
+            norm_module_unit.scale.data.fill_(1.0)
+        else:
+            print("❌ Norm module has no learnable scale - test cannot proceed")
+            return False
+        
+        normalized_unit = apply_norm_or_skip(layer_0_resid, norm_module_unit)
+        logits_unit = model.lm_head(normalized_unit)
+        
+        # Test 3: Raw residuals with and without scaling (as reference)
+        raw_resid = layer_0_resid
+        scaled_raw_resid = raw_resid * original_weight.to(raw_resid.device, dtype=raw_resid.dtype)
+        
+        # Compute KL divergences (use final token position)
+        final_pos = -1
+        
+        kl_logits = torch.kl_div(
+            torch.log_softmax(logits_unit[0, final_pos], dim=-1),
+            torch.softmax(logits_learned[0, final_pos], dim=-1),
+            reduction='sum'
+        ).item()
+        
+        kl_raw = torch.kl_div(
+            torch.log_softmax(model.lm_head(raw_resid)[0, final_pos], dim=-1),
+            torch.softmax(model.lm_head(scaled_raw_resid)[0, final_pos], dim=-1),
+            reduction='sum'
+        ).item()
+        
+        print(f"KL divergence (normalized logits): {kl_logits:.6f}")
+        print(f"KL divergence (raw residual):      {kl_raw:.6f}")
+        print(f"KL difference:                     {abs(kl_logits - kl_raw):.6f}")
+        
+        # The KL divergences should be approximately equal
+        tolerance = 0.1
+        if abs(kl_logits - kl_raw) < tolerance:
+            print("✅ PASS: KL divergences match - scaling is semantically consistent")
+            return True
+        else:
+            print(f"❌ FAIL: KL mismatch exceeds tolerance of {tolerance}")
+            print("This indicates the normalization scaling is incorrect!")
+            return False
 
 # Parse once and promote to module-global so run_single_model and main can see it
 CLI_ARGS = parse_cli()

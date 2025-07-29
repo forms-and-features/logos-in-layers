@@ -62,7 +62,7 @@ def test_normalization_scaling_synthetic():
         residual = torch.randn(batch_size, seq_len, d_model)
         
         # Get the correct norm module
-        norm_module = get_correct_norm_module(model, layer_idx, probe_after_block, architecture)
+        norm_module = get_correct_norm_module(model, layer_idx, probe_after_block)
         if norm_module is None:
             print(f"  No norm module found for layer {layer_idx}")
             continue
@@ -156,7 +156,7 @@ def test_architecture_aware_norm_selection():
     all_passed = True
     
     for layer_idx, probe_after_block, expected_source in test_cases:
-        norm_module = get_correct_norm_module(pre_model, layer_idx, probe_after_block, pre_arch)
+        norm_module = get_correct_norm_module(pre_model, layer_idx, probe_after_block)
         
         if expected_source == "next_block_ln1" and layer_idx < len(pre_model.blocks) - 1:
             expected_module = pre_model.blocks[layer_idx + 1].ln1
