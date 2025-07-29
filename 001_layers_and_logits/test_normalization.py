@@ -130,24 +130,25 @@ def test_architecture_aware_norm_selection():
             self.ln1 = MockRMSNorm(64)  
             self.attn = "mock_attention"
             self.ln2 = MockRMSNorm(64)
-            self.mlp = "mock_mlp"  # MLP is last - pre-norm pattern
+            self.mlp = "mock_mlp"  # MLP comes after ln2 - pre-norm pattern
             self.hook_resid_pre = "mock_hook"
         
         def children(self):
-            """Return children in pre-norm order - MLP is last"""
+            """Return children in pre-norm order - ln2 before mlp"""
             return [self.ln1, self.attn, self.ln2, self.mlp]
     
     class PostNormBlock:
-        """Mock post-norm block where the last child is a normalization layer"""
+        """Mock post-norm block where ln2 comes after mlp"""
         def __init__(self):
             self.attn = "mock_attention"
             self.ln1 = MockLayerNorm(64)  # After attention
             self.mlp = "mock_mlp"
-            self.ln2 = MockLayerNorm(64)  # After MLP - this is the last child
+            self.ln2 = MockLayerNorm(64)  # After MLP - post-norm pattern
+            self.hook_resid_post = "mock_hook"  # Trailing HookPoint like real TransformerLens
         
         def children(self):
-            """Return children in order - ln2 should be last for post-norm detection"""
-            return [self.attn, self.ln1, self.mlp, self.ln2]
+            """Return children with ln2 after mlp (post-norm) plus trailing hooks"""
+            return [self.attn, self.ln1, self.mlp, self.ln2, self.hook_resid_post]
     
     class MockRMSNorm(torch.nn.Module):
         def __init__(self, d_model, eps=1e-5):
@@ -203,7 +204,6 @@ def test_architecture_aware_norm_selection():
     if post_arch != "post_norm":
         print(f"❌ CRITICAL: Post-norm detector failed! Got '{post_arch}', expected 'post_norm'")
         all_passed = False
-        return all_passed
     
     # Test cases for post-norm
     post_test_cases = [

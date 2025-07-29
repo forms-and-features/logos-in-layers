@@ -105,8 +105,8 @@ def get_correct_norm_module(model, layer_idx, probe_after_block=True):
 
 def detect_model_architecture(model):
     """
-    Returns 'post_norm' if each block **ends** with a standalone norm;
-    otherwise 'pre_norm'. This works for GPT-J, NeoX, Falcon, etc.
+    Returns 'post_norm' if ln2 comes after mlp in the block ordering;
+    otherwise 'pre_norm'. This works for GPT-J, NeoX, Falcon vs Llama families.
     
     Pre-norm: Normalization before attention/MLP (Llama, Mistral, Gemma, etc.)
     Post-norm: Normalization after attention/MLP (GPT-J, GPT-Neo, original Transformer)
@@ -117,12 +117,19 @@ def detect_model_architecture(model):
     if not model.blocks:
         return 'pre_norm'  # Default fallback
 
-    # Look at real module order, not presence of attribute names
-    first_block = model.blocks[0]
-    last_child = list(first_block.children())[-1]
-
-    if isinstance(last_child, (nn.LayerNorm, type(first_block.ln1))):
-        return 'post_norm'
+    # Look at relative ordering of ln2 vs mlp to handle HookPoints correctly
+    block = model.blocks[0]
+    kids = list(block.children())
+    
+    if hasattr(block, 'ln2') and hasattr(block, 'mlp'):
+        try:
+            ln2_idx = kids.index(block.ln2)
+            mlp_idx = kids.index(block.mlp)
+            return 'post_norm' if ln2_idx > mlp_idx else 'pre_norm'
+        except ValueError:
+            # Fallback if ln2 or mlp not found in children
+            pass
+    
     return 'pre_norm'
 
 
