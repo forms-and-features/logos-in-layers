@@ -67,66 +67,87 @@ def _get_rms_scale(norm_mod):
     params = list(norm_mod.parameters(recurse=False))
     return params[0] if len(params) == 1 else None
 
-def get_correct_norm_module(model, layer_idx, probe_after_block=True):
+def get_correct_norm_module(model, layer_idx, probe_after_block=True, architecture=None):
     """
-    Select the correct normalization module based on probe timing.
+    Select the correct normalization module based on probe timing and architecture.
     
     Args:
         model: The transformer model
         layer_idx: Which layer we're probing
-        probe_after_block: Whether probing after block completion (uses ln2) or before (uses ln1)
+        probe_after_block: Whether probing after block completion
+        architecture: Model architecture ('pre_norm' or 'post_norm'), detected if None
     
     Returns:
         The appropriate normalization module or None
     """
+    if architecture is None:
+        architecture = detect_model_architecture(model)
+    
     if layer_idx >= len(model.blocks):
         # Final layer - use final norm
         return getattr(model, 'ln_final', None)
     
-    block = model.blocks[layer_idx]
+    if architecture == 'pre_norm':
+        # Pre-norm: residual stream will be normalized by the NEXT block's ln1
+        # (or ln_final for the last layer)
+        if probe_after_block:
+            if layer_idx == len(model.blocks) - 1:
+                # Last layer: use ln_final
+                return getattr(model, 'ln_final', None)
+            else:
+                # Use next block's ln1
+                next_block = model.blocks[layer_idx + 1]
+                return getattr(next_block, 'ln1', None)
+        else:
+            # Probing before block: use current block's ln1
+            block = model.blocks[layer_idx]
+            return getattr(block, 'ln1', None)
     
-    # For post-block probing, use ln2 (if exists), otherwise ln1
-    if probe_after_block and hasattr(block, 'ln2'):
-        return block.ln2
-    else:
-        return getattr(block, 'ln1', None)
+    else:  # post_norm
+        # Post-norm: use the current block's normalization
+        block = model.blocks[layer_idx]
+        if probe_after_block and hasattr(block, 'ln2'):
+            return block.ln2
+        else:
+            return getattr(block, 'ln1', None)
 
 def detect_model_architecture(model):
     """
-    Detect if model uses Pre-Norm or Post-Norm architecture.
+    Detect if model uses Pre-Norm or Post-Norm architecture by examining
+    where normalization layers are positioned within the transformer block.
+    
+    Pre-norm: Normalization before attention/MLP (Llama, Mistral, Gemma, etc.)
+    Post-norm: Normalization after attention/MLP (original Transformer)
     
     Returns:
         str: 'pre_norm' or 'post_norm'
     """
-    # Check first block structure to infer architecture
-    if len(model.blocks) > 0:
-        block = model.blocks[0]
-        # Post-norm typically has ln2, pre-norm typically only ln1
-        if hasattr(block, 'ln2'):
-            return 'post_norm'
+    if len(model.blocks) == 0:
+        return 'unknown'
+    
+    block = model.blocks[0]
+    
+    # Check if model has transformer-lens style hooks to examine structure
+    if hasattr(block, 'hook_resid_pre'):
+        # Look for hook patterns that indicate norm placement
+        # Pre-norm: ln1 normalizes before attention, ln2 normalizes before MLP
+        # Post-norm: ln1 normalizes after attention, ln2 normalizes after MLP
+        
+        # Most modern models (Llama, Mistral, Gemma) are pre-norm
+        # Check for common pre-norm indicators:
+        if (hasattr(block, 'ln1') and hasattr(block, 'ln2') and 
+            hasattr(block, 'attn') and hasattr(block, 'mlp')):
+            # Pre-norm is the dominant pattern in current models
+            return 'pre_norm'
+    
+    # Fallback: check for specific model patterns
+    model_name = getattr(model.cfg, 'model_name', '').lower()
+    if any(name in model_name for name in ['llama', 'mistral', 'gemma', 'qwen', 'yi']):
+        return 'pre_norm'
+    
+    # Conservative fallback
     return 'pre_norm'
 
-def rms_lens(resid, gamma, eps=1e-5):
-    """
-    Apply RMS normalization with learnable scale parameter.
-    
-    Args:
-        resid: Residual stream tensor [B, seq_len, d_model]
-        gamma: Scale parameter from RMSNorm layer [d_model]
-        eps: Epsilon for numerical stability (default: 1e-5)
-    
-    Returns:
-        RMS-normalized residual stream
-    """
-    # Ensure gamma matches device and dtype of residual
-    gamma = gamma.to(resid.device, dtype=resid.dtype)
-    
-    # Compute RMS: [B, seq_len, d_model] -> [B, seq_len, 1]
-    # CRITICAL: eps must be INSIDE the sqrt for numerical correctness
-    rms = torch.sqrt(resid.pow(2).mean(-1, keepdim=True) + eps)
-    
-    # Normalize and scale
-    return resid / rms * gamma
 
 def apply_norm_or_skip(residual: torch.Tensor, norm_module):
     """
@@ -252,6 +273,9 @@ def run_experiment_for_model(model_id, output_files):
         print(f"\n{'='*60}")
         print(f"EVALUATING MODEL: {model_id}")
         print(f"{'='*60}")
+        
+        # Variable to store detected architecture
+        detected_architecture = None
         
         # ---- device & dtype ---------------------------------------------------
         device = CLI_ARGS.device
@@ -554,7 +578,9 @@ def run_experiment_for_model(model_id, output_files):
                 if USE_NORM_LENS:
                     # Use the actual first normalization layer instead of synthetic γ=1
                     print("[diagnostic] Applying real ln1 normalization to embeddings (not synthetic γ=1)")
-                    norm_module = get_correct_norm_module(model, 0, probe_after_block=False)
+                    if 'detected_architecture' not in locals():
+                        detected_architecture = detect_model_architecture(model)
+                    norm_module = get_correct_norm_module(model, 0, probe_after_block=False, architecture=detected_architecture)
                     resid = apply_norm_or_skip(resid, norm_module)
                 
                 # Vectorized unembedding for all positions  
@@ -648,6 +674,10 @@ def run_experiment_for_model(model_id, output_files):
                     torch.cuda.empty_cache()
                 
                 # Layers 1 to n_layers: after each transformer block
+                # Detect architecture once for efficiency
+                detected_architecture = detect_model_architecture(model)
+                print(f"Detected architecture: {detected_architecture}")
+                
                 for layer in range(n_layers):
                     print(f"Layer {layer + 1:2d} (after transformer block {layer}):")
                     # Get residual stream after this layer's block
@@ -656,7 +686,7 @@ def run_experiment_for_model(model_id, output_files):
                     # Apply normalization if requested
                     if USE_NORM_LENS:
                         # Use the correct normalization module based on probe timing and architecture
-                        norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
+                        norm_module = get_correct_norm_module(model, layer, probe_after_block=True, architecture=detected_architecture)
                         resid = apply_norm_or_skip(resid, norm_module)
                     
                     # Vectorized unembedding for all positions
@@ -898,9 +928,7 @@ def run_experiment_for_model(model_id, output_files):
         
         print("=== END OF INSPECTING ==============\n")
         
-        # Collect model stats data
-        architecture = detect_model_architecture(model)
-        print(f"Detected architecture: {architecture}")
+        # Collect model stats data (architecture already detected above)
         stats_record = {
             "type": "model_stats",
             "num_layers": model.cfg.n_layers,
@@ -908,7 +936,7 @@ def run_experiment_for_model(model_id, output_files):
             "n_heads": model.cfg.n_heads,
             "d_vocab": model.cfg.d_vocab,
             "n_ctx": model.cfg.n_ctx,
-            "architecture": architecture
+            "architecture": detected_architecture or 'unknown'
         }
         json_data["model_stats"] = stats_record
         
