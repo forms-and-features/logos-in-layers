@@ -105,43 +105,25 @@ def get_correct_norm_module(model, layer_idx, probe_after_block=True):
 
 def detect_model_architecture(model):
     """
-    Detect if model uses Pre-Norm or Post-Norm architecture by examining
-    the structure of transformer blocks.
+    Returns 'post_norm' if each block **ends** with a standalone norm;
+    otherwise 'pre_norm'. This works for GPT-J, NeoX, Falcon, etc.
     
     Pre-norm: Normalization before attention/MLP (Llama, Mistral, Gemma, etc.)
     Post-norm: Normalization after attention/MLP (GPT-J, GPT-Neo, original Transformer)
     
     Returns:
-        str: 'pre_norm', 'post_norm', or 'unknown'
+        str: 'pre_norm' or 'post_norm'
     """
     if not model.blocks:
-        return 'unknown'
-    
-    # In post-norm blocks the VERY LAST sub-module is just a norm layer
-    # In pre-norm blocks the last sub-module is typically an MLP or attention
-    try:
-        first_block = model.blocks[0]
-        last_child = list(first_block.children())[-1]
-        
-        # Check if the last child is a normalization layer
-        if isinstance(last_child, nn.LayerNorm):
-            return 'post_norm'
-        elif hasattr(first_block, 'ln1') and isinstance(last_child, type(first_block.ln1)):
-            # Also covers RMSNorm and other custom norm types
-            return 'post_norm'
-        else:
-            return 'pre_norm'
-            
-    except (AttributeError, IndexError):
-        # Fallback: check for specific model patterns by name
-        model_name = getattr(model.cfg, 'model_name', '').lower()
-        if any(name in model_name for name in ['gpt-j', 'gpt-neo', 'gpt2']):
-            return 'post_norm'
-        elif any(name in model_name for name in ['llama', 'mistral', 'gemma', 'qwen', 'yi']):
-            return 'pre_norm'
-        
-        # Conservative fallback - most modern models are pre-norm
-        return 'pre_norm'
+        return 'pre_norm'  # Default fallback
+
+    # Look at real module order, not presence of attribute names
+    first_block = model.blocks[0]
+    last_child = list(first_block.children())[-1]
+
+    if isinstance(last_child, (nn.LayerNorm, type(first_block.ln1))):
+        return 'post_norm'
+    return 'pre_norm'
 
 
 def apply_norm_or_skip(residual: torch.Tensor, norm_module):
@@ -339,8 +321,9 @@ def run_experiment_for_model(model_id, output_files):
                 test_passed = run_kl_sanity_test(model, tokenizer)
                 if not test_passed:
                     print("❌ Self-test failed - normalization scaling is incorrect!")
+                    print("❌ ABORTING: Cannot trust analysis results with incorrect scaling!")
                     return {"error": "Self-test failed"}
-                print("Continuing with normal evaluation...\n")
+                print("✅ Self-test passed - continuing with normal evaluation...\n")
             except ImportError as e:
                 print(f"❌ Could not import KL sanity test: {e}")
                 return {"error": "Self-test import failed"}

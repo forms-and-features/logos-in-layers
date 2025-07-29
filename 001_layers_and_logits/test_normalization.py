@@ -34,6 +34,10 @@ def test_normalization_scaling_synthetic():
         def __init__(self):
             self.ln1 = MockRMSNorm(64)  
             self.ln2 = MockRMSNorm(64)
+            self.mlp = "mock_mlp"  # Make it pre-norm
+        
+        def children(self):
+            return [self.ln1, self.ln2, self.mlp]
     
     class MockRMSNorm(torch.nn.Module):
         def __init__(self, d_model, eps=1e-5):
@@ -124,10 +128,14 @@ def test_architecture_aware_norm_selection():
     class MockBlock:
         def __init__(self):
             self.ln1 = MockRMSNorm(64)  
-            self.ln2 = MockRMSNorm(64)
             self.attn = "mock_attention"
-            self.mlp = "mock_mlp"
+            self.ln2 = MockRMSNorm(64)
+            self.mlp = "mock_mlp"  # MLP is last - pre-norm pattern
             self.hook_resid_pre = "mock_hook"
+        
+        def children(self):
+            """Return children in pre-norm order - MLP is last"""
+            return [self.ln1, self.attn, self.ln2, self.mlp]
     
     class PostNormBlock:
         """Mock post-norm block where the last child is a normalization layer"""
@@ -191,6 +199,12 @@ def test_architecture_aware_norm_selection():
     post_arch = detect_model_architecture(post_model)
     print(f"Post-norm architecture detected: {post_arch}")
     
+    # Critical assertion: detector must identify post-norm correctly
+    if post_arch != "post_norm":
+        print(f"❌ CRITICAL: Post-norm detector failed! Got '{post_arch}', expected 'post_norm'")
+        all_passed = False
+        return all_passed
+    
     # Test cases for post-norm
     post_test_cases = [
         # (layer_idx, probe_after_block, expected_norm_source)
@@ -216,6 +230,12 @@ def test_architecture_aware_norm_selection():
             print(f"  ❌ POST-NORM Layer {layer_idx}, after_block={probe_after_block}: wrong norm module")
             print(f"     Expected: {expected_module}, Got: {norm_module}")
             all_passed = False
+    
+    # Specific critical assertion for layer 0 post-norm
+    norm_module_0 = get_correct_norm_module(post_model, 0, probe_after_block=True)
+    if norm_module_0 is not post_model.blocks[0].ln2:
+        print(f"❌ CRITICAL: Post-norm layer 0 uses wrong γ! Expected block[0].ln2, got {norm_module_0}")
+        all_passed = False
     
     return all_passed
 

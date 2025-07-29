@@ -71,17 +71,17 @@ The codebase distinguishes between:
 - **Entropy tracking**: Per-layer uncertainty measurement
 - **Top-k analysis**: Configurable via `TOP_K_RECORD` and `TOP_K_VERBOSE`
 
-### Recent Improvements (Section 1.1 Fix - COMPLETE & VERIFIED)
+### Recent Improvements (Section 1.1 Fix - FINAL & VERIFIED)
 - **✅ Fixed RMSNorm epsilon placement**: Epsilon now correctly placed inside sqrt as per official formula
 - **✅ Architecture-aware γ selection**: 
   - Pre-norm models (Llama, Mistral, Gemma): Use **next block's ln1** (or ln_final for last layer)
-  - Post-norm models (GPT-J, GPT-Neo): Use **current block's ln2**
-- **✅ Robust architecture detection**: `detect_model_architecture()` examines block structure to correctly distinguish pre/post-norm
-- **✅ Multi-layer KL sanity test**: `--self-test` validates γ=1 vs learned γ across 25%, 50%, 75% depth layers
-- **✅ Comprehensive unit tests**: `test_normalization.py` validates both pre-norm AND post-norm logic
-- **✅ Eliminated scaling artifacts**: Both pre-norm and post-norm models now have correct γ scaling
+  - Post-norm models (GPT-J, GPT-Neo, Falcon): Use **current block's ln2**
+- **✅ Structural architecture detection**: `detect_model_architecture()` examines **last child module** to reliably distinguish architectures
+- **✅ Multi-layer KL sanity test**: `kl_sanity_test.py` validates γ=1 vs learned γ across multiple depth layers (25%, 50%, 75%)
+- **✅ Critical unit test assertions**: `test_normalization.py` includes explicit post-norm detection and γ selection validation
+- **✅ Fail-fast behavior**: CLI `--self-test` aborts analysis if scaling validation fails
 
-**Critical fix**: This addresses the scaling bug where pre-norm models were using wrong γ (inflating/deflating logits by γ_{L+1}/γ_L ratios), which could create spurious "early semantic meaning" and undermine the philosophical claims about nominalism vs realism. Post-norm models are also now correctly handled.
+**Critical achievement**: The architecture detector now uses **structural analysis** (examining if the last child module is a normalization layer) rather than attribute presence, correctly identifying GPT-J/Falcon/NeoX as post-norm. This eliminates the γ_{L+1}/γ_L scaling artifacts that could create spurious "early semantic meaning" across **all** supported model families.
 
 ## Philosophical Context
 
