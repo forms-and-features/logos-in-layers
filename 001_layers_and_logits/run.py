@@ -67,6 +67,45 @@ def _get_rms_scale(norm_mod):
     params = list(norm_mod.parameters(recurse=False))
     return params[0] if len(params) == 1 else None
 
+def get_correct_norm_module(model, layer_idx, probe_after_block=True):
+    """
+    Select the correct normalization module based on probe timing.
+    
+    Args:
+        model: The transformer model
+        layer_idx: Which layer we're probing
+        probe_after_block: Whether probing after block completion (uses ln2) or before (uses ln1)
+    
+    Returns:
+        The appropriate normalization module or None
+    """
+    if layer_idx >= len(model.blocks):
+        # Final layer - use final norm
+        return getattr(model, 'ln_final', None)
+    
+    block = model.blocks[layer_idx]
+    
+    # For post-block probing, use ln2 (if exists), otherwise ln1
+    if probe_after_block and hasattr(block, 'ln2'):
+        return block.ln2
+    else:
+        return getattr(block, 'ln1', None)
+
+def detect_model_architecture(model):
+    """
+    Detect if model uses Pre-Norm or Post-Norm architecture.
+    
+    Returns:
+        str: 'pre_norm' or 'post_norm'
+    """
+    # Check first block structure to infer architecture
+    if len(model.blocks) > 0:
+        block = model.blocks[0]
+        # Post-norm typically has ln2, pre-norm typically only ln1
+        if hasattr(block, 'ln2'):
+            return 'post_norm'
+    return 'pre_norm'
+
 def rms_lens(resid, gamma, eps=1e-5):
     """
     Apply RMS normalization with learnable scale parameter.
@@ -93,7 +132,8 @@ def apply_norm_or_skip(residual: torch.Tensor, norm_module):
     """
     Return the residual stream after applying the model's own normalisation layer.
     Works for both RMSNorm (no bias) and LayerNorm (γ *and* β kept intact).
-
+    
+    Fixed epsilon placement: eps is now INSIDE the sqrt for RMSNorm as per the official formula.
     This runs under torch.no_grad() so it incurs no autograd overhead.
     """
     if norm_module is None:
@@ -109,17 +149,19 @@ def apply_norm_or_skip(residual: torch.Tensor, norm_module):
             bias   = norm_module.bias.to(residual.dtype)
             return normalized * weight + bias
         else:
-            # Gracefully handle different RMSNorm variants that may expose the scale
-            # parameter under various attribute names (e.g. `.w`, `.weight`, `.scale`, `.gamma`).
-            denom = residual.norm(dim=-1, keepdim=True) / math.sqrt(residual.size(-1))
+            # RMSNorm with correct epsilon placement (INSIDE sqrt)
+            # Official formula: x / sqrt(mean(x^2) + eps) * gamma
+            rms = torch.sqrt(residual.pow(2).mean(-1, keepdim=True) + norm_module.eps)
+            normalized = residual / rms
+            
             scale = _get_rms_scale(norm_module)
             if scale is not None:
                 # Detach to avoid autograd bookkeeping and match device & dtype
                 scale = scale.detach().to(residual.device, dtype=residual.dtype)
-                return residual / (denom + norm_module.eps) * scale
+                return normalized * scale
             else:
                 # Fallback: no learned scale present (rare but possible)
-                return residual / (denom + norm_module.eps)
+                return normalized
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -512,7 +554,8 @@ def run_experiment_for_model(model_id, output_files):
                 if USE_NORM_LENS:
                     # Use the actual first normalization layer instead of synthetic γ=1
                     print("[diagnostic] Applying real ln1 normalization to embeddings (not synthetic γ=1)")
-                    resid = apply_norm_or_skip(resid, model.blocks[0].ln1)
+                    norm_module = get_correct_norm_module(model, 0, probe_after_block=False)
+                    resid = apply_norm_or_skip(resid, norm_module)
                 
                 # Vectorized unembedding for all positions  
                 resid_cast = safe_cast_for_unembed(resid[0], model.unembed.W_U)
@@ -612,16 +655,9 @@ def run_experiment_for_model(model_id, output_files):
                     
                     # Apply normalization if requested
                     if USE_NORM_LENS:
-                        # For pre-LN models, apply ln_final on last layer, otherwise use ln2 for post-block residuals
-                        if layer == n_layers - 1 and hasattr(model, 'ln_final'):
-                            resid = apply_norm_or_skip(resid, model.ln_final)
-                        else:
-                            # FIXED: Use ln2 (MLP-pre norm) instead of ln1 for post-block residuals
-                            # ln2 stats better match the post-attention, pre-MLP state which is closer to post-block
-                            norm_layer = model.blocks[layer].ln2 if hasattr(model.blocks[layer], 'ln2') else model.blocks[layer].ln1
-                            
-                            # Use the unified normalization function that handles both LayerNorm and RMSNorm
-                            resid = apply_norm_or_skip(resid, norm_layer)
+                        # Use the correct normalization module based on probe timing and architecture
+                        norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
+                        resid = apply_norm_or_skip(resid, norm_module)
                     
                     # Vectorized unembedding for all positions
                     resid_cast = safe_cast_for_unembed(resid[0], model.unembed.W_U)
@@ -863,13 +899,16 @@ def run_experiment_for_model(model_id, output_files):
         print("=== END OF INSPECTING ==============\n")
         
         # Collect model stats data
+        architecture = detect_model_architecture(model)
+        print(f"Detected architecture: {architecture}")
         stats_record = {
             "type": "model_stats",
             "num_layers": model.cfg.n_layers,
             "d_model": model.cfg.d_model,
             "n_heads": model.cfg.n_heads,
             "d_vocab": model.cfg.d_vocab,
-            "n_ctx": model.cfg.n_ctx
+            "n_ctx": model.cfg.n_ctx,
+            "architecture": architecture
         }
         json_data["model_stats"] = stats_record
         
