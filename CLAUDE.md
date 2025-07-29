@@ -42,6 +42,11 @@ cd 001_layers_and_logits && python run.py
 
 # Single model analysis
 cd 001_layers_and_logits && python run.py --models meta-llama/Meta-Llama-3-8B
+
+# Run KL sanity test to validate normalization scaling
+cd 001_layers_and_logits && python run.py --self-test meta-llama/Meta-Llama-3-8B
+# Or run standalone:
+cd 001_layers_and_logits && python kl_sanity_test.py meta-llama/Meta-Llama-3-8B
 ```
 
 ## Code Architecture
@@ -53,6 +58,7 @@ The codebase distinguishes between:
 
 ### Key Components
 - **Logit Lens Pipeline**: `001_layers_and_logits/run.py` implements layer-by-layer token prediction analysis
+- **KL Sanity Test**: `001_layers_and_logits/kl_sanity_test.py` validates normalization scaling correctness
 - **Deterministic Execution**: SEED=316 with torch deterministic algorithms for reproducible results
 - **Output Formats**: 
   - JSON metadata files with run configuration
@@ -65,15 +71,17 @@ The codebase distinguishes between:
 - **Entropy tracking**: Per-layer uncertainty measurement
 - **Top-k analysis**: Configurable via `TOP_K_RECORD` and `TOP_K_VERBOSE`
 
-### Recent Improvements (Section 1.1 Fix - COMPLETE)
+### Recent Improvements (Section 1.1 Fix - COMPLETE & VERIFIED)
 - **✅ Fixed RMSNorm epsilon placement**: Epsilon now correctly placed inside sqrt as per official formula
-- **✅ Architecture-aware γ selection**: Pre-norm models use **next block's ln1** (or ln_final), post-norm uses current block's ln2
-- **✅ Robust architecture detection**: `detect_model_architecture()` properly identifies Pre-Norm vs Post-Norm 
-- **✅ KL sanity test**: `--self-test` flag validates γ=1 vs learned γ produce consistent KL divergence
-- **✅ Comprehensive unit tests**: `test_normalization.py` validates all scaling components
-- **✅ Eliminated scaling artifacts**: Pre-norm models no longer have mis-scaled early-layer logits
+- **✅ Architecture-aware γ selection**: 
+  - Pre-norm models (Llama, Mistral, Gemma): Use **next block's ln1** (or ln_final for last layer)
+  - Post-norm models (GPT-J, GPT-Neo): Use **current block's ln2**
+- **✅ Robust architecture detection**: `detect_model_architecture()` examines block structure to correctly distinguish pre/post-norm
+- **✅ Multi-layer KL sanity test**: `--self-test` validates γ=1 vs learned γ across 25%, 50%, 75% depth layers
+- **✅ Comprehensive unit tests**: `test_normalization.py` validates both pre-norm AND post-norm logic
+- **✅ Eliminated scaling artifacts**: Both pre-norm and post-norm models now have correct γ scaling
 
-This addresses the critical issue where pre-norm models (Llama, Mistral, Gemma, etc.) were using wrong γ scaling, which could create spurious "early semantic meaning" that would undermine the philosophical claims about nominalism vs realism.
+**Critical fix**: This addresses the scaling bug where pre-norm models were using wrong γ (inflating/deflating logits by γ_{L+1}/γ_L ratios), which could create spurious "early semantic meaning" and undermine the philosophical claims about nominalism vs realism. Post-norm models are also now correctly handled.
 
 ## Philosophical Context
 

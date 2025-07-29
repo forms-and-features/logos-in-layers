@@ -2,8 +2,8 @@
 """
 Unit test for normalization scaling fixes as specified in PROJECT_NOTES.md section 1.1.
 
-Tests that decoding layer 0 with γ=1 vs learned γ gives consistent KL,
-proving that scaling now matches semantics.
+Tests epsilon placement, architecture detection, and scaling consistency.
+For comprehensive KL testing across multiple layers, see kl_sanity_test.py.
 """
 
 import torch
@@ -114,11 +114,11 @@ def test_architecture_aware_norm_selection():
     class PostNormModel:
         class MockConfig:
             n_layers = 3
-            model_name = "bert-test"
+            model_name = "gpt-j-test"
             
         def __init__(self):
             self.cfg = self.MockConfig()
-            self.blocks = [MockBlock() for _ in range(3)]
+            self.blocks = [PostNormBlock() for _ in range(3)]
             self.ln_final = MockLayerNorm(64)
     
     class MockBlock:
@@ -128,6 +128,18 @@ def test_architecture_aware_norm_selection():
             self.attn = "mock_attention"
             self.mlp = "mock_mlp"
             self.hook_resid_pre = "mock_hook"
+    
+    class PostNormBlock:
+        """Mock post-norm block where the last child is a normalization layer"""
+        def __init__(self):
+            self.attn = "mock_attention"
+            self.ln1 = MockLayerNorm(64)  # After attention
+            self.mlp = "mock_mlp"
+            self.ln2 = MockLayerNorm(64)  # After MLP - this is the last child
+        
+        def children(self):
+            """Return children in order - ln2 should be last for post-norm detection"""
+            return [self.attn, self.ln1, self.mlp, self.ln2]
     
     class MockRMSNorm(torch.nn.Module):
         def __init__(self, d_model, eps=1e-5):
@@ -145,7 +157,7 @@ def test_architecture_aware_norm_selection():
     print(f"Pre-norm architecture detected: {pre_arch}")
     
     # Test cases for pre-norm
-    test_cases = [
+    pre_test_cases = [
         # (layer_idx, probe_after_block, expected_norm_source)
         (0, True, "next_block_ln1"),   # Should use block[1].ln1 
         (1, True, "next_block_ln1"),   # Should use block[2].ln1
@@ -155,7 +167,7 @@ def test_architecture_aware_norm_selection():
     
     all_passed = True
     
-    for layer_idx, probe_after_block, expected_source in test_cases:
+    for layer_idx, probe_after_block, expected_source in pre_test_cases:
         norm_module = get_correct_norm_module(pre_model, layer_idx, probe_after_block)
         
         if expected_source == "next_block_ln1" and layer_idx < len(pre_model.blocks) - 1:
@@ -168,9 +180,40 @@ def test_architecture_aware_norm_selection():
             expected_module = None
         
         if norm_module is expected_module:
-            print(f"  ✅ Layer {layer_idx}, after_block={probe_after_block}: correct norm module")
+            print(f"  ✅ PRE-NORM Layer {layer_idx}, after_block={probe_after_block}: correct norm module")
         else:
-            print(f"  ❌ Layer {layer_idx}, after_block={probe_after_block}: wrong norm module")
+            print(f"  ❌ PRE-NORM Layer {layer_idx}, after_block={probe_after_block}: wrong norm module")
+            print(f"     Expected: {expected_module}, Got: {norm_module}")
+            all_passed = False
+    
+    # Test post-norm model  
+    post_model = PostNormModel()
+    post_arch = detect_model_architecture(post_model)
+    print(f"Post-norm architecture detected: {post_arch}")
+    
+    # Test cases for post-norm
+    post_test_cases = [
+        # (layer_idx, probe_after_block, expected_norm_source)
+        (0, True, "current_block_ln2"),   # Should use block[0].ln2
+        (1, True, "current_block_ln2"),   # Should use block[1].ln2
+        (2, True, "current_block_ln2"),   # Should use block[2].ln2 (or ln_final)
+        (0, False, "current_block_ln1"),  # Should use block[0].ln1
+    ]
+    
+    for layer_idx, probe_after_block, expected_source in post_test_cases:
+        norm_module = get_correct_norm_module(post_model, layer_idx, probe_after_block)
+        
+        if expected_source == "current_block_ln2":
+            expected_module = getattr(post_model.blocks[layer_idx], 'ln2', None)
+        elif expected_source == "current_block_ln1":
+            expected_module = getattr(post_model.blocks[layer_idx], 'ln1', None)
+        else:
+            expected_module = None
+        
+        if norm_module is expected_module:
+            print(f"  ✅ POST-NORM Layer {layer_idx}, after_block={probe_after_block}: correct norm module")
+        else:
+            print(f"  ❌ POST-NORM Layer {layer_idx}, after_block={probe_after_block}: wrong norm module")
             print(f"     Expected: {expected_module}, Got: {norm_module}")
             all_passed = False
     

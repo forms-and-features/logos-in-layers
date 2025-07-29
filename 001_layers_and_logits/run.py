@@ -106,39 +106,42 @@ def get_correct_norm_module(model, layer_idx, probe_after_block=True):
 def detect_model_architecture(model):
     """
     Detect if model uses Pre-Norm or Post-Norm architecture by examining
-    where normalization layers are positioned within the transformer block.
+    the structure of transformer blocks.
     
     Pre-norm: Normalization before attention/MLP (Llama, Mistral, Gemma, etc.)
-    Post-norm: Normalization after attention/MLP (original Transformer)
+    Post-norm: Normalization after attention/MLP (GPT-J, GPT-Neo, original Transformer)
     
     Returns:
-        str: 'pre_norm' or 'post_norm'
+        str: 'pre_norm', 'post_norm', or 'unknown'
     """
-    if len(model.blocks) == 0:
+    if not model.blocks:
         return 'unknown'
     
-    block = model.blocks[0]
-    
-    # Check if model has transformer-lens style hooks to examine structure
-    if hasattr(block, 'hook_resid_pre'):
-        # Look for hook patterns that indicate norm placement
-        # Pre-norm: ln1 normalizes before attention, ln2 normalizes before MLP
-        # Post-norm: ln1 normalizes after attention, ln2 normalizes after MLP
+    # In post-norm blocks the VERY LAST sub-module is just a norm layer
+    # In pre-norm blocks the last sub-module is typically an MLP or attention
+    try:
+        first_block = model.blocks[0]
+        last_child = list(first_block.children())[-1]
         
-        # Most modern models (Llama, Mistral, Gemma) are pre-norm
-        # Check for common pre-norm indicators:
-        if (hasattr(block, 'ln1') and hasattr(block, 'ln2') and 
-            hasattr(block, 'attn') and hasattr(block, 'mlp')):
-            # Pre-norm is the dominant pattern in current models
+        # Check if the last child is a normalization layer
+        if isinstance(last_child, nn.LayerNorm):
+            return 'post_norm'
+        elif hasattr(first_block, 'ln1') and isinstance(last_child, type(first_block.ln1)):
+            # Also covers RMSNorm and other custom norm types
+            return 'post_norm'
+        else:
             return 'pre_norm'
-    
-    # Fallback: check for specific model patterns
-    model_name = getattr(model.cfg, 'model_name', '').lower()
-    if any(name in model_name for name in ['llama', 'mistral', 'gemma', 'qwen', 'yi']):
+            
+    except (AttributeError, IndexError):
+        # Fallback: check for specific model patterns by name
+        model_name = getattr(model.cfg, 'model_name', '').lower()
+        if any(name in model_name for name in ['gpt-j', 'gpt-neo', 'gpt2']):
+            return 'post_norm'
+        elif any(name in model_name for name in ['llama', 'mistral', 'gemma', 'qwen', 'yi']):
+            return 'pre_norm'
+        
+        # Conservative fallback - most modern models are pre-norm
         return 'pre_norm'
-    
-    # Conservative fallback
-    return 'pre_norm'
 
 
 def apply_norm_or_skip(residual: torch.Tensor, norm_module):
@@ -331,11 +334,16 @@ def run_experiment_for_model(model_id, output_files):
         
         # Run KL sanity test if requested
         if CLI_ARGS.self_test:
-            test_passed = run_kl_sanity_test(model, tokenizer)
-            if not test_passed:
-                print("❌ Self-test failed - normalization scaling is incorrect!")
-                return {"error": "Self-test failed"}
-            print("Continuing with normal evaluation...\n")
+            try:
+                from kl_sanity_test import run_kl_sanity_test
+                test_passed = run_kl_sanity_test(model, tokenizer)
+                if not test_passed:
+                    print("❌ Self-test failed - normalization scaling is incorrect!")
+                    return {"error": "Self-test failed"}
+                print("Continuing with normal evaluation...\n")
+            except ImportError as e:
+                print(f"❌ Could not import KL sanity test: {e}")
+                return {"error": "Self-test import failed"}
         
         # Clear cache after loading
         if torch.cuda.is_available():
@@ -1130,88 +1138,9 @@ def parse_cli():
                    help="Output directory to save CSV & JSON results (default: current script directory or value forwarded by parent launcher)")
     p.add_argument("--self-test",
                    action="store_true",
-                   help="Run KL sanity test to validate normalization scaling (PROJECT_NOTES.md section 1.1)")
+                   help="Run KL sanity test to validate normalization scaling (PROJECT_NOTES.md section 1.1). Can also run standalone: python kl_sanity_test.py MODEL_ID")
     return p.parse_args()
 
-def run_kl_sanity_test(model, tokenizer):
-    """
-    KL sanity test from PROJECT_NOTES.md section 1.1:
-    Decode layer 0 twice: once with γ=1, once with learned γ.
-    The KL between them should match KL between raw hidden states with/without γ.
-    """
-    print("\n" + "="*50)
-    print("RUNNING KL SANITY TEST (Section 1.1)")
-    print("="*50)
-    
-    test_prompt = "The capital of Germany is"
-    tokens = tokenizer.encode(test_prompt, return_tensors="pt").to(model.device)
-    
-    architecture = detect_model_architecture(model)
-    print(f"Architecture: {architecture}")
-    
-    with torch.no_grad():
-        # Get embeddings and run through first block
-        logits = model(tokens, output_hidden_states=True)
-        layer_0_resid = logits.hidden_states[1]  # After first transformer block
-        
-        # Test: Get correct norm module for layer 0 post-block
-        norm_module = get_correct_norm_module(model, 0, probe_after_block=True)
-        print(f"Using norm module: {norm_module}")
-        if norm_module is None:
-            print("❌ No norm module found - test cannot proceed")
-            return False
-        
-        # Test 1: Decode with learned γ
-        normalized_learned = apply_norm_or_skip(layer_0_resid, norm_module)
-        logits_learned = model.lm_head(normalized_learned)
-        
-        # Test 2: Decode with γ=1 (create modified norm module)
-        norm_module_unit = copy.deepcopy(norm_module)
-        if hasattr(norm_module_unit, 'weight'):
-            original_weight = norm_module_unit.weight.data.clone()
-            norm_module_unit.weight.data.fill_(1.0)
-        elif hasattr(norm_module_unit, 'scale'):
-            original_weight = norm_module_unit.scale.data.clone()
-            norm_module_unit.scale.data.fill_(1.0)
-        else:
-            print("❌ Norm module has no learnable scale - test cannot proceed")
-            return False
-        
-        normalized_unit = apply_norm_or_skip(layer_0_resid, norm_module_unit)
-        logits_unit = model.lm_head(normalized_unit)
-        
-        # Test 3: Raw residuals with and without scaling (as reference)
-        raw_resid = layer_0_resid
-        scaled_raw_resid = raw_resid * original_weight.to(raw_resid.device, dtype=raw_resid.dtype)
-        
-        # Compute KL divergences (use final token position)
-        final_pos = -1
-        
-        kl_logits = torch.kl_div(
-            torch.log_softmax(logits_unit[0, final_pos], dim=-1),
-            torch.softmax(logits_learned[0, final_pos], dim=-1),
-            reduction='sum'
-        ).item()
-        
-        kl_raw = torch.kl_div(
-            torch.log_softmax(model.lm_head(raw_resid)[0, final_pos], dim=-1),
-            torch.softmax(model.lm_head(scaled_raw_resid)[0, final_pos], dim=-1),
-            reduction='sum'
-        ).item()
-        
-        print(f"KL divergence (normalized logits): {kl_logits:.6f}")
-        print(f"KL divergence (raw residual):      {kl_raw:.6f}")
-        print(f"KL difference:                     {abs(kl_logits - kl_raw):.6f}")
-        
-        # The KL divergences should be approximately equal
-        tolerance = 0.1
-        if abs(kl_logits - kl_raw) < tolerance:
-            print("✅ PASS: KL divergences match - scaling is semantically consistent")
-            return True
-        else:
-            print(f"❌ FAIL: KL mismatch exceeds tolerance of {tolerance}")
-            print("This indicates the normalization scaling is incorrect!")
-            return False
 
 # Parse once and promote to module-global so run_single_model and main can see it
 CLI_ARGS = parse_cli()
