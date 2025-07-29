@@ -43,6 +43,8 @@ Apply RMS/LN γ and ε to the right residual stream; fix the ε‑outside‑sq
    (Wrap this in a helper; autodetect whether the architecture is Pre‑Norm or Post‑Norm.)
 3. Add a unit test that decodes layer 0 twice: once with γ=1, once with learned γ.  The KL between them should match KL between *raw* hidden states with and without γ, proving that scaling now matches semantics.
 
+**✅ IMPLEMENTATION STATUS: COMPLETED** - All epsilon placement, architecture detection, and validation requirements successfully implemented and tested.
+
 ---
 
 ### 1.2. Sub‑word‑aware copy‑collapse detector
