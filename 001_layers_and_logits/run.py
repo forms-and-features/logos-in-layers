@@ -272,8 +272,8 @@ def run_experiment_for_model(model_id, output_files):
 
         dtype = {
             "cuda": torch.float16,
-            # MPS currently doesn't support float16 weights reliably; use float32
-            "mps":  torch.float32,
+            # Use float16 on MPS to reduce memory footprint and avoid large-buffer MPS crashes
+            "mps":  torch.float16,
             "cpu":  torch.float32,
         }[device]
 
@@ -296,13 +296,23 @@ def run_experiment_for_model(model_id, output_files):
         # Load model
         try:
             print("Loading directly to target device…")
-            model = HookedTransformer.from_pretrained_no_processing(
-                model_id,
-                device_map      = "auto",
-                torch_dtype     = dtype,
-                low_cpu_mem_usage = True,
-                trust_remote_code = True,
-            )
+            if device == "cpu":
+                # Explicitly keep all weights on CPU – avoids Accelerate placing them on MPS
+                model = HookedTransformer.from_pretrained_no_processing(
+                    model_id,
+                    device="cpu",
+                    torch_dtype=dtype,
+                    low_cpu_mem_usage=True,
+                    trust_remote_code=True,
+                )
+            else:
+                model = HookedTransformer.from_pretrained_no_processing(
+                    model_id,
+                    device_map="auto",
+                    torch_dtype=dtype,
+                    low_cpu_mem_usage=True,
+                    trust_remote_code=True,
+                )
         except Exception as e:
             print(f"Direct loading to {device} failed: {e}")
             print("Falling back to CPU loading...")
