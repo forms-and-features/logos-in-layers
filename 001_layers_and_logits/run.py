@@ -226,7 +226,7 @@ def bits_entropy_from_logits(logits: torch.Tensor) -> float:
     Works on CPU / GPU and never returns NaN.
     """
     eps = 1e-40                                  # prevents log(0)
-    probs = logits.softmax(dim=-1).double()
+    probs = logits.softmax(dim=-1).float()
     log_probs = (probs + eps).log()
     ent_nats = -(probs * log_probs).sum()
     return (ent_nats / math.log(2)).item()
