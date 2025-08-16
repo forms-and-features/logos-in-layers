@@ -10,11 +10,11 @@ Goal: Iterative module extraction with immediate unit tests; preserve behavior a
 - [x] collapse_rules (copy-collapse, semantic-collapse) — moved to `layers_core/`; tests green
 - [x] device_policy (dtype choice, unembed promotion) — moved to `layers_core/`; tests green
 - [x] hooks (attach/detach residual hooks) — moved to `layers_core/`; tests green
-- [ ] run_dir (run-latest rotation)
+- [x] run_dir (run-latest rotation) — moved to `layers_core/`; tests green
 - [ ] update kl_sanity_test imports
 - [ ] cleanup re-exports in run.py
 
-Status counters: In Progress 0 · Done 6 · Pending 2
+Status counters: In Progress 0 · Done 7 · Pending 1
 
 ## Slice 1 — norm_utils (Done)
 
@@ -160,3 +160,11 @@ Notes:
 - `run.py` updated to use these helpers; behavior unchanged.
 - Tests added in `test_hooks.py` with minimal HookPoint/Handle mocks; verifies cache keys, handle removal, and positional hook presence.
 - Network/model-dependent tests (e.g., full `--self-test` with downloads) should be run locally with authenticated access; keep CPU-only unit tests fast and offline by default.
+## Slice 7 — run_dir (Done)
+
+Scope:
+- `setup_run_latest_directory(script_dir, now_fn=datetime.now)` moves the rotation logic out of run.py; supports testable injected clock.
+
+Notes:
+- Tests in `test_run_dir.py` cover initial creation, rotation using existing timestamp file, and fallback rotation without timestamp (uses `-rotated` suffix).
+- `run.py` imports and uses the helper unchanged semantically.

@@ -73,6 +73,7 @@ from layers_core.csv_io import write_csv_files
 from layers_core.collapse_rules import detect_copy_collapse, is_semantic_top1
 from layers_core.device_policy import choose_dtype, should_auto_promote_unembed
 from layers_core.hooks import build_cache_hook, attach_residual_hooks, detach_hooks
+from layers_core.run_dir import setup_run_latest_directory
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -80,51 +81,7 @@ def clean_model_name(model_id):
     clean_name = model_id.split('/')[-1]
     return clean_name
 
-def setup_run_latest_directory(script_dir):
-    """
-    Set up the run-latest directory with automatic rotation of previous runs.
-    
-    - If run-latest doesn't exist, create it
-    - If run-latest exists, rename it to run-YYYYMMDD-HHMM based on its timestamp file
-    - Create a new run-latest directory with a current timestamp file
-    
-    Returns the path to the run-latest directory.
-    """
-    run_latest_dir = os.path.join(script_dir, "run-latest")
-    current_timestamp = datetime.now().strftime("%Y%m%d-%H%M")
-    
-    # Check if run-latest already exists
-    if os.path.exists(run_latest_dir):
-        # Look for existing timestamp file to determine rotation name
-        timestamp_files = [f for f in os.listdir(run_latest_dir) if f.startswith("timestamp-")]
-        
-        if timestamp_files:
-            # Extract timestamp from existing file
-            timestamp_file = timestamp_files[0]  # Take the first one if multiple exist
-            old_timestamp = timestamp_file.replace("timestamp-", "")
-            rotated_name = f"run-{old_timestamp}"
-        else:
-            # No timestamp file found, use current time as fallback
-            rotated_name = f"run-{current_timestamp}-rotated"
-        
-        rotated_dir = os.path.join(script_dir, rotated_name)
-        
-        # Rename existing run-latest to rotated name
-        print(f"🔄 Rotating existing run-latest to: {rotated_name}")
-        os.rename(run_latest_dir, rotated_dir)
-    
-    # Create new run-latest directory
-    os.makedirs(run_latest_dir, exist_ok=True)
-    
-    # Create timestamp file in the new run-latest directory
-    timestamp_file = os.path.join(run_latest_dir, f"timestamp-{current_timestamp}")
-    with open(timestamp_file, 'w', encoding='utf-8') as f:
-        f.write(f"Experiment started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-    
-    print(f"📁 Created run-latest directory: {run_latest_dir}")
-    print(f"⏰ Created timestamp file: timestamp-{current_timestamp}")
-    
-    return run_latest_dir
+## run-latest helper moved to layers_core.run_dir
 
 ## numerics helpers moved to layers_core.numerics
 
