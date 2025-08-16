@@ -114,6 +114,40 @@ Notes:
 - 2025-08-16: Extracted device policy helpers; codified dtype selection and auto unembed promotion; added unit tests.
 - 2025-08-16: Extracted hooks helpers; centralized attachment and cleanup; added unit tests with mocks.
 
+## Next Steps
+
+Repo Structure and Reuse Across Experiments
+- Keep `001_layers_and_logits/layers_core` as-is for now; when starting `002_*`, lift it to a top-level `experiments_core/` (or `logos_core/`).
+- Provide temporary shims: re-export `experiments_core.*` from `001_layers_and_logits/layers_core/__init__.py` so 001 keeps working while 002 imports the new core directly.
+- Keep each experiment self-contained (CLI, prompts, results), depending only on shared core.
+
+Anticipating PROJECT_NOTES.md (future experiments)
+- Adapters (later): introduce a minimal `ModelAdapter` abstraction for tokenize/forward/hooks/unembed; start with HookedTransformer, add HF-only/multimodal later. Don’t change runtime yet; prototype adapters in tests first.
+- Probes (later): keep probes as small functions/classes returning tensors/records (residual lens, ablations, patching). Avoid plugin frameworks; simple callables suffice.
+- Metrics (later): use a simple dict registry `{name: fn}` with a tiny signature contract; no heavy plugin system.
+
+Testing Strategy (scalable)
+- Unit: CPU-only with mocks; add a tiny `MockModelAdapter` to test probes/metrics without network/GPUs.
+- Contract: golden CSV schema tests per experiment; JSON sanity checks (e.g., `L_copy`/`L_semantic`).
+- Marks: decorate network/download tests; default `-m "not network"` in pytest.ini.
+- CLI smoke: one tiny path test per experiment that uses mocks (no downloads) to catch wiring regressions.
+
+Migration Path (low risk)
+- Do nothing now; when `experiments_core/` is created, move modules and add re-export shims in `001_layers_and_logits/layers_core`.
+- Update new experiments to import from `experiments_core`. Flip 001 imports later once stable; remove shims at the end.
+
+Avoid Over-Engineering
+- No global configuration system; prefer small per-experiment dataclasses and explicit parameters (as done with `force_fp32_unembed`).
+- No plugin frameworks; simple callables and dict registries are enough.
+- Don’t unify reporting yet; just stabilize CSV schemas so downstream dashboards can evolve separately.
+
+Quick Wins (small, high-value)
+- Stabilize test harness: add `pytest.ini`, make CWD-agnostic self-test, and a `scripts/run_cpu_tests.sh` runner using `venv/bin/python` per test.
+- Tighten public API: re-export helpers in `layers_core/__init__.py`; add minimal docstrings/type hints (mypy optional).
+- CLI/Config: introduce a small `config.py` dataclass and thread it through `run_experiment_for_model` (no behavior change).
+- Docs: update README to mention `layers_core` and testing strategy; add “add a slice” guidance here.
+- Guardrails: add a lightweight orchestrator smoke test using mocks; consider pre-commit (black/isort/ruff) later.
+
 ## Quick Run
 
 - Run only this slice’s tests (CPU): `pytest -q 001_layers_and_logits -k norm_utils -x`
