@@ -58,115 +58,13 @@ else:
     CONFIRMED_MODELS = MPS_SAFE_MODELS
     print("⚠️  CUDA not available - running only MPS-safe models")
 
-# --- helpers ---------------------------------------------------------------
-RMS_ATTR_CANDIDATES = ("w", "weight", "scale", "gamma")
-
-def _get_rms_scale(norm_mod):
-    for attr in RMS_ATTR_CANDIDATES:
-        if hasattr(norm_mod, attr):
-            return getattr(norm_mod, attr)
-    params = list(norm_mod.parameters(recurse=False))
-    return params[0] if len(params) == 1 else None
-
-def get_correct_norm_module(model, layer_idx, probe_after_block=True):
-    """
-    Select the correct normalization module based on probe timing and architecture.
-    
-    This is the critical fix from PROJECT_NOTES.md section 1.1:
-    - Pre-norm: Use NEXT block's ln1 (or ln_final for last layer)  
-    - Post-norm: Use current block's ln2
-    
-    Args:
-        model: The transformer model
-        layer_idx: Which layer we're probing
-        probe_after_block: Whether probing after block completion
-    
-    Returns:
-        The appropriate normalization module or None
-    """
-    if layer_idx >= len(model.blocks):
-        return getattr(model, 'ln_final', None)
-
-    post_norm = detect_model_architecture(model) == 'post_norm'
-
-    if probe_after_block:
-        if post_norm:
-            # Post-norm: use current block's ln2
-            return getattr(model.blocks[layer_idx], 'ln2', None)
-        else:
-            # Pre-norm: use NEXT block's ln1, or ln_final for last block
-            if layer_idx + 1 < len(model.blocks):
-                return getattr(model.blocks[layer_idx + 1], 'ln1', None)
-            else:
-                return getattr(model, 'ln_final', None)
-    else:
-        # Probing before block: always use current block's ln1
-        return getattr(model.blocks[layer_idx], 'ln1', None)
-
-def detect_model_architecture(model):
-    """
-    Returns 'post_norm' if ln2 comes after mlp in the block ordering;
-    otherwise 'pre_norm'. This works for GPT-J, NeoX, Falcon vs Llama families.
-    
-    Pre-norm: Normalization before attention/MLP (Llama, Mistral, Gemma, etc.)
-    Post-norm: Normalization after attention/MLP (GPT-J, GPT-Neo, original Transformer)
-    
-    Returns:
-        str: 'pre_norm' or 'post_norm'
-    """
-    if not model.blocks:
-        return 'pre_norm'  # Default fallback
-
-    # Look at relative ordering of ln2 vs mlp to handle HookPoints correctly
-    block = model.blocks[0]
-    kids = list(block.children())
-    
-    if hasattr(block, 'ln2') and hasattr(block, 'mlp'):
-        try:
-            ln2_idx = kids.index(block.ln2)
-            mlp_idx = kids.index(block.mlp)
-            return 'post_norm' if ln2_idx > mlp_idx else 'pre_norm'
-        except ValueError:
-            # Fallback if ln2 or mlp not found in children
-            pass
-    
-    return 'pre_norm'
-
-
-def apply_norm_or_skip(residual: torch.Tensor, norm_module):
-    """
-    Return the residual stream after applying the model's own normalisation layer.
-    Works for both RMSNorm (no bias) and LayerNorm (γ *and* β kept intact).
-    
-    Fixed epsilon placement: eps is now INSIDE the sqrt for RMSNorm as per the official formula.
-    This runs under torch.no_grad() so it incurs no autograd overhead.
-    """
-    if norm_module is None:
-        return residual  # some models expose pre-norm residuals
-
-    with torch.no_grad():
-        if isinstance(norm_module, torch.nn.LayerNorm):
-            # --- faithful LayerNorm -----------------------------------------
-            mean = residual.mean(dim=-1, keepdim=True)
-            var  = residual.var(dim=-1, unbiased=False, keepdim=True)  # same as LN
-            normalized = (residual - mean) / torch.sqrt(var + norm_module.eps)
-            weight = norm_module.weight.to(residual.dtype)
-            bias   = norm_module.bias.to(residual.dtype)
-            return normalized * weight + bias
-        else:
-            # RMSNorm with correct epsilon placement (INSIDE sqrt)
-            # Official formula: x / sqrt(mean(x^2) + eps) * gamma
-            rms = torch.sqrt(residual.pow(2).mean(-1, keepdim=True) + norm_module.eps)
-            normalized = residual / rms
-            
-            scale = _get_rms_scale(norm_module)
-            if scale is not None:
-                # Detach to avoid autograd bookkeeping and match device & dtype
-                scale = scale.detach().to(residual.device, dtype=residual.dtype)
-                return normalized * scale
-            else:
-                # Fallback: no learned scale present (rare but possible)
-                return normalized
+# --- helpers (extracted to norm_utils) --------------------------------------
+from layers_core.norm_utils import (
+    _get_rms_scale,
+    apply_norm_or_skip,
+    detect_model_architecture,
+    get_correct_norm_module,
+)
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
