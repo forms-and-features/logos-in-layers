@@ -69,6 +69,7 @@ from layers_core.collapse_rules import detect_copy_collapse, is_semantic_top1
 from layers_core.device_policy import choose_dtype, should_auto_promote_unembed
 from layers_core.hooks import build_cache_hook, attach_residual_hooks, detach_hooks
 from layers_core.run_dir import setup_run_latest_directory
+from layers_core.config import ExperimentConfig
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -79,7 +80,7 @@ def clean_model_name(model_id):
  
 
 
-def run_experiment_for_model(model_id, output_files):
+def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
     """Run the complete experiment for a single model and write results to files"""
     
     def evaluate_model():
@@ -92,7 +93,7 @@ def run_experiment_for_model(model_id, output_files):
         detected_architecture = None
         
         # ---- device & dtype ---------------------------------------------------
-        device = CLI_ARGS.device
+        device = config.device
         if device == "cuda" and not torch.cuda.is_available():
             print("⚠️  CUDA requested but not available; falling back to CPU.")
             device = "cpu"
@@ -151,7 +152,7 @@ def run_experiment_for_model(model_id, output_files):
         model.eval()  # Hygiene: avoid dropout etc.
         
         # Run KL sanity test if requested
-        if CLI_ARGS.self_test:
+        if config.self_test:
             try:
                 from kl_sanity_test import run_kl_sanity_test
                 test_passed = run_kl_sanity_test(model, tokenizer)
@@ -202,7 +203,7 @@ def run_experiment_for_model(model_id, output_files):
             UNEMBED_DTYPE = torch.float32  # refresh after promotion
         
         # Apply CLI-based FP32 unembed promotion if requested
-        if CLI_ARGS.fp32_unembed:
+        if config.fp32_unembed:
             with torch.no_grad():
                 model.unembed.W_U.data = model.unembed.W_U.data.float()
                 if hasattr(model.unembed, 'b_U') and model.unembed.b_U is not None:
@@ -357,7 +358,7 @@ def run_experiment_for_model(model_id, output_files):
                     print("Using RAW residual stream (normalization disabled)")
                 print("Note: Shown probabilities are from full softmax (calibrated and comparable)")
                 print("copy-collapse: first layer where top-1 token is in prompt & p>0.9")
-                if CLI_ARGS.keep_residuals:
+                if config.keep_residuals:
                     print("💾 Saving residual tensors to disk (--keep-residuals enabled)")
                 print("-" * 60)
                 
@@ -384,11 +385,11 @@ def run_experiment_for_model(model_id, output_files):
                     resid = apply_norm_or_skip(resid, norm_module)
                 
                 # Vectorized unembedding for all positions  
-                resid_cast = safe_cast_for_unembed(resid[0], model.unembed.W_U, force_fp32_unembed=CLI_ARGS.fp32_unembed)
+                resid_cast = safe_cast_for_unembed(resid[0], model.unembed.W_U, force_fp32_unembed=config.fp32_unembed)
                 logits_all = model.unembed(resid_cast).float()  # [seq, d_vocab]
                 
                 # Save residuals if requested
-                if CLI_ARGS.keep_residuals:
+                if config.keep_residuals:
                     clean_name = clean_model_name(model_id)
                     resid_filename = f"{clean_name}_00_resid.pt"
                     resid_path = os.path.join(os.path.dirname(meta_filepath), resid_filename)
@@ -433,8 +434,8 @@ def run_experiment_for_model(model_id, output_files):
                 copy_collapse = detect_copy_collapse(
                     last_logits,
                     prompt_token_ids,
-                    copy_threshold=CLI_ARGS.copy_threshold,
-                    copy_margin=CLI_ARGS.copy_margin,
+                    copy_threshold=config.copy_threshold,
+                    copy_margin=config.copy_margin,
                     entropy_bits=last_entropy_bits,
                     entropy_fallback_threshold=1.0,
                 )
@@ -483,11 +484,11 @@ def run_experiment_for_model(model_id, output_files):
                         resid = apply_norm_or_skip(resid, norm_module)
                     
                     # Vectorized unembedding for all positions
-                    resid_cast = safe_cast_for_unembed(resid[0], model.unembed.W_U, force_fp32_unembed=CLI_ARGS.fp32_unembed)
+                    resid_cast = safe_cast_for_unembed(resid[0], model.unembed.W_U, force_fp32_unembed=config.fp32_unembed)
                     logits_all = model.unembed(resid_cast).float() # [seq, d_vocab]
                     
                     # Save residuals if requested
-                    if CLI_ARGS.keep_residuals:
+                    if config.keep_residuals:
                         clean_name = clean_model_name(model_id)
                         resid_filename = f"{clean_name}_{layer+1:02d}_resid.pt"
                         resid_path = os.path.join(os.path.dirname(meta_filepath), resid_filename)
@@ -532,8 +533,8 @@ def run_experiment_for_model(model_id, output_files):
                     copy_collapse = detect_copy_collapse(
                         last_logits,
                         prompt_token_ids,
-                        copy_threshold=CLI_ARGS.copy_threshold,
-                        copy_margin=CLI_ARGS.copy_margin,
+                        copy_threshold=config.copy_threshold,
+                        copy_margin=config.copy_margin,
                         entropy_bits=last_entropy_bits,
                         entropy_fallback_threshold=1.0,
                     )
@@ -794,7 +795,16 @@ def run_single_model(model_id):
     
     try:
         # Run the experiment - files are written directly
-        data = run_experiment_for_model(model_id, (meta_filepath, csv_filepath, pure_csv_filepath))
+        cfg = ExperimentConfig(
+            device=CLI_ARGS.device,
+            fp32_unembed=CLI_ARGS.fp32_unembed,
+            keep_residuals=CLI_ARGS.keep_residuals,
+            copy_threshold=CLI_ARGS.copy_threshold,
+            copy_margin=CLI_ARGS.copy_margin,
+            out_dir=out_dir,
+            self_test=CLI_ARGS.self_test,
+        )
+        data = run_experiment_for_model(model_id, (meta_filepath, csv_filepath, pure_csv_filepath), cfg)
         
         print(f"✅ Experiment complete. JSON metadata saved to: {meta_filepath}")
         print(f"✅ Records CSV saved to: {csv_filepath}")

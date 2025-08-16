@@ -32,6 +32,9 @@ from .hooks import (
 from .run_dir import (
     setup_run_latest_directory,
 )
+from .config import (
+    ExperimentConfig,
+)
 
 __all__ = [
     "_get_rms_scale",
@@ -55,4 +58,6 @@ __all__ = [
     "detach_hooks",
     # run dir
     "setup_run_latest_directory",
+    # config
+    "ExperimentConfig",
 ]
