@@ -70,6 +70,7 @@ from layers_core.numerics import (
     safe_cast_for_unembed,
 )
 from layers_core.csv_io import write_csv_files
+from layers_core.collapse_rules import detect_copy_collapse, is_semantic_top1
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -515,26 +516,16 @@ def run_experiment_for_model(model_id, output_files):
                 #  1.  Is this layer "copy-collapsed" (prompt echo)?   -> L_copy
                 #  2.  Does top-1 equal the ground-truth answer token? -> L_semantic
                 # ------------------------------------------------------------------- #
-                # --- STRONGER copy-collapse rule (prompt echo with margin) ----------
-                last_top2_probs, last_top2_indices = torch.topk(last_logits, 2, largest=True, sorted=True)
-                last_top2_probs = last_full_probs[last_top2_indices]
-                token_id_1, token_id_2 = last_top2_indices[0].item(), last_top2_indices[1].item()
-                prob_1, prob_2 = last_top2_probs[0].item(), last_top2_probs[1].item()
-                
-                copy_collapse = (
-                    token_id_1 in prompt_token_ids and
-                    prob_1 > CLI_ARGS.copy_threshold and
-                    (prob_1 - prob_2) > CLI_ARGS.copy_margin
+                copy_collapse = detect_copy_collapse(
+                    last_logits,
+                    prompt_token_ids,
+                    copy_threshold=CLI_ARGS.copy_threshold,
+                    copy_margin=CLI_ARGS.copy_margin,
+                    entropy_bits=last_entropy_bits,
+                    entropy_fallback_threshold=1.0,
                 )
-                
-                # (optional) fallback: treat entropy < 1 bit as copy as well
-                if not copy_collapse and last_entropy_bits < 1.0:
-                    copy_collapse = True
-                
-                entropy_collapse = last_entropy_bits <= 1.0      # keep for reference
-                # use new criterion for L_copy
-                collapsed = copy_collapse
-                is_answer = (last_top_tokens[0].strip() == "Berlin")
+                entropy_collapse = last_entropy_bits <= 1.0
+                is_answer = is_semantic_top1(last_top_tokens[0], "Berlin")
                 
                 record_extra = {
                     "copy_collapse": copy_collapse,
@@ -621,26 +612,16 @@ def run_experiment_for_model(model_id, output_files):
                     #  1.  Is this layer "copy-collapsed" (prompt echo)?   -> L_copy
                     #  2.  Does top-1 equal the ground-truth answer token? -> L_semantic
                     # ------------------------------------------------------------------- #
-                    # --- STRONGER copy-collapse rule (prompt echo with margin) ----------
-                    last_top2_probs, last_top2_indices = torch.topk(last_logits, 2, largest=True, sorted=True)
-                    last_top2_probs = last_full_probs[last_top2_indices]
-                    token_id_1, token_id_2 = last_top2_indices[0].item(), last_top2_indices[1].item()
-                    prob_1, prob_2 = last_top2_probs[0].item(), last_top2_probs[1].item()
-                    
-                    copy_collapse = (
-                        token_id_1 in prompt_token_ids and
-                        prob_1 > CLI_ARGS.copy_threshold and
-                        (prob_1 - prob_2) > CLI_ARGS.copy_margin
+                    copy_collapse = detect_copy_collapse(
+                        last_logits,
+                        prompt_token_ids,
+                        copy_threshold=CLI_ARGS.copy_threshold,
+                        copy_margin=CLI_ARGS.copy_margin,
+                        entropy_bits=last_entropy_bits,
+                        entropy_fallback_threshold=1.0,
                     )
-                    
-                    # (optional) fallback: treat entropy < 1 bit as copy as well
-                    if not copy_collapse and last_entropy_bits < 1.0:
-                        copy_collapse = True
-                    
-                    entropy_collapse = last_entropy_bits <= 1.0      # keep for reference
-                    # use new criterion for L_copy
-                    collapsed = copy_collapse
-                    is_answer = (last_top_tokens[0].strip() == "Berlin")
+                    entropy_collapse = last_entropy_bits <= 1.0
+                    is_answer = is_semantic_top1(last_top_tokens[0], "Berlin")
                     
                     record_extra = {
                         "copy_collapse": copy_collapse,

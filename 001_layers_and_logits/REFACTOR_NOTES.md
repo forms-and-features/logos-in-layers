@@ -6,15 +6,15 @@ Goal: Iterative module extraction with immediate unit tests; preserve behavior a
 
 - [x] norm_utils (apply_norm_or_skip, detect_model_architecture, get_correct_norm_module) — moved to `layers_core/`; tests green
 - [x] numerics (bits_entropy_from_logits, safe_cast_for_unembed) — moved to `layers_core/`; tests green
-- [ ] csv_io (records CSV, pure next-token CSV)
-- [ ] collapse_rules (copy-collapse, semantic-collapse)
+- [x] csv_io (records CSV, pure next-token CSV) — moved to `layers_core/`; tests green
+- [x] collapse_rules (copy-collapse, semantic-collapse) — moved to `layers_core/`; tests green
 - [ ] device_policy (dtype choice, unembed promotion)
 - [ ] hooks (attach/detach residual hooks)
 - [ ] run_dir (run-latest rotation)
 - [ ] update kl_sanity_test imports
 - [ ] cleanup re-exports in run.py
 
-Status counters: In Progress 0 · Done 2 · Pending 6
+Status counters: In Progress 0 · Done 4 · Pending 4
 
 ## Slice 1 — norm_utils (Done)
 
@@ -61,10 +61,29 @@ Notes:
 - norm_utils: ε placement; scaling equivalence (unit-normalize then γ); pre/post detection; norm selection for before/after and last layer.
 - numerics: uniform vs peaked entropy; stability on extremes; casting across fp16/bf16/fp32/int8; explicit `force_fp32_unembed` parameter.
 - csv_io: header, row length, rest_mass correctness, quoting.
-- collapse_rules: threshold+margin correctness; entropy fallback toggle; tokenization edge-cases.
+- collapse_rules: threshold+margin correctness; entropy fallback toggle; tokenization edge-cases; semantic equality via trimmed text.
 - device_policy: dtype table; Gemma bf16 override; FP32 unembed toggling.
 - hooks: only intended hooks attached; tensors detached; cleanup works.
 - run_dir: rotation with/without timestamp; deterministic via injected `now`.
+
+## Slice 3 — csv_io (Done)
+
+Scope:
+- `write_csv_files` for records and pure next-token CSVs; schema preserved (rest_mass, flags).
+
+Notes:
+- `run.py` updated to pass `TOP_K_VERBOSE` explicitly to writer.
+- Tests added in `test_csv_io.py` verifying headers, row lengths, and rest_mass.
+
+## Slice 4 — collapse_rules (Done)
+
+Scope:
+- `detect_copy_collapse` with threshold + margin + entropy fallback.
+- `is_semantic_top1` for trimmed string equality against ground truth.
+
+Notes:
+- `run.py` updated to use these helpers in both Layer 0 and per-layer pure next-token checks; behavior identical.
+- Tests added in `test_collapse_rules.py` for margin/threshold, entropy fallback, and semantic matching.
 
 ## Slice 2 — numerics (Done)
 
@@ -90,6 +109,8 @@ Notes:
 - 2025-08-16: Adopted iterative extraction (module + tests per slice); keep behavior identical; no output changes.
 - 2025-08-16: Created `layers_core/` subpackage for reusable helpers; added `conftest.py` to support absolute imports during tests.
 - 2025-08-16: Extracted numerics helpers; added explicit `force_fp32_unembed` flag and updated usage in `run.py`.
+- 2025-08-16: Extracted CSV I/O helpers; kept CSV schema stable and added unit tests.
+- 2025-08-16: Extracted collapse rules; centralized thresholds/margins and fallback semantics; added unit tests.
 
 ## Quick Run
 
