@@ -69,6 +69,7 @@ from layers_core.numerics import (
     bits_entropy_from_logits,
     safe_cast_for_unembed,
 )
+from layers_core.csv_io import write_csv_files
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -840,7 +841,7 @@ def run_experiment_for_model(model_id, output_files):
         meta_filepath, csv_filepath, pure_csv_filepath = output_files
         
         # Write CSV files FIRST (they need the full record lists)
-        write_csv_files(json_data, csv_filepath, pure_csv_filepath)
+        write_csv_files(json_data, csv_filepath, pure_csv_filepath, TOP_K_VERBOSE)
 
         # Strip bulky per-token records from JSON to keep it compact
         json_data_compact = {k: v for k, v in json_data.items()
@@ -857,82 +858,7 @@ def run_experiment_for_model(model_id, output_files):
         print(error_msg)
         raise
 
-def write_csv_files(json_data, csv_filepath, pure_csv_filepath):
-        """Write CSV files from collected JSON data"""
-        records = json_data["records"]
-        pure_next_token_records = json_data["pure_next_token_records"]
-        
-        # Save records to CSV
-        with open(csv_filepath, 'w', newline='', encoding='utf-8') as f_csv:
-            writer = csv.writer(
-                f_csv,
-                delimiter=",",              # stay with normal commas
-                quotechar='"',              # wrap any field that needs quoting
-                quoting=csv.QUOTE_MINIMAL,  # auto-quote only when required
-                escapechar="\\",            # …otherwise escape
-                lineterminator="\n",
-            )
-            # FIXED: Add rest_mass column to preserve full probability distribution
-            # Header: layer,pos,token,entropy + top-k pairs + rest_mass
-            header = ["layer","pos","token","entropy"]
-            # Pad all rows to TOP_K_VERBOSE slots
-            for i in range(1, TOP_K_VERBOSE + 1):
-                header.extend([f"top{i}", f"prob{i}"])
-            header.append("rest_mass")  # Probability mass not in top-k
-            writer.writerow(header)
-            for rec in records:
-                row = [rec.get("layer"), rec.get("pos"), rec.get("token"), rec.get("entropy")]
-                # Pad each record to TOP_K_VERBOSE entries
-                topk_list = rec.get("topk", [])
-                topk_prob_sum = 0.0
-                for j in range(TOP_K_VERBOSE):
-                    if j < len(topk_list):
-                        tok, prob = topk_list[j]
-                        topk_prob_sum += prob
-                    else:
-                        tok, prob = "", ""
-                    row.extend([tok, prob])
-                # Add rest-of-probability-mass for offline entropy/KL calculations
-                rest_mass = max(0.0, 1.0 - topk_prob_sum)  # Ensure non-negative
-                row.append(rest_mass)
-                writer.writerow(row)
-
-        # Save pure next-token records to separate CSV (cleaner entropy analysis)
-        with open(pure_csv_filepath, 'w', newline='', encoding='utf-8') as f_csv:
-            writer = csv.writer(
-                f_csv,
-                delimiter=",",
-                quotechar='"',
-                quoting=csv.QUOTE_MINIMAL,
-                escapechar="\\",
-                lineterminator="\n",
-            )
-            # Header includes new collapse detection flags
-            header = ["layer","pos","token","entropy"]
-            for i in range(1, TOP_K_VERBOSE + 1):
-                header.extend([f"top{i}", f"prob{i}"])
-            header.extend(["rest_mass", "copy_collapse", "entropy_collapse", "is_answer"])
-            writer.writerow(header)
-            for rec in pure_next_token_records:
-                row = [rec.get("layer"), rec.get("pos"), rec.get("token"), rec.get("entropy")]
-                topk_list = rec.get("topk", [])
-                topk_prob_sum = 0.0
-                for j in range(TOP_K_VERBOSE):
-                    if j < len(topk_list):
-                        tok, prob = topk_list[j]
-                        topk_prob_sum += prob
-                    else:
-                        tok, prob = "", ""
-                    row.extend([tok, prob])
-                rest_mass = max(0.0, 1.0 - topk_prob_sum)
-                # Add the new collapse detection flags
-                row.extend([
-                    rest_mass,
-                    rec.get("copy_collapse", ""),
-                    rec.get("entropy_collapse", ""),
-                    rec.get("is_answer", "")
-                ])
-                writer.writerow(row)
+## csv writing helpers moved to layers_core.csv_io
 
 def run_single_model(model_id):
     """Run experiment for a single model - used when called as subprocess"""

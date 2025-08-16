@@ -1,0 +1,80 @@
+import csv
+from typing import Dict, Any, List
+
+
+def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filepath: str, top_k_verbose: int) -> None:
+    """Write CSV files from collected JSON data.
+
+    - Records CSV: per-layer, per-position rows with padded top-k and rest_mass.
+    - Pure next-token CSV: last-position only per layer with collapse flags.
+    """
+    records: List[Dict[str, Any]] = json_data["records"]
+    pure_next_token_records: List[Dict[str, Any]] = json_data["pure_next_token_records"]
+
+    # Save records to CSV
+    with open(csv_filepath, 'w', newline='', encoding='utf-8') as f_csv:
+        writer = csv.writer(
+            f_csv,
+            delimiter=",",
+            quotechar='"',
+            quoting=csv.QUOTE_MINIMAL,
+            escapechar="\\",
+            lineterminator="\n",
+        )
+        header = ["layer", "pos", "token", "entropy"]
+        for i in range(1, top_k_verbose + 1):
+            header.extend([f"top{i}", f"prob{i}"])
+        header.append("rest_mass")
+        writer.writerow(header)
+
+        for rec in records:
+            row = [rec.get("layer"), rec.get("pos"), rec.get("token"), rec.get("entropy")]
+            topk_list = rec.get("topk", [])
+            topk_prob_sum = 0.0
+            for j in range(top_k_verbose):
+                if j < len(topk_list):
+                    tok, prob = topk_list[j]
+                    topk_prob_sum += prob
+                else:
+                    tok, prob = "", ""
+                row.extend([tok, prob])
+            rest_mass = max(0.0, 1.0 - topk_prob_sum)
+            row.append(rest_mass)
+            writer.writerow(row)
+
+    # Save pure next-token records to separate CSV
+    with open(pure_csv_filepath, 'w', newline='', encoding='utf-8') as f_csv:
+        writer = csv.writer(
+            f_csv,
+            delimiter=",",
+            quotechar='"',
+            quoting=csv.QUOTE_MINIMAL,
+            escapechar="\\",
+            lineterminator="\n",
+        )
+        header = ["layer", "pos", "token", "entropy"]
+        for i in range(1, top_k_verbose + 1):
+            header.extend([f"top{i}", f"prob{i}"])
+        header.extend(["rest_mass", "copy_collapse", "entropy_collapse", "is_answer"])
+        writer.writerow(header)
+
+        for rec in pure_next_token_records:
+            row = [rec.get("layer"), rec.get("pos"), rec.get("token"), rec.get("entropy")]
+            topk_list = rec.get("topk", [])
+            topk_prob_sum = 0.0
+            for j in range(top_k_verbose):
+                if j < len(topk_list):
+                    tok, prob = topk_list[j]
+                    topk_prob_sum += prob
+                else:
+                    tok, prob = "", ""
+                row.extend([tok, prob])
+            rest_mass = max(0.0, 1.0 - topk_prob_sum)
+            row.extend([
+                rest_mass,
+                rec.get("copy_collapse", ""),
+                rec.get("entropy_collapse", ""),
+                rec.get("is_answer", ""),
+            ])
+            writer.writerow(row)
+

@@ -110,3 +110,11 @@ Suggested “all CPU-only tests” run locally:
   - `venv/bin/python 001_layers_and_logits/test_norm_utils.py`
   - `venv/bin/python 001_layers_and_logits/test_normalization.py`
   - `cd 001_layers_and_logits && ../venv/bin/python test_refactored_self_test.py && cd -`
+
+## Testing Strategy
+
+- In sandboxed/CI environments, avoid chaining multiple test invocations in a single shell command (e.g., using `&&`). Long, chained commands are prone to timeouts and state loss; prefer running each test as a separate command.
+- Prefer direct interpreter invocations over shell activation: `venv/bin/python <test>.py` or `venv/bin/pytest ...`.
+- Path-sensitive tests should set CWD explicitly or resolve target paths relative to `__file__` to avoid failures when running from repo root.
+- For quick iteration: run slice-specific tests only (e.g., `venv/bin/python 001_layers_and_logits/test_numerics.py`). Use pytest locally for broader runs: `venv/bin/pytest -q 001_layers_and_logits -k "norm_utils or numerics"`.
+- Network/model-dependent tests (e.g., full `--self-test` with downloads) should be run locally with authenticated access; keep CPU-only unit tests fast and offline by default.
