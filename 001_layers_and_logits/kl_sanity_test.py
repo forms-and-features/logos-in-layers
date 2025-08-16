@@ -9,7 +9,7 @@ This validates that the normalization scaling fixes are working correctly.
 
 import torch
 import copy
-from run import detect_model_architecture, get_correct_norm_module, apply_norm_or_skip
+from layers_core.norm_utils import detect_model_architecture, get_correct_norm_module, apply_norm_or_skip
 
 
 def run_kl_sanity_test(model, tokenizer):

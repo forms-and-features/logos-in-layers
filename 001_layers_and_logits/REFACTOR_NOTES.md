@@ -11,10 +11,10 @@ Goal: Iterative module extraction with immediate unit tests; preserve behavior a
 - [x] device_policy (dtype choice, unembed promotion) — moved to `layers_core/`; tests green
 - [x] hooks (attach/detach residual hooks) — moved to `layers_core/`; tests green
 - [x] run_dir (run-latest rotation) — moved to `layers_core/`; tests green
-- [ ] update kl_sanity_test imports
+- [x] update kl_sanity_test imports
 - [ ] cleanup re-exports in run.py
 
-Status counters: In Progress 0 · Done 7 · Pending 1
+Status counters: In Progress 0 · Done 8 · Pending 0
 
 ## Slice 1 — norm_utils (Done)
 
@@ -168,3 +168,10 @@ Scope:
 Notes:
 - Tests in `test_run_dir.py` cover initial creation, rotation using existing timestamp file, and fallback rotation without timestamp (uses `-rotated` suffix).
 - `run.py` imports and uses the helper unchanged semantically.
+## Slice 8 — kl_sanity_test imports (Done)
+
+Scope:
+- Point kl_sanity_test.py at `layers_core.norm_utils` instead of importing from `run.py` to avoid CLI side effects and tighten dependencies.
+
+Notes:
+- `test_refactored_self_test.py` remains compatible since `run.py` still exposes the same function names via imports; help text check unchanged.
