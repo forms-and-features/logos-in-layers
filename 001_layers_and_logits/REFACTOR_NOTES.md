@@ -5,7 +5,7 @@ Goal: Iterative module extraction with immediate unit tests; preserve behavior a
 ## Iteration Slices (Checklist)
 
 - [x] norm_utils (apply_norm_or_skip, detect_model_architecture, get_correct_norm_module) — moved to `layers_core/`; tests green
-- [ ] numerics (bits_entropy_from_logits, safe_cast_for_unembed)
+- [x] numerics (bits_entropy_from_logits, safe_cast_for_unembed) — moved to `layers_core/`; tests green
 - [ ] csv_io (records CSV, pure next-token CSV)
 - [ ] collapse_rules (copy-collapse, semantic-collapse)
 - [ ] device_policy (dtype choice, unembed promotion)
@@ -14,7 +14,7 @@ Goal: Iterative module extraction with immediate unit tests; preserve behavior a
 - [ ] update kl_sanity_test imports
 - [ ] cleanup re-exports in run.py
 
-Status counters: In Progress 0 · Done 1 · Pending 7
+Status counters: In Progress 0 · Done 2 · Pending 6
 
 ## Slice 1 — norm_utils (Done)
 
@@ -59,7 +59,26 @@ Notes:
 ## Test Matrix (per module)
 
 - norm_utils: ε placement; scaling equivalence (unit-normalize then γ); pre/post detection; norm selection for before/after and last layer.
-- numerics: uniform vs peaked entropy; stability on extremes; casting across fp16/bf16/fp32/int8.
+- numerics: uniform vs peaked entropy; stability on extremes; casting across fp16/bf16/fp32/int8; explicit `force_fp32_unembed` parameter.
+- csv_io: header, row length, rest_mass correctness, quoting.
+- collapse_rules: threshold+margin correctness; entropy fallback toggle; tokenization edge-cases.
+- device_policy: dtype table; Gemma bf16 override; FP32 unembed toggling.
+- hooks: only intended hooks attached; tensors detached; cleanup works.
+- run_dir: rotation with/without timestamp; deterministic via injected `now`.
+
+## Slice 2 — numerics (Done)
+
+Scope:
+- `bits_entropy_from_logits` (numerically safe entropy in bits)
+- `safe_cast_for_unembed` (dtype casting policy; preserves quantized kernels)
+
+Invariants:
+- Entropy equals log2(V) for uniform logits and ~0 for near-delta.
+- Casting does not upcast for quantized `W_U` (e.g., int8) and only forces fp32 when explicitly requested.
+
+Notes:
+- Introduced explicit parameter `force_fp32_unembed` (decouples helpers from CLI globals); updated `run.py` call sites accordingly.
+- Tests added in `test_numerics.py` (CPU-only) and run green with project venv.
 - csv_io: header, row length, rest_mass correctness, quoting.
 - collapse_rules: threshold+margin correctness; entropy fallback toggle; tokenization edge-cases.
 - device_policy: dtype table; Gemma bf16 override; FP32 unembed toggling.
@@ -70,6 +89,7 @@ Notes:
 
 - 2025-08-16: Adopted iterative extraction (module + tests per slice); keep behavior identical; no output changes.
 - 2025-08-16: Created `layers_core/` subpackage for reusable helpers; added `conftest.py` to support absolute imports during tests.
+- 2025-08-16: Extracted numerics helpers; added explicit `force_fp32_unembed` flag and updated usage in `run.py`.
 
 ## Quick Run
 

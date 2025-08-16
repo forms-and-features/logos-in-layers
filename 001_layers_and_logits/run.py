@@ -65,6 +65,10 @@ from layers_core.norm_utils import (
     detect_model_architecture,
     get_correct_norm_module,
 )
+from layers_core.numerics import (
+    bits_entropy_from_logits,
+    safe_cast_for_unembed,
+)
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -118,33 +122,7 @@ def setup_run_latest_directory(script_dir):
     
     return run_latest_dir
 
-def bits_entropy_from_logits(logits: torch.Tensor) -> float:
-    """
-    Shannon entropy in **bits** computed safely from raw logits.
-    Works on CPU / GPU and never returns NaN.
-    """
-    eps = 1e-40                                  # prevents log(0)
-    probs = logits.softmax(dim=-1).float()
-    log_probs = (probs + eps).log()
-    ent_nats = -(probs * log_probs).sum()
-    return (ent_nats / math.log(2)).item()
-
-
-def safe_cast_for_unembed(resid, W_U):
-    """
-    Return the residual stream casted to the *right* dtype for the
-    un-embedding.
-
-    * For ordinary models W_U.dtype is fp16 / bf16 / fp32 ⇒ cast as usual.
-    * For 8-bit-quantised weights W_U.dtype is int8  ⇒ keep activations
-      in their original float dtype (INT8 matmul kernels expect that).
-    """
-    if CLI_ARGS.fp32_unembed and W_U.dtype == torch.float32:
-        return resid.float()               # ensure activations match W_U dtype
-    elif torch.is_floating_point(W_U):     # fp16 / bf16 / fp32 case
-        return resid.to(dtype=W_U.dtype)
-    else:                                  # int8 / 4-bit etc.
-        return resid                       # **no** cast!
+## numerics helpers moved to layers_core.numerics
 
 
 def run_experiment_for_model(model_id, output_files):
@@ -490,7 +468,7 @@ def run_experiment_for_model(model_id, output_files):
                     resid = apply_norm_or_skip(resid, norm_module)
                 
                 # Vectorized unembedding for all positions  
-                resid_cast = safe_cast_for_unembed(resid[0], model.unembed.W_U)
+                resid_cast = safe_cast_for_unembed(resid[0], model.unembed.W_U, force_fp32_unembed=CLI_ARGS.fp32_unembed)
                 logits_all = model.unembed(resid_cast).float()  # [seq, d_vocab]
                 
                 # Save residuals if requested
@@ -596,7 +574,7 @@ def run_experiment_for_model(model_id, output_files):
                         resid = apply_norm_or_skip(resid, norm_module)
                     
                     # Vectorized unembedding for all positions
-                    resid_cast = safe_cast_for_unembed(resid[0], model.unembed.W_U)
+                    resid_cast = safe_cast_for_unembed(resid[0], model.unembed.W_U, force_fp32_unembed=CLI_ARGS.fp32_unembed)
                     logits_all = model.unembed(resid_cast).float() # [seq, d_vocab]
                     
                     # Save residuals if requested
