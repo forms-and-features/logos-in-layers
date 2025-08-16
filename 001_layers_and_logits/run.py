@@ -155,12 +155,17 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         if config.self_test:
             try:
                 from kl_sanity_test import run_kl_sanity_test
-                test_passed = run_kl_sanity_test(model, tokenizer)
-                if not test_passed:
-                    print("❌ Self-test failed - normalization scaling is incorrect!")
-                    print("❌ ABORTING: Cannot trust analysis results with incorrect scaling!")
-                    return {"error": "Self-test failed"}
-                print("✅ Self-test passed - continuing with normal evaluation...\n")
+                # Prefer the model's own tokenizer when available
+                tokenizer = getattr(model, 'tokenizer', None)
+                if not hasattr(model, 'lm_head'):
+                    print("ℹ️ Skipping KL sanity test: requires HF model interface (lm_head/hidden_states). Use kl_sanity_test.py standalone if needed.")
+                else:
+                    test_passed = run_kl_sanity_test(model, tokenizer)
+                    if not test_passed:
+                        print("❌ Self-test failed - normalization scaling is incorrect!")
+                        print("❌ ABORTING: Cannot trust analysis results with incorrect scaling!")
+                        return {"error": "Self-test failed"}
+                    print("✅ Self-test passed - continuing with normal evaluation...\n")
             except ImportError as e:
                 print(f"❌ Could not import KL sanity test: {e}")
                 return {"error": "Self-test import failed"}
@@ -733,21 +738,25 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
     try:
         # Run the experiment and let output print normally
         json_data = evaluate_model()
-        
+
+        # In self-test mode, do not write JSON/CSV artifacts
+        if config.self_test:
+            return json_data
+
         # Extract file paths
         meta_filepath, csv_filepath, pure_csv_filepath = output_files
-        
+
         # Write CSV files FIRST (they need the full record lists)
         write_csv_files(json_data, csv_filepath, pure_csv_filepath, TOP_K_VERBOSE)
 
         # Strip bulky per-token records from JSON to keep it compact
         json_data_compact = {k: v for k, v in json_data.items()
                              if k not in ("records", "pure_next_token_records")}
-        
+
         # Write compact JSON metadata
         with open(meta_filepath, 'w', encoding='utf-8') as f:
             json.dump(json_data_compact, f, ensure_ascii=False, indent=2)
-        
+
         return json_data_compact
         
     except Exception as e:
@@ -784,8 +793,12 @@ def run_single_model(model_id):
     if CLI_ARGS.out_dir:
         out_dir = CLI_ARGS.out_dir
     else:
-        # Stand-alone invocation: create its own run-latest directory
-        out_dir = setup_run_latest_directory(script_dir)
+        # For self-test, avoid rotating/creating run-latest; write nowhere
+        if CLI_ARGS.self_test:
+            out_dir = script_dir
+        else:
+            # Stand-alone invocation: create its own run-latest directory
+            out_dir = setup_run_latest_directory(script_dir)
     # Ensure directory exists
     os.makedirs(out_dir, exist_ok=True)
 
@@ -794,7 +807,7 @@ def run_single_model(model_id):
     pure_csv_filepath = os.path.join(out_dir, pure_csv_filename)
     
     try:
-        # Run the experiment - files are written directly
+        # Run the experiment
         cfg = ExperimentConfig(
             device=CLI_ARGS.device,
             fp32_unembed=CLI_ARGS.fp32_unembed,
@@ -805,10 +818,13 @@ def run_single_model(model_id):
             self_test=CLI_ARGS.self_test,
         )
         data = run_experiment_for_model(model_id, (meta_filepath, csv_filepath, pure_csv_filepath), cfg)
-        
-        print(f"✅ Experiment complete. JSON metadata saved to: {meta_filepath}")
-        print(f"✅ Records CSV saved to: {csv_filepath}")
-        print(f"✅ Pure next-token CSV saved to: {pure_csv_filepath}")
+
+        if CLI_ARGS.self_test:
+            print("✅ Self-test complete. No artifacts written (by design).")
+        else:
+            print(f"✅ Experiment complete. JSON metadata saved to: {meta_filepath}")
+            print(f"✅ Records CSV saved to: {csv_filepath}")
+            print(f"✅ Pure next-token CSV saved to: {pure_csv_filepath}")
         return True
         
     except Exception as e:
