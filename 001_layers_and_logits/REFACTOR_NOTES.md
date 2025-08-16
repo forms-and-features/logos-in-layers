@@ -9,12 +9,12 @@ Goal: Iterative module extraction with immediate unit tests; preserve behavior a
 - [x] csv_io (records CSV, pure next-token CSV) — moved to `layers_core/`; tests green
 - [x] collapse_rules (copy-collapse, semantic-collapse) — moved to `layers_core/`; tests green
 - [x] device_policy (dtype choice, unembed promotion) — moved to `layers_core/`; tests green
-- [ ] hooks (attach/detach residual hooks)
+- [x] hooks (attach/detach residual hooks) — moved to `layers_core/`; tests green
 - [ ] run_dir (run-latest rotation)
 - [ ] update kl_sanity_test imports
 - [ ] cleanup re-exports in run.py
 
-Status counters: In Progress 0 · Done 5 · Pending 3
+Status counters: In Progress 0 · Done 6 · Pending 2
 
 ## Slice 1 — norm_utils (Done)
 
@@ -112,6 +112,7 @@ Notes:
 - 2025-08-16: Extracted CSV I/O helpers; kept CSV schema stable and added unit tests.
 - 2025-08-16: Extracted collapse rules; centralized thresholds/margins and fallback semantics; added unit tests.
 - 2025-08-16: Extracted device policy helpers; codified dtype selection and auto unembed promotion; added unit tests.
+- 2025-08-16: Extracted hooks helpers; centralized attachment and cleanup; added unit tests with mocks.
 
 ## Quick Run
 
@@ -148,4 +149,14 @@ Scope:
 Notes:
 - `run.py` updated to use `choose_dtype` and `should_auto_promote_unembed`; behavior unchanged.
 - Tests added in `test_device_policy.py` cover dtype table, Gemma override, and auto-promotion rule.
+## Slice 6 — hooks (Done)
+
+Scope:
+- `build_cache_hook` to store detached tensors keyed by hook.name.
+- `attach_residual_hooks` to register hooks for embeddings, optional positional embeddings, and resid_post per layer.
+- `detach_hooks` to remove all handles safely.
+
+Notes:
+- `run.py` updated to use these helpers; behavior unchanged.
+- Tests added in `test_hooks.py` with minimal HookPoint/Handle mocks; verifies cache keys, handle removal, and positional hook presence.
 - Network/model-dependent tests (e.g., full `--self-test` with downloads) should be run locally with authenticated access; keep CPU-only unit tests fast and offline by default.

@@ -72,6 +72,7 @@ from layers_core.numerics import (
 from layers_core.csv_io import write_csv_files
 from layers_core.collapse_rules import detect_copy_collapse, is_semantic_top1
 from layers_core.device_policy import choose_dtype, should_auto_promote_unembed
+from layers_core.hooks import build_cache_hook, attach_residual_hooks, detach_hooks
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -368,37 +369,10 @@ def run_experiment_for_model(model_id, output_files):
             
             # Storage for only the residual streams we need
             residual_cache = {}
-            
-            def make_cache_hook(cache_dict):
-                def cache_residual_hook(tensor, hook):
-                    # Only store the tensor we need, detached from computation graph
-                    # Keep activations on their original device to preserve device_map="auto" layout
-                    # Keep original dtype to minimize memory usage
-                    cache_dict[hook.name] = tensor.detach()
-                return cache_residual_hook
-            
-            # Create the hook function with explicit cache reference
-            cache_hook = make_cache_hook(residual_cache)
-            
-            # Set up hooks for residual streams only
-            hooks = []
-            
-            # Hook for embeddings (layer 0 equivalent)
-            embed_hook = model.hook_dict['hook_embed'].add_hook(cache_hook)
-            hooks.append(embed_hook)
-            # Conditionally hook for positional embeddings if available
-            if 'hook_pos_embed' in model.hook_dict:
-                pos_hook = model.hook_dict['hook_pos_embed'].add_hook(cache_hook)
-                hooks.append(pos_hook)
-                has_pos_embed = True
-            else:
-                has_pos_embed = False
-            
-            # Hook for each layer's residual post
-            n_layers = model.cfg.n_layers
-            for layer in range(n_layers):
-                resid_hook = model.blocks[layer].hook_resid_post.add_hook(cache_hook)
-                hooks.append(resid_hook)
+            # Build hook closure
+            cache_hook = build_cache_hook(residual_cache)
+            # Attach hooks and record handles
+            hooks, has_pos_embed = attach_residual_hooks(model, cache_hook)
             
             try:
                 # Run forward pass with targeted hooks
@@ -663,10 +637,8 @@ def run_experiment_for_model(model_id, output_files):
                 
             finally:
                 # Clean up hooks and cache
-                for h in hooks:  # HookPoint.add_hook always returns a handle with .remove()
-                    if h is not None:
-                        h.remove()
-                        
+                detach_hooks(hooks)
+                
                 # Aggressively free memory
                 residual_cache.clear()  # free the dict but keep the name alive
                 hooks.clear()  # Keep the variable, just empty it
