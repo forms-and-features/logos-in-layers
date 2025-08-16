@@ -1,20 +1,15 @@
 import transformer_lens
 from transformer_lens import HookedTransformer
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 import torch
 import torch.nn as nn
-import io
-from contextlib import redirect_stdout
 from datetime import datetime
 import os
 import subprocess
 import sys
 import math
 import json
-import csv
 import argparse
 import gc  # For garbage collection
-import copy
 
 # --- deterministic bootstrap -------------------------------------------------
 import random, numpy as np
@@ -81,9 +76,7 @@ def clean_model_name(model_id):
     clean_name = model_id.split('/')[-1]
     return clean_name
 
-## run-latest helper moved to layers_core.run_dir
-
-## numerics helpers moved to layers_core.numerics
+ 
 
 
 def run_experiment_for_model(model_id, output_files):
