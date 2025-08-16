@@ -468,6 +468,9 @@ def run_experiment_for_model(model_id, output_files):
                 detected_architecture = detect_model_architecture(model)
                 print(f"Detected architecture: {detected_architecture}")
                 
+                # Determine number of layers for iteration (no longer set by hook attachment)
+                n_layers = model.cfg.n_layers
+
                 for layer in range(n_layers):
                     print(f"Layer {layer + 1:2d} (after transformer block {layer}):")
                     # Get residual stream after this layer's block
