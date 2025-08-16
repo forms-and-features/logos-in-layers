@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """CPU-only tests for hooks helpers with minimal mocks."""
 
+import _pathfix  # noqa: F401
+
 import torch
 
 from layers_core.hooks import build_cache_hook, attach_residual_hooks, detach_hooks
@@ -20,12 +22,10 @@ class MockHookPoint:
     def add_hook(self, fn):
         self._fn = fn
         return MockHandle(self)
-    # Utility for tests to simulate firing
     def fire(self, tensor):
         class HookObj:
             pass
-        h = HookObj()
-        h.name = self.name
+        h = HookObj(); h.name = self.name
         self._fn(tensor, h)
 
 
@@ -42,9 +42,7 @@ class MockModel:
     def __init__(self, n_layers=2, with_pos=True):
         self.cfg = self.Cfg(n_layers)
         self.blocks = [MockBlock(i) for i in range(n_layers)]
-        self.hook_dict = {
-            'hook_embed': MockHookPoint('hook_embed')
-        }
+        self.hook_dict = {'hook_embed': MockHookPoint('hook_embed')}
         if with_pos:
             self.hook_dict['hook_pos_embed'] = MockHookPoint('hook_pos_embed')
 
@@ -55,9 +53,8 @@ def test_attach_and_cache_with_positional():
     cache_hook = build_cache_hook(cache)
     handles, has_pos = attach_residual_hooks(model, cache_hook)
     assert has_pos is True
-    assert len(handles) == 1 + 1 + model.cfg.n_layers  # embed + pos + per-layer
+    assert len(handles) == 1 + 1 + model.cfg.n_layers
 
-    # Fire some hooks and ensure cache is populated with correct keys
     x = torch.randn(1, 3)
     model.hook_dict['hook_embed'].fire(x)
     model.hook_dict['hook_pos_embed'].fire(x)
@@ -67,7 +64,6 @@ def test_attach_and_cache_with_positional():
     assert 'blocks.0.hook_resid_post' in cache
 
     detach_hooks(handles)
-    # After detach, firing should not change cache
     before = dict(cache)
     model.hook_dict['hook_embed'].fire(x)
     assert cache == before

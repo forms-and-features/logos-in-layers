@@ -8,21 +8,20 @@ cd "$ROOT_DIR"
 
 echo "Running CPU-only tests with $PY"
 
-$PY 001_layers_and_logits/test_norm_utils.py
-$PY 001_layers_and_logits/test_numerics.py
-$PY 001_layers_and_logits/test_csv_io.py
-$PY 001_layers_and_logits/test_collapse_rules.py
-$PY 001_layers_and_logits/test_device_policy.py
-$PY 001_layers_and_logits/test_hooks.py
-$PY 001_layers_and_logits/test_run_dir.py
+${PY} 001_layers_and_logits/tests/test_norm_utils.py
+${PY} 001_layers_and_logits/tests/test_numerics.py
+${PY} 001_layers_and_logits/tests/test_csv_io.py
+${PY} 001_layers_and_logits/tests/test_collapse_rules.py
+${PY} 001_layers_and_logits/tests/test_device_policy.py
+${PY} 001_layers_and_logits/tests/test_hooks.py
+${PY} 001_layers_and_logits/tests/test_run_dir.py
 
 (
-  cd 001_layers_and_logits
+  cd 001_layers_and_logits/tests
   "$PY" test_refactored_self_test.py
 )
 
 # Normalization test prints status; still CPU-only
-$PY 001_layers_and_logits/test_normalization.py
+${PY} 001_layers_and_logits/tests/test_normalization.py
 
 echo "All CPU-only tests completed."
-
