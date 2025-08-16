@@ -153,12 +153,14 @@ Quick Wins (small, high-value)
 
 - Run all CPU-only tests: `scripts/run_cpu_tests.sh`
 - Run an individual test: `venv/bin/python 001_layers_and_logits/test_numerics.py`
+- Run KL self-test easily (network + HF auth may be required):
+  - `scripts/self_test.sh [MODEL_ID] [DEVICE]` (defaults: `mistralai/Mistral-7B-v0.1`, `cpu`)
 
 ## Environment Notes
 
 - Prefer invoking the project’s interpreter directly: use `venv/bin/python ...` (or `venv/bin/pytest`) instead of relying on `source venv/bin/activate && python ...`. In sandboxes/CI, activation may not persist; the direct interpreter path avoids “ModuleNotFoundError: torch”.
 - Unit tests are CPU-only and do not require network/model downloads.
-- Running tests from repo root: use the runner script or direct `venv/bin/python` calls (a `conftest.py` adds the folder to `sys.path` so `layers_core` resolves).
+- Running tests from repo root: use the runner script or direct `venv/bin/python` calls (tests use a small `_pathfix` to add the folder to `sys.path`).
 - For manual runs inside the folder: `cd 001_layers_and_logits && ../venv/bin/python test_norm_utils.py`.
 
 Known gotcha:
