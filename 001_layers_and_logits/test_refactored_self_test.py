@@ -43,9 +43,11 @@ def test_help_text():
     """Test that help text mentions both usage modes"""
     import subprocess
     import sys
+    import os
     
     try:
-        result = subprocess.run([sys.executable, "run.py", "--help"], 
+        run_py = os.path.join(os.path.dirname(__file__), "run.py")
+        result = subprocess.run([sys.executable, run_py, "--help"], 
                               capture_output=True, text=True, timeout=10)
         if "kl_sanity_test.py" in result.stdout:
             print("✅ run.py help text mentions standalone kl_sanity_test.py")

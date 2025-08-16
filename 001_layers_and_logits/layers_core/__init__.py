@@ -9,11 +9,50 @@ from .norm_utils import (
     detect_model_architecture,
     get_correct_norm_module,
 )
+from .numerics import (
+    bits_entropy_from_logits,
+    safe_cast_for_unembed,
+)
+from .csv_io import (
+    write_csv_files,
+)
+from .collapse_rules import (
+    detect_copy_collapse,
+    is_semantic_top1,
+)
+from .device_policy import (
+    choose_dtype,
+    should_auto_promote_unembed,
+)
+from .hooks import (
+    build_cache_hook,
+    attach_residual_hooks,
+    detach_hooks,
+)
+from .run_dir import (
+    setup_run_latest_directory,
+)
 
 __all__ = [
     "_get_rms_scale",
     "apply_norm_or_skip",
     "detect_model_architecture",
     "get_correct_norm_module",
+    # numerics
+    "bits_entropy_from_logits",
+    "safe_cast_for_unembed",
+    # csv io
+    "write_csv_files",
+    # collapse rules
+    "detect_copy_collapse",
+    "is_semantic_top1",
+    # device policy
+    "choose_dtype",
+    "should_auto_promote_unembed",
+    # hooks
+    "build_cache_hook",
+    "attach_residual_hooks",
+    "detach_hooks",
+    # run dir
+    "setup_run_latest_directory",
 ]
-

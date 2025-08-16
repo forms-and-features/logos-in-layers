@@ -129,8 +129,9 @@ Anticipating PROJECT_NOTES.md (future experiments)
 Testing Strategy (scalable)
 - Unit: CPU-only with mocks; add a tiny `MockModelAdapter` to test probes/metrics without network/GPUs.
 - Contract: golden CSV schema tests per experiment; JSON sanity checks (e.g., `L_copy`/`L_semantic`).
-- Marks: decorate network/download tests; default `-m "not network"` in pytest.ini.
 - CLI smoke: one tiny path test per experiment that uses mocks (no downloads) to catch wiring regressions.
+- Canonical runner: `scripts/run_cpu_tests.sh` (uses `venv/bin/python` per test to avoid sandbox timeouts).
+- Optional: if you ever want pytest, install it manually and reintroduce pytest.ini; otherwise ignore.
 
 Migration Path (low risk)
 - Do nothing now; when `experiments_core/` is created, move modules and add re-export shims in `001_layers_and_logits/layers_core`.
@@ -142,7 +143,7 @@ Avoid Over-Engineering
 - Don’t unify reporting yet; just stabilize CSV schemas so downstream dashboards can evolve separately.
 
 Quick Wins (small, high-value)
-- Stabilize test harness: add `pytest.ini`, make CWD-agnostic self-test, and a `scripts/run_cpu_tests.sh` runner using `venv/bin/python` per test.
+- Stabilize test harness: make self-test CWD-agnostic; keep `scripts/run_cpu_tests.sh` as the canonical way to run all CPU-only tests.
 - Tighten public API: re-export helpers in `layers_core/__init__.py`; add minimal docstrings/type hints (mypy optional).
 - CLI/Config: introduce a small `config.py` dataclass and thread it through `run_experiment_for_model` (no behavior change).
 - Docs: update README to mention `layers_core` and testing strategy; add “add a slice” guidance here.
@@ -150,13 +151,14 @@ Quick Wins (small, high-value)
 
 ## Quick Run
 
-- Run only this slice’s tests (CPU): `pytest -q 001_layers_and_logits -k norm_utils -x`
+- Run all CPU-only tests: `scripts/run_cpu_tests.sh`
+- Run an individual test: `venv/bin/python 001_layers_and_logits/test_numerics.py`
 
 ## Environment Notes
 
 - Prefer invoking the project’s interpreter directly: use `venv/bin/python ...` (or `venv/bin/pytest`) instead of relying on `source venv/bin/activate && python ...`. In sandboxes/CI, activation may not persist; the direct interpreter path avoids “ModuleNotFoundError: torch”.
 - Unit tests are CPU-only and do not require network/model downloads.
-- Running tests from repo root is supported: `pytest -q 001_layers_and_logits` (a `conftest.py` adds the folder to `sys.path` so `layers_core` resolves).
+- Running tests from repo root: use the runner script or direct `venv/bin/python` calls (a `conftest.py` adds the folder to `sys.path` so `layers_core` resolves).
 - For manual runs inside the folder: `cd 001_layers_and_logits && ../venv/bin/python test_norm_utils.py`.
 
 Known gotcha:
