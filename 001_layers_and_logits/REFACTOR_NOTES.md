@@ -8,13 +8,13 @@ Goal: Iterative module extraction with immediate unit tests; preserve behavior a
 - [x] numerics (bits_entropy_from_logits, safe_cast_for_unembed) — moved to `layers_core/`; tests green
 - [x] csv_io (records CSV, pure next-token CSV) — moved to `layers_core/`; tests green
 - [x] collapse_rules (copy-collapse, semantic-collapse) — moved to `layers_core/`; tests green
-- [ ] device_policy (dtype choice, unembed promotion)
+- [x] device_policy (dtype choice, unembed promotion) — moved to `layers_core/`; tests green
 - [ ] hooks (attach/detach residual hooks)
 - [ ] run_dir (run-latest rotation)
 - [ ] update kl_sanity_test imports
 - [ ] cleanup re-exports in run.py
 
-Status counters: In Progress 0 · Done 4 · Pending 4
+Status counters: In Progress 0 · Done 5 · Pending 3
 
 ## Slice 1 — norm_utils (Done)
 
@@ -111,6 +111,7 @@ Notes:
 - 2025-08-16: Extracted numerics helpers; added explicit `force_fp32_unembed` flag and updated usage in `run.py`.
 - 2025-08-16: Extracted CSV I/O helpers; kept CSV schema stable and added unit tests.
 - 2025-08-16: Extracted collapse rules; centralized thresholds/margins and fallback semantics; added unit tests.
+- 2025-08-16: Extracted device policy helpers; codified dtype selection and auto unembed promotion; added unit tests.
 
 ## Quick Run
 
@@ -138,4 +139,13 @@ Suggested “all CPU-only tests” run locally:
 - Prefer direct interpreter invocations over shell activation: `venv/bin/python <test>.py` or `venv/bin/pytest ...`.
 - Path-sensitive tests should set CWD explicitly or resolve target paths relative to `__file__` to avoid failures when running from repo root.
 - For quick iteration: run slice-specific tests only (e.g., `venv/bin/python 001_layers_and_logits/test_numerics.py`). Use pytest locally for broader runs: `venv/bin/pytest -q 001_layers_and_logits -k "norm_utils or numerics"`.
+## Slice 5 — device_policy (Done)
+
+Scope:
+- `choose_dtype(device, model_id)` with CUDA Gemma bf16 override; mps fp16; cpu fp32.
+- `should_auto_promote_unembed(compute_dtype)` returns True only for fp32 models (CPU default).
+
+Notes:
+- `run.py` updated to use `choose_dtype` and `should_auto_promote_unembed`; behavior unchanged.
+- Tests added in `test_device_policy.py` cover dtype table, Gemma override, and auto-promotion rule.
 - Network/model-dependent tests (e.g., full `--self-test` with downloads) should be run locally with authenticated access; keep CPU-only unit tests fast and offline by default.

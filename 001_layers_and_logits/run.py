@@ -71,6 +71,7 @@ from layers_core.numerics import (
 )
 from layers_core.csv_io import write_csv_files
 from layers_core.collapse_rules import detect_copy_collapse, is_semantic_top1
+from layers_core.device_policy import choose_dtype, should_auto_promote_unembed
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -148,18 +149,7 @@ def run_experiment_for_model(model_id, output_files):
             print("⚠️  MPS requested but not available; falling back to CPU.")
             device = "cpu"
 
-        dtype = {
-            "cuda": torch.float16,
-            # Use float16 on MPS to reduce memory footprint and avoid large-buffer MPS crashes
-            "mps":  torch.float16,
-            "cpu":  torch.float32,
-        }[device]
-
-        # ── add this directly AFTER the dictionary block ─────────────
-        if "gemma" in model_id.lower() and device == "cuda":
-            # Gemma weights are published in bf16 – use that wider range
-            dtype = torch.bfloat16
-        # ──────────────────────────────────────────────────────────────
+        dtype = choose_dtype(device, model_id)
 
         # ---- load model -------------------------------------------------------
         print(f"Loading model on [{device}] ...")
@@ -239,7 +229,7 @@ def run_experiment_for_model(model_id, output_files):
         
         # Toggle for FP32 unembedding (recommended for research-grade precision)
         # Prevents under-resolving logit gaps < 1e-5 at cost of ~50MB memory
-        USE_FP32_UNEMBED = (dtype == torch.float32)   # only promote when the *rest* of the model is FP32
+        USE_FP32_UNEMBED = should_auto_promote_unembed(dtype)
 
         
         UNEMBED_DTYPE = model.unembed.W_U.dtype  # define early so it's always in scope
