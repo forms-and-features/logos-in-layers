@@ -12,7 +12,8 @@ Across all four, we see the typical "copy plateau, then sharp entropy drop" that
 
 ### 001: Layer-by-Layer Analysis
 
-See `001_layers_and_logits/run-latest/*.md` for evaluation reports of the latest run, and `001_layers_and_logits/NOTES.md` for technical notes.
+See `001_layers_and_logits/README.md` for detailed usage, outputs, testing, and internals. Evaluation reports for the latest run live in `001_layers_and_logits/run-latest/*.md`; additional implementation notes are in `001_layers_and_logits/NOTES.md`.
+Device notes: default device is `cuda` (falls back to `cpu` if unavailable). MPS is not auto-selected; pass `--device mps` to use it.
 
 ## Setup
 
@@ -51,6 +52,29 @@ cd 001_layers_and_logits
 python run.py
 ```
 
+This creates a fresh `run-latest/` (rotating any previous one to `run-YYYYMMDD-HHMM/`) and writes:
+
+- `output-<model>.json`: compact metadata (diagnostics, final prediction, model stats)
+- `output-<model>-records.csv`: per-layer/per-position top‑k with rest_mass
+- `output-<model>-pure-next-token.csv`: per-layer next-token top‑k with collapse flags
+
+Run a single model to a custom directory:
+
+```bash
+python run.py --device cpu --out_dir ./some_dir mistralai/Mistral-7B-v0.1
+```
+
+### Testing and Self-Test
+
+- All CPU-only tests (no downloads): `scripts/run_cpu_tests.sh`
+- Single test: `venv/bin/python 001_layers_and_logits/tests/test_numerics.py`
+- KL self-test (network+HF auth may be required):
+  - Default: `scripts/self_test.sh`
+  - Custom: `scripts/self_test.sh <MODEL_ID> <DEVICE>` (e.g., `mps`)
+
+Notes:
+- In `--self-test` mode, the script validates scaling and prints results but does not write JSON/CSV artifacts or rotate `run-latest/`.
+
 ## Further Reading
 
 For details and methodology notes, see `PROJECT_NOTES.md`. 
@@ -70,4 +94,3 @@ MIT License - see LICENSE file for details.
 - Conceptual direction: **OpenAI o3 pro**
 - Implementation: **Anthropic Claude 4 Sonnet** and **OpenAI o4-mini** via **Cursor IDE** 
 - Individual model evaluations and cross-model analysis: **OpenAI o3**
-

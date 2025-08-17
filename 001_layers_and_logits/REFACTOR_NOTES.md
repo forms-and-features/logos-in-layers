@@ -12,9 +12,9 @@ Goal: Iterative module extraction with immediate unit tests; preserve behavior a
 - [x] hooks (attach/detach residual hooks) — moved to `layers_core/`; tests green
 - [x] run_dir (run-latest rotation) — moved to `layers_core/`; tests green
 - [x] update kl_sanity_test imports
-- [ ] cleanup re-exports in run.py
+- [x] cleanup re-exports in run.py — decided to keep convenient top-level imports in run.py; tests and kl_sanity_test import from layers_core directly
 
-Status counters: In Progress 0 · Done 8 · Pending 0
+Status counters: In Progress 0 · Done 9 · Pending 0
 
 ## Slice 1 — norm_utils (Done)
 
@@ -121,7 +121,7 @@ Repo Structure and Reuse Across Experiments
 - Provide temporary shims: re-export `experiments_core.*` from `001_layers_and_logits/layers_core/__init__.py` so 001 keeps working while 002 imports the new core directly.
 - Keep each experiment self-contained (CLI, prompts, results), depending only on shared core.
 
-Anticipating PROJECT_NOTES.md (future experiments)
+Anticipating NOTES.md (future experiments)
 - Adapters (later): introduce a minimal `ModelAdapter` abstraction for tokenize/forward/hooks/unembed; start with HookedTransformer, add HF-only/multimodal later. Don’t change runtime yet; prototype adapters in tests first.
 - Probes (later): keep probes as small functions/classes returning tensors/records (residual lens, ablations, patching). Avoid plugin frameworks; simple callables suffice.
 - Metrics (later): use a simple dict registry `{name: fn}` with a tiny signature contract; no heavy plugin system.
@@ -213,3 +213,8 @@ Scope:
 
 Notes:
 - `test_refactored_self_test.py` remains compatible since `run.py` still exposes the same function names via imports; help text check unchanged.
+## Slice 9 — run.py re-exports (N/A)
+
+Decision:
+- Keep the imported helpers (`apply_norm_or_skip`, `detect_model_architecture`, etc.) at run.py top-level for convenience/backward-compatibility.
+- Primary imports in code/tests now use `layers_core.*`; no additional re-export work is needed.
