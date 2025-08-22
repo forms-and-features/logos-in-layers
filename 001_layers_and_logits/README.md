@@ -13,7 +13,7 @@ Layer-by-layer logit-lens analysis for causal LLMs. Computes per-layer next-toke
 
 ## Run
 
-All models (default device: `cuda`, falls back to `cpu` if unavailable):
+All models (default device selection: `auto` — prefers `cuda` → `mps` → `cpu` based on a conservative memory‑fit estimate):
 
 ```bash
 cd 001_layers_and_logits
@@ -46,7 +46,7 @@ Self-test notes: `--self-test` validates scaling and prints results; it does not
 
 ## CLI Flags
 
-- `--device {cuda|mps|cpu}` — compute device
+- `--device {auto|cuda|mps|cpu}` — compute device (default `auto` picks best fit)
 - `--out_dir PATH` — output directory (default: `run-latest/` rotation)
 - `--fp32-unembed` — cast unembedding weights to fp32
 - `--keep-residuals` — save residual tensors (`*.pt`) alongside CSVs
@@ -67,14 +67,10 @@ Self-test notes: `--self-test` validates scaling and prints results; it does not
 
 ## Supported Models and Dtypes
 
-- MPS-safe: Mistral‑7B, Gemma‑2‑9B, Qwen3‑8B, Llama‑3‑8B
-- CUDA only: Yi‑34B, Qwen3‑14B, Gemma‑2‑27B
-- Dtype policy: CUDA fp16 (Gemma → bf16), MPS fp16, CPU fp32
+- Supported families: Llama‑3‑8B, Mistral‑7B, Gemma‑2‑9B/27B, Qwen3‑8B/14B, Yi‑34B (raw HF format; no GGUF).
+- Dtype policy: CUDA fp16 (Gemma → bf16), MPS fp16, CPU fp32.
 
-Notes on device and model selection:
-- CUDA availability at startup decides whether CUDA‑only models are included in the run list.
-- Execution uses the device you choose via `--device` (default `cuda`, or `cpu` if CUDA not present).
-- MPS is not auto‑selected; pass `--device mps` to run on Apple Silicon GPU.
+Device selection is dynamic per model. The runner estimates memory usage (weights + overhead + headroom) for each available device and auto-picks the best fit in order `cuda → mps → cpu`. Models that do not fit on any device are skipped with a clear log.
 
 ## Self-Test Details
 

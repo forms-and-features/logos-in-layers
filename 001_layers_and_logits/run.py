@@ -32,7 +32,7 @@ TOP_K_VERBOSE = 20  # number of tokens to record for verbose slots and answer po
 # Layer-by-layer prediction analysis with LayerNorm lens correction
 # Toggle USE_NORM_LENS for raw vs normalized residual stream analysis
 
-# List of confirmed supported models
+# List of supported models (advisory list; actual device chosen dynamically)
 CUDA_ONLY_MODELS = [
     "01-ai/Yi-34B",
     "Qwen/Qwen3-14B",
@@ -46,12 +46,8 @@ MPS_SAFE_MODELS = [
     "meta-llama/Meta-Llama-3-8B"
 ]
 
-# Dynamically determine which models to run based on CUDA availability
-if torch.cuda.is_available():
-    CONFIRMED_MODELS = CUDA_ONLY_MODELS + MPS_SAFE_MODELS
-else:
-    CONFIRMED_MODELS = MPS_SAFE_MODELS
-    print("⚠️  CUDA not available - running only MPS-safe models")
+# All candidate models; device fit will be decided per model
+CONFIRMED_MODELS = CUDA_ONLY_MODELS + MPS_SAFE_MODELS
 
 # --- helpers (extracted to norm_utils) --------------------------------------
 from layers_core.norm_utils import (
@@ -66,7 +62,11 @@ from layers_core.numerics import (
 )
 from layers_core.csv_io import write_csv_files
 from layers_core.collapse_rules import detect_copy_collapse, is_semantic_top1
-from layers_core.device_policy import choose_dtype, should_auto_promote_unembed
+from layers_core.device_policy import (
+    choose_dtype,
+    should_auto_promote_unembed,
+    select_best_device,
+)
 from layers_core.hooks import build_cache_hook, attach_residual_hooks, detach_hooks
 from layers_core.run_dir import setup_run_latest_directory
 from layers_core.config import ExperimentConfig
@@ -128,7 +128,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             else:
                 model = HookedTransformer.from_pretrained_no_processing(
                     model_id,
-                    device_map="auto",
+                    device=device,
                     torch_dtype=dtype,
                     low_cpu_mem_usage=True,
                     trust_remote_code=True,
@@ -807,9 +807,26 @@ def run_single_model(model_id):
     pure_csv_filepath = os.path.join(out_dir, pure_csv_filename)
     
     try:
+        # Resolve device: auto-pick if requested
+        chosen_device = CLI_ARGS.device
+        debug_info = None
+        if CLI_ARGS.device == "auto":
+            sel = select_best_device(model_id)
+            if sel is None:
+                print(f"⛔ No suitable device fits the model: {model_id}")
+                # Write a minimal meta file noting skip
+                with open(meta_filepath, 'w', encoding='utf-8') as f:
+                    f.write(f"SKIPPED (no device fit) FOR {model_id}\n")
+                    f.write(f"Timestamp: {datetime.now().strftime('%Y%m%d%H%M%S')}\n")
+                return False
+            dev, dtype, debug_info = sel
+            chosen_device = dev
+            print("📐 Device decision:")
+            print(f"   device={dev} dtype={dtype} est_peak={debug_info.get('est_peak')}B available={debug_info.get('available')}B")
+
         # Run the experiment
         cfg = ExperimentConfig(
-            device=CLI_ARGS.device,
+            device=chosen_device,
             fp32_unembed=CLI_ARGS.fp32_unembed,
             keep_residuals=CLI_ARGS.keep_residuals,
             copy_threshold=CLI_ARGS.copy_threshold,
@@ -842,9 +859,9 @@ def run_single_model(model_id):
 def parse_cli():
     p = argparse.ArgumentParser(description="Layer-by-layer logit-lens sweep")
     p.add_argument("--device",
-                   default="cuda",
-                   choices=["cuda", "mps", "cpu"],
-                   help="compute device to run on (default: cuda)")
+                   default="auto",
+                   choices=["auto", "cuda", "mps", "cpu"],
+                   help="compute device to run on (default: auto picks best fit)")
     p.add_argument("--fp32-unembed",
                    action="store_true",
                    help="Up-cast the model's un-embedding matrix to float32")
@@ -897,6 +914,7 @@ def main():
         print(f"   📄 Created: evaluation-{clean_name}.md")
 
     results = []
+    launched_models = []
     
     for i, model_id in enumerate(CONFIRMED_MODELS, 1):
         print(f"\n{'='*80}")
@@ -904,12 +922,25 @@ def main():
         print(f"{'='*80}")
         
         try:
+            # Decide device per model (auto by default)
+            if CLI_ARGS.device == "auto":
+                sel = select_best_device(model_id)
+                if sel is None:
+                    print(f"⛔ Skipping {model_id}: no device fits (estimates)")
+                    results.append((model_id, "SKIPPED_NO_FIT"))
+                    continue
+                dev, dtype, debug = sel
+                print(f"📐 Decision for {model_id}: device={dev} dtype={dtype} est_peak={debug.get('est_peak')} avail={debug.get('available')}")
+                chosen_device = dev
+            else:
+                chosen_device = CLI_ARGS.device
+
             # Launch subprocess
             cmd = [
                 sys.executable,
                 script_path,
-                "--device", CLI_ARGS.device,   # forward the flag
-                "--out_dir", run_dir,          # ensure all subprocesses share same dir
+                "--device", chosen_device,   # forward the per-model device
+                "--out_dir", run_dir,        # ensure all subprocesses share same dir
             ]
             if CLI_ARGS.fp32_unembed:
                 cmd.append("--fp32-unembed")   # forward the fp32-unembed flag
@@ -921,10 +952,11 @@ def main():
             cmd.append(model_id)
             
             result = subprocess.run(cmd, capture_output=False, text=True, check=False)
-            
+
             if result.returncode == 0:
                 print(f"✅ Process {i} completed successfully")
                 results.append((model_id, "SUCCESS"))
+                launched_models.append(model_id)
             else:
                 print(f"❌ Process {i} failed with return code {result.returncode}")
                 results.append((model_id, "FAILED"))
@@ -946,7 +978,7 @@ def main():
         print(f"   {status_emoji} {clean_name}: {status}")
     
     print(f"\n📄 Expected output files:")
-    for model_id in CONFIRMED_MODELS:
+    for model_id in (launched_models if len(launched_models) > 0 else CONFIRMED_MODELS):
         clean_name = clean_model_name(model_id)
         print(f"   {os.path.join(run_dir, f'output-{clean_name}.json')}")
         print(f"   {os.path.join(run_dir, f'output-{clean_name}-records.csv')}")

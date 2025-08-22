@@ -32,6 +32,13 @@ pip install -r requirements.txt
 huggingface-cli login  # Required for gated models
 ```
 
+### Virtualenv & CLI Tips (for agents)
+- Always activate the venv before running project scripts: `source venv/bin/activate && <command>`.
+- Prefer invoking helper scripts that already honor the venv, e.g. `scripts/run_cpu_tests.sh` (it uses `PYTHON_BIN` and defaults to `venv/bin/python`).
+- If `venv/bin/python` is a symlink to a host-managed interpreter and fails in a sandbox, use `source venv/bin/activate` instead of calling the path directly.
+- If activation still fails due to a broken interpreter path, recreate the venv inside the workspace and reinstall deps: `python -m venv venv && source venv/bin/activate && pip install -r requirements.txt`.
+- Network-restricted runs: CPU-only tests and most unit tests do not require network. The KL self-test may need network/HF auth; ask for approval to run without sandbox if blocked.
+
 ### Running Experiments
 ```bash
 # Basic chat interface
@@ -41,7 +48,7 @@ cd 000_basic_chat && python run.py
 cd 001_layers_and_logits && python run.py
 
 # Single model analysis
-cd 001_layers_and_logits && python run.py --models meta-llama/Meta-Llama-3-8B
+cd 001_layers_and_logits && python run.py meta-llama/Meta-Llama-3-8B
 
 # Run KL sanity test to validate normalization scaling
 cd 001_layers_and_logits && python run.py --self-test meta-llama/Meta-Llama-3-8B
@@ -52,9 +59,7 @@ cd 001_layers_and_logits && python kl_sanity_test.py meta-llama/Meta-Llama-3-8B
 ## Code Architecture
 
 ### Model Support
-The codebase distinguishes between:
-- **MPS_SAFE_MODELS**: Can run on Apple Silicon GPU (Mistral-7B, Gemma-2-9B, Qwen3-8B, Meta-Llama-3-8B)
-- **CUDA_ONLY_MODELS**: Require NVIDIA GPU (Yi-34B, Qwen3-14B, Gemma-2-27b)
+Device selection is dynamic. The runner estimates whether a model will fit on each available device and auto-picks the best fit in order `cuda → mps → cpu`. The curated model list remains advisory; models that do not fit on any device are skipped with a clear log.
 
 ### Key Components
 - **Logit Lens Pipeline**: `001_layers_and_logits/run.py` implements layer-by-layer token prediction analysis

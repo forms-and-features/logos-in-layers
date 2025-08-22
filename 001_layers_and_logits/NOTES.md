@@ -68,7 +68,7 @@ Each run emits `output-<model>-pure-next-token.csv`, logging entropy and top-k o
 `run_with_cache()` loads full activations, causing OOM on 9B models. The solution is targeted caching with hooks that optionally slice to `[:, -1:]`.
 
 ### Device / Precision Management
-The experiment supports CUDA, MPS and CPU with automatic dtype selection. See `run.py` for logic.
+The experiment supports CUDA, MPS and CPU with automatic dtype selection. Device selection is dynamic per model: a conservative memory‑fit estimator chooses `cuda → mps → cpu` when possible; otherwise the model is skipped. See `run.py` and `layers_core/device_policy.py` for logic.
 
 ## Development Environment Notes
 - **Hardware**: Apple Silicon MacBook Pro M2 Max 64 GB

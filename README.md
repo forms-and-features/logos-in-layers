@@ -13,7 +13,7 @@ Across all four, we see the typical "copy plateau, then sharp entropy drop" that
 ### 001: Layer-by-Layer Analysis
 
 See `001_layers_and_logits/README.md` for detailed usage, outputs, testing, and internals. Evaluation reports for the latest run live in `001_layers_and_logits/run-latest/*.md`; additional implementation notes are in `001_layers_and_logits/NOTES.md`.
-Device notes: default device is `cuda` (falls back to `cpu` if unavailable). MPS is not auto-selected; pass `--device mps` to use it.
+Device notes: the script now auto-selects the best device per model (prefers `cuda` → `mps` → `cpu`) based on a conservative memory‑fit estimate. You can still override with `--device {cuda|mps|cpu}` when needed.
 
 ## Setup
 
