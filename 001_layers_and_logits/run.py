@@ -32,22 +32,19 @@ TOP_K_VERBOSE = 20  # number of tokens to record for verbose slots and answer po
 # Layer-by-layer prediction analysis with LayerNorm lens correction
 # Toggle USE_NORM_LENS for raw vs normalized residual stream analysis
 
-# List of supported models (advisory list; actual device chosen dynamically)
-CUDA_ONLY_MODELS = [
-    "01-ai/Yi-34B",
+# Candidate models (small → large). Device fit is decided per model at runtime.
+CANDIDATE_MODELS = [
+    "mistralai/Mistral-7B-v0.1",
+    "meta-llama/Meta-Llama-3-8B",
+    "Qwen/Qwen3-8B",
+    "google/gemma-2-9b",
     "Qwen/Qwen3-14B",
     "google/gemma-2-27b",
+    "01-ai/Yi-34B",
 ]
 
-MPS_SAFE_MODELS = [
-    "mistralai/Mistral-7B-v0.1",
-    "google/gemma-2-9b",
-    "Qwen/Qwen3-8B",
-    "meta-llama/Meta-Llama-3-8B"
-]
-
-# All candidate models; device fit will be decided per model
-CONFIRMED_MODELS = CUDA_ONLY_MODELS + MPS_SAFE_MODELS
+# Backward-compatible name used throughout this script
+CONFIRMED_MODELS = CANDIDATE_MODELS
 
 # --- helpers (extracted to norm_utils) --------------------------------------
 from layers_core.norm_utils import (
