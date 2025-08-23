@@ -91,6 +91,6 @@ MIT License - see LICENSE file for details.
 - **Apple** for Metal GPU acceleration
 
 ## AI-Assisted Development
-- Conceptual direction: **OpenAI o3 pro**
-- Implementation: **Anthropic Claude 4 Sonnet** and **OpenAI o4-mini** via **Cursor IDE** 
-- Individual model evaluations and cross-model analysis: **OpenAI o3**
+- Conceptual direction: **OpenAI GPT-5 pro**, **o3 pro**
+- Implementation: **OpenAI GPT-5** via **codex-cli**; **Anthropic Claude 4 Sonnet** and **OpenAI o4-mini** via **Cursor IDE**
+- Individual model evaluations and cross-model analysis: **OpenAI GPT-5**; **OpenAI o3**
