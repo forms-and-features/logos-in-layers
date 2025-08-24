@@ -10,8 +10,14 @@ By showing that LLMs contain robust, reusable internal structures, detected thro
 
 ## Provenance & Conventions (read me first)
 
-**Provenance.** Section **1.1**’s normalization fix is merged and active. The current `run-latest` (e.g., `timestamp-20250824-1549`) is **V2 (post‑fix)**. Only archived runs before the fix should be treated as **V1 (pre‑fix)**; label them explicitly when comparing depths or probabilities.
-Runs after 2025‑08‑24 also decode logits with an fp32 unembedding when the model computes in bf16/fp16, and compute LN/RMS statistics in fp32 before casting back. This improves numerical stability without changing defaults for ≤27B CPU runs.
+**Provenance — date‑based, no manual edits.**
+- `run-latest/` is a moving pointer to the most recent sweep; do not cite it directly.
+- On each new run, the previous `run-latest/` is rotated to a stable folder `run-YYYYMMDD-HHMM/` (see `layers_core/run_dir.py`). Cite this folder name as the `run_id`.
+- Always cite `run_id` (folder name) and `code_commit_sha` from the JSON meta when reporting numbers. If `schema_version` exists, you may include it, but prefer date‑based labels.
+- §1.1 normalization fix cut‑over: merged on 2025‑08‑24 (UTC). Any archived run whose `run_id` date is strictly before 2025‑08‑24 is **pre‑§1.1**; runs on or after 2025‑08‑24 are **with‑§1.1**. Use these labels rather than version numbers.
+- Future fixes (e.g., §1.2) will add a new cut‑over date here; until then, the rule above suffices.
+
+**Precision policy.** Runs after 2025‑08‑24 decode logits with an fp32 unembedding when compute is bf16/fp16, and compute LN/RMS statistics in fp32 before casting back. This improves numerical stability without changing defaults for ≤27B CPU runs.
 
 **Layer indexing.** We decode **post‑block** unless otherwise stated. Rows `layer = 0 … (n_layers − 1)` are post‑block residuals; `layer = n_layers` is the **final unembed head** (the model’s actual output distribution).
 
@@ -33,7 +39,7 @@ Items are ordered by the approximate engineering lift required.
 
 Before we can claim that LLMs house structures too systematic for austere nominalism, our probes themselves must be trustworthy. This stage therefore focuses on scrubbing away every obvious source of numerical noise or probe artefact.
 
-### 1.1. Fix the RMS/LN scaling path (γ + ε placement)
+### 1.1. [x] Fix the RMS/LN scaling path (γ + ε placement)
 
 **Why.** If you normalise a *different* residual stream (post‑block) with γ that was trained for the *pre‑block* stream, logits are systematically mis‑scaled; early‑layer activations can be inflated by >10×. An incorrect ε outside the square‑root likewise shifts all norms upward. These distortions then propagate through the logit lens, giving spurious “early meaning” or hiding true signal. RMSNorm’s official formula places ε **inside** the √ and multiplies by γ afterwards ([arxiv.org][1]).
 
@@ -62,7 +68,7 @@ norm_module = model.blocks[i].ln2 if probe_after_block else model.blocks[i].ln1
 
 * All epsilon placement, architecture detection, and validation requirements implemented and unit‑tested.
 * Numerical precision policy: When compute dtype is bf16/fp16 (e.g., large CPU runs), unembedding/decoding uses fp32 and LN/RMS statistics are computed in fp32 and cast back. This stabilizes small logit gaps and entropy at negligible memory cost.
-* **Provenance note:** the current `run-latest` directory (timestamped 2025‑08‑24) is **post‑fix (V2)**. Only archived outputs predating the fix (or the referenced commit) are **pre‑fix (V1)**; re‑run those models if you need comparable V2 numbers.
+* **Provenance note:** the current `run-latest` (timestamped 2025‑08‑24) is **with‑§1.1**. Only archived outputs with `run_id` dates before 2025‑08‑24 are **pre‑§1.1**; re‑run those models if you need comparable with‑§1.1 numbers.
 
 ---
 
