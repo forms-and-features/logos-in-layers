@@ -183,37 +183,29 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         USE_NORM_LENS = True
         
         # Toggle for FP32 unembedding (recommended for research-grade precision)
-        # Prevents under-resolving logit gaps < 1e-5 at cost of ~50MB memory
+        # Prevents under-resolving logit gaps < 1e-5 with minimal memory overhead.
         USE_FP32_UNEMBED = should_auto_promote_unembed(dtype)
 
-        
-        UNEMBED_DTYPE = model.unembed.W_U.dtype  # define early so it's always in scope
-        
-        # Promote unembedding weights to FP32 if requested for true precision gain
-        if USE_FP32_UNEMBED and model.unembed.W_U.dtype != torch.float32:
-            print(f"🔬 Promoting unembed weights to FP32 for research-grade precision (was {model.unembed.W_U.dtype})")
-            # Ensure we preserve device when promoting to FP32
-            model.unembed.W_U = torch.nn.Parameter(
-                model.unembed.W_U.to(dtype=torch.float32), 
-                requires_grad=False
-            )
-            # Unembedding bias may be a plain tensor (not a Parameter); move it too.
-            if hasattr(model.unembed, 'b_U') and model.unembed.b_U is not None:
-                model.unembed.b_U = torch.nn.Parameter(
-                    model.unembed.b_U.to(dtype=torch.float32),
-                    requires_grad=False
-                )
-            UNEMBED_DTYPE = torch.float32  # refresh after promotion
-        
-        # Apply CLI-based FP32 unembed promotion if requested
-        if config.fp32_unembed:
-            with torch.no_grad():
-                model.unembed.W_U.data = model.unembed.W_U.data.float()
-                if hasattr(model.unembed, 'b_U') and model.unembed.b_U is not None:
-                    model.unembed.b_U.data = model.unembed.b_U.data.float()
-            print(f"🔬 CLI: Promoted unembed weights to FP32 (was {UNEMBED_DTYPE})")
-        
-        UNEMBED_DTYPE = model.unembed.W_U.dtype   # match actual weight dtype
+        # Shadow copies for analysis-only unembedding (do NOT mutate model params)
+        analysis_W_U = model.unembed.W_U  # default: use model parameter dtype
+        analysis_b_U = getattr(model.unembed, 'b_U', None)
+        UNEMBED_DTYPE = analysis_W_U.dtype  # initial report
+
+        # If enabled, create FP32 shadow weights for unembedding without touching the model's forward path
+        if USE_FP32_UNEMBED and analysis_W_U.dtype != torch.float32:
+            print(f"🔬 Using FP32 shadow unembed weights for analysis (was {analysis_W_U.dtype})")
+            analysis_W_U = analysis_W_U.float()
+            if analysis_b_U is not None:
+                analysis_b_U = analysis_b_U.float()
+            UNEMBED_DTYPE = torch.float32
+
+        # Apply CLI-based FP32 unembed promotion if requested (analysis-only)
+        if config.fp32_unembed and UNEMBED_DTYPE != torch.float32:
+            print(f"🔬 CLI: Forcing FP32 shadow unembed weights for analysis (was {UNEMBED_DTYPE})")
+            analysis_W_U = analysis_W_U.float()
+            if analysis_b_U is not None:
+                analysis_b_U = analysis_b_U.float()
+            UNEMBED_DTYPE = torch.float32
         
         context_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
         ground_truth = "Berlin"  # For display/comparison
@@ -387,9 +379,12 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     norm_module = get_correct_norm_module(model, 0, probe_after_block=False)
                     resid = apply_norm_or_skip(resid, norm_module)
                 
-                # Vectorized unembedding for all positions  
-                resid_cast = safe_cast_for_unembed(resid[0], model.unembed.W_U, force_fp32_unembed=config.fp32_unembed)
-                logits_all = model.unembed(resid_cast).float()  # [seq, d_vocab]
+                # Vectorized unembedding for all positions using analysis shadow weights
+                resid_cast = safe_cast_for_unembed(resid[0], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
+                logits_all = (resid_cast @ analysis_W_U)
+                if analysis_b_U is not None:
+                    logits_all = logits_all + analysis_b_U
+                logits_all = logits_all.float()  # downstream numerics in fp32
                 
                 # Save residuals if requested
                 if config.keep_residuals:
@@ -486,9 +481,12 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
                         resid = apply_norm_or_skip(resid, norm_module)
                     
-                    # Vectorized unembedding for all positions
-                    resid_cast = safe_cast_for_unembed(resid[0], model.unembed.W_U, force_fp32_unembed=config.fp32_unembed)
-                    logits_all = model.unembed(resid_cast).float() # [seq, d_vocab]
+                    # Vectorized unembedding for all positions using analysis shadow weights
+                    resid_cast = safe_cast_for_unembed(resid[0], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
+                    logits_all = (resid_cast @ analysis_W_U)
+                    if analysis_b_U is not None:
+                        logits_all = logits_all + analysis_b_U
+                    logits_all = logits_all.float()  # downstream numerics in fp32
                     
                     # Save residuals if requested
                     if config.keep_residuals:
@@ -862,7 +860,7 @@ def parse_cli():
                    help="compute device to run on (default: auto picks best fit)")
     p.add_argument("--fp32-unembed",
                    action="store_true",
-                   help="Up-cast the model's un-embedding matrix to float32")
+                   help="Use FP32 shadow unembedding for analysis-only decoding (do not mutate model params)")
     p.add_argument("--keep-residuals",
                    action="store_true",
                    help="Dump full residual tensors; if absent, keep only per-layer logits")
