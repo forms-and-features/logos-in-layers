@@ -4,20 +4,23 @@ You are reviewing results of a probe of one LLM model.
 
 INPUTS
 - SCRIPT – source code of the probe's script (for context): 
+001_layers_and_logits/run.py
 
 - JSON  – one json file with structured results of the probe of the model (first part of results):
-001_layers_and_logits/run-latest/output-MODEL.json
+001_layers_and_logits/run-latest/output-gemma-2-27b.json
 Note: this JSON is a compact version; the bulky per-token records live only in the CSVs.
 
 
 - CSV  - two csv files with detailed layer-level results of the probe of the model (second part of results):
-001_layers_and_logits/run-latest/output-MODEL-records.csv
-001_layers_and_logits/run-latest/output-MODEL-pure-next-token.csv
+001_layers_and_logits/run-latest/output-gemma-2-27b-records.csv
+001_layers_and_logits/run-latest/output-gemma-2-27b-pure-next-token.csv
 Each CSV now includes a `rest_mass` column (probability not covered by the listed top-k tokens); the pure-next-token CSV also adds boolean flags `copy_collapse`, `entropy_collapse`, and `is_answer` produced by the script.
 
 - Parameters (copy-collapse): copy_threshold = 0.90, copy_margin = 0.05
 
 - Your own research knowledge.
+
+- EVAL output file: 001_layers_and_logits/run-latest/evaluation-gemma-2-27b.md
 
 You're asked to evaluate only one specific model; cross-model analysis and comparison will be done separately, so you MUST ONLY read the files mentioned here.
 
@@ -95,4 +98,4 @@ STYLE GUIDELINES
 At the end of the markdown file, add the following:
 
 ---
-Produced by OpenAI GPT-5 
+Produced by OpenAI GPT-5

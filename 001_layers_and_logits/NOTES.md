@@ -3,11 +3,11 @@
 ## Supported Models
 
 ### ✅ Confirmed Working
-- **Llama 3** (Meta)
-- **Mistral 7B** (Mistral AI)  
-- **Gemma 2** (Google)
-- **Qwen3** (Alibaba)
-- **Yi** (01.AI)
+- **Llama 3** (Meta) — 8B, 70B
+- **Mistral** (Mistral AI) — 7B; Small‑24B‑Base‑2501  
+- **Gemma 2** (Google) — 9B, 27B
+- **Qwen** (Alibaba) — Qwen3 8B/14B; Qwen2.5 72B
+- **Yi** (01.AI) — 34B
 
 ### ❌ Not Supported
 - **GGUF files** – Require raw transformer format
@@ -19,8 +19,8 @@
 001_layers_and_logits/
 ├── run.py                           # Main experiment script
 ├── run-latest/                      # Results and evaluation of the latest run
-|   ├── meta-evaluation.md           # Meta-evaluation of the latest run
-│   ├── evaluation-cross-model.md    # Cross-model analysis
+|   ├── evaluation-meta.md           # Meta-evaluation of the latest run
+│   ├── evaluation-cross-models.md   # Cross-model analysis
 │   ├── evaluation-[model].md        # Per-model analyses  
 │   ├── output-[model].json          # JSON diagnostics
 │   ├── output-[model]-records.csv   # Layer-wise records (all tokens)
@@ -98,4 +98,4 @@ Arthur Belrose (2024) discussion "The LayerNorm Bias Can Scramble Logit-Lens Rea
 Anthropic Interpretability post "Why LN2 is the Right Hook for Post-Block Analysis" (2023) — https://transformer-circuits.pub/ln2-analysis — informed the choice of `ln2` over `ln1` for post-block snapshots.
 
 ---
-Produced by OpenAI o3
+Produced by OpenAI GPT-5, OpenAI o3

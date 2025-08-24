@@ -462,7 +462,7 @@ These tools move us beyond descriptive logit‑lens curves. They intervene direc
 
 **What.** *Produce an analysis notebook `concept_alignment.ipynb` that:*
 
-1. Collects layer‑`L_sem` activations for the token “Berlin” in the same prompt across all seven models.
+1. Collects layer‑`L_sem` activations for the token “Berlin” in the same prompt across all ten models.
 2. Performs CCA or orthogonal Procrustes alignment to a shared 128‑D space.
 3. Reports average inter‑model cosine similarity before vs after alignment and visualises clusters.
 

@@ -4,48 +4,63 @@ You are reviewing results of probes of multiple LLM models.
 
 INPUTS
 - SCRIPT – probing script:
+001_layers_and_logits/run.py
 
 - JSON – structured results of the probe (part of the results of each probe), one file per model:
 001_layers_and_logits/run-latest/output-gemma-2-9b.json
-001_layers_and_logits/run-latest/output-Meta-Llama-3-8B.json
-001_layers_and_logits/run-latest/output-Mistral-7B-v0.1.json
-001_layers_and_logits/run-latest/output-Qwen3-8B.json
 001_layers_and_logits/run-latest/output-gemma-2-27b.json
-001_layers_and_logits/run-latest/output-Yi-34B.json
+001_layers_and_logits/run-latest/output-Meta-Llama-3-8B.json
+001_layers_and_logits/run-latest/output-Meta-Llama-3-70B.json
+001_layers_and_logits/run-latest/output-Mistral-7B-v0.1.json
+001_layers_and_logits/run-latest/output-Mistral-Small-24B-Base-2501.json
+001_layers_and_logits/run-latest/output-Qwen3-8B.json
 001_layers_and_logits/run-latest/output-Qwen3-14B.json
+001_layers_and_logits/run-latest/output-Qwen2.5-72B.json
+001_layers_and_logits/run-latest/output-Yi-34B.json
 Note: each JSON is a compact summary; the bulky per-token records are stored only in the CSVs.
 
 - CSV - layer-level results of the probe (part of the results of each probe), one per model:
 001_layers_and_logits/run-latest/output-gemma-2-9b-records.csv
-001_layers_and_logits/run-latest/output-Meta-Llama-3-8B-records.csv
-001_layers_and_logits/run-latest/output-Mistral-7B-v0.1-records.csv
-001_layers_and_logits/run-latest/output-Qwen3-8B-records.csv
 001_layers_and_logits/run-latest/output-gemma-2-27b-records.csv
-001_layers_and_logits/run-latest/output-Yi-34B-records.csv
+001_layers_and_logits/run-latest/output-Meta-Llama-3-8B-records.csv
+001_layers_and_logits/run-latest/output-Meta-Llama-3-70B-records.csv
+001_layers_and_logits/run-latest/output-Mistral-7B-v0.1-records.csv
+001_layers_and_logits/run-latest/output-Mistral-Small-24B-Base-2501-records.csv
+001_layers_and_logits/run-latest/output-Qwen3-8B-records.csv
 001_layers_and_logits/run-latest/output-Qwen3-14B-records.csv
+001_layers_and_logits/run-latest/output-Qwen2.5-72B-records.csv
+001_layers_and_logits/run-latest/output-Yi-34B-records.csv
 
 - CSV - pure next-token results (part of the results of each probe) – one per model:
 001_layers_and_logits/run-latest/output-gemma-2-9b-pure-next-token.csv
-001_layers_and_logits/run-latest/output-Meta-Llama-3-8B-pure-next-token.csv
-001_layers_and_logits/run-latest/output-Mistral-7B-v0.1-pure-next-token.csv
-001_layers_and_logits/run-latest/output-Qwen3-8B-pure-next-token.csv
 001_layers_and_logits/run-latest/output-gemma-2-27b-pure-next-token.csv
+001_layers_and_logits/run-latest/output-Meta-Llama-3-8B-pure-next-token.csv
+001_layers_and_logits/run-latest/output-Meta-Llama-3-70B-pure-next-token.csv
+001_layers_and_logits/run-latest/output-Mistral-7B-v0.1-pure-next-token.csv
+001_layers_and_logits/run-latest/output-Mistral-Small-24B-Base-2501-pure-next-token.csv
+001_layers_and_logits/run-latest/output-Qwen3-8B-pure-next-token.csv
 001_layers_and_logits/run-latest/output-Qwen3-14B-pure-next-token.csv
+001_layers_and_logits/run-latest/output-Qwen2.5-72B-pure-next-token.csv
 001_layers_and_logits/run-latest/output-Yi-34B-pure-next-token.csv
 
 Both CSV flavours contain a `rest_mass` column (probability mass not covered by the top-k tokens).
 The pure-next-token CSV also adds boolean flags `copy_collapse`, `entropy_collapse`, and `is_answer` that the script computes for every layer.
 
-Use tools to review these JSON and CSV files as needed.ß
+Use tools to review these JSON and CSV files as needed.
 
 - EVALS – evaluations of probe results, one per model:
 001_layers_and_logits/run-latest/evaluation-gemma-2-9b.md
-001_layers_and_logits/run-latest/evaluation-Meta-Llama-3-8B.md
-001_layers_and_logits/run-latest/evaluation-Mistral-7B-v0.1.md
-001_layers_and_logits/run-latest/evaluation-Qwen3-8B.md
 001_layers_and_logits/run-latest/evaluation-gemma-2-27b.md
+001_layers_and_logits/run-latest/evaluation-Meta-Llama-3-8B.md
+001_layers_and_logits/run-latest/evaluation-Meta-Llama-3-70B.md
+001_layers_and_logits/run-latest/evaluation-Mistral-7B-v0.1.md
+001_layers_and_logits/run-latest/evaluation-Mistral-Small-24B-Base-2501.md
+001_layers_and_logits/run-latest/evaluation-Qwen3-8B.md
 001_layers_and_logits/run-latest/evaluation-Qwen3-14B.md
+001_layers_and_logits/run-latest/evaluation-Qwen2.5-72B.md
 001_layers_and_logits/run-latest/evaluation-Yi-34B.md
+
+- CROSS‑EVAL output file: 001_layers_and_logits/run-latest/evaluation-cross-models.md
 
 - Parameters: copy_threshold = 0.90, copy_margin = 0.05
 
@@ -105,15 +120,18 @@ STYLE GUIDELINES
 
 Briefly relate a model's collapse-depth (Δ) to its public factual-reasoning scores (e.g. MMLU, ARC-C) or to whether it is base vs. instruction-tuned; see the following table for scores:
 
-| Model           | Params | Release | MMLU-5shot |  ARC-C | Licence  |
-| --------------- | -----: | ------- | ---------: | -----: | -------- |
-| Meta-Llama-3-8B |    8 B | 2025-04 | **62.1 %** | 71.9 % | Apache-2 |
-| Mistral-7B-v0.1 |    7 B | 2023-09 |     60.1 % | 66.6 % | Apache-2 |
-| Gemma-2-9B      |    9 B | 2024-02 |       57 % |   63 % | Apache-2 |
-| Qwen-3-8B       |    8 B | 2025-05 | **64 %**\* |   72 % | Apache-2 |
-| Gemma-2-27B    |   27 B | 2024-02 |     63 % |   69 % | Apache-2 |
-| Yi-34B         |   34 B | 2023-11 | **76.3 %** | **80 %** | Apache-2 |
-| Qwen-3-14B      |   14 B | 2025-05 | **66 %** | **74 %** | Apache-2 |
+| Model                       | Params | Release | MMLU-5shot |    ARC-C | Licence  |
+| --------------------------- | -----: | ------- | ---------: | -------: | -------- |
+| Meta-Llama-3-8B             |    8 B | 2025-04 | **62.1 %** |   71.9 % | Apache-2 |
+| Mistral-7B-v0.1             |    7 B | 2023-09 |     60.1 % |   66.6 % | Apache-2 |
+| Gemma-2-9B                  |    9 B | 2024-02 |       57 % |     63 % | Apache-2 |
+| Qwen-3-8B                   |    8 B | 2025-05 | **64 %**\* |     72 % | Apache-2 |
+| Gemma-2-27B                 |   27 B | 2024-02 |       63 % |     69 % | Apache-2 |
+| Yi-34B                      |   34 B | 2023-11 | **76.3 %** | **80 %** | Apache-2 |
+| Qwen-3-14B                  |   14 B | 2025-05 |   **66 %** | **74 %** | Apache-2 |
+| Meta-Llama-3-70B            |   70 B | 2024-04 |     79.5 % |   93.0 % | Llama 3  |
+| Mistral-Small-24B-Base-2501 |   24 B | 2025-01 |     80.7 % |   91.3 % | Apache-2 |
+| Qwen2.5-72B                 |   72 B | 2024-09 |     86.1 % |   72.4 % | Qwen     |
 
 (The score table is provided for reference; do not add new tables.)
 
@@ -122,4 +140,4 @@ Does a steeper ΔH (defined as: ΔH = entropy(L_copy) − entropy(L_semantic)) p
 At the end of the markdown file, add the following:
 
 ---
-Produced by OpenAI o3
+Produced by OpenAI GPT-5

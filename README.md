@@ -4,9 +4,9 @@ An experiment in LLM interpretability to provide empirical evidence for nominali
 
 ## Overview
 
-The first experimental suite (001_layers_and_logits/) introduces a lightweight logit-lens that tracks per-layer token-entropy in seven open-weight models.
+The first experimental suite (001_layers_and_logits/) introduces a lightweight logit-lens that tracks per-layer token-entropy in ten open-weight models.
 
-Across all four, we see the typical "copy plateau, then sharp entropy drop" that coincides with factual recall. These measurements form the baseline for the causal and cross-modal probes planned in later stages.
+Across these models, we see the typical "copy plateau, then sharp entropy drop" that coincides with factual recall. These measurements form the baseline for the causal and cross-modal probes planned in later stages.
 
 ## Experiments
 

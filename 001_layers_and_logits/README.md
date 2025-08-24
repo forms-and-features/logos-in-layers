@@ -67,7 +67,7 @@ Self-test notes: `--self-test` validates scaling and prints results; it does not
 
 ## Supported Models and Dtypes
 
-- Supported families: Llama‑3‑8B, Mistral‑7B, Gemma‑2‑9B/27B, Qwen3‑8B/14B, Yi‑34B (raw HF format; no GGUF).
+- Supported families: Llama‑3 (8B/70B), Mistral‑7B and Mistral‑Small‑24B‑Base‑2501, Gemma‑2‑9B/27B, Qwen‑3‑8B/14B, Qwen‑2.5‑72B, Yi‑34B (raw HF format; no GGUF).
 - Dtype policy: CUDA fp16 (Gemma → bf16), MPS fp16, CPU fp32.
 
 Device selection is dynamic per model. The runner estimates memory usage (weights + overhead + headroom) for each available device and auto-picks the best fit in order `cuda → mps → cpu`. Models that do not fit on any device are skipped with a clear log.

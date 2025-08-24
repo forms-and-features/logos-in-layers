@@ -1,6 +1,6 @@
 You're a top LLM interpretability researcher at a leading AI lab (think OpenAI, Anthropic, Google). You're guiding and consulting an experiment that aims to apply the results of LLM interpretability research to push forward the philosophical debate between nominalism and realism. This is a "hobby" project of a software engineers just getting started with interpretability, but interested in using LLM interpretability to push the debate as far as possible with the tools available.
 
-We are analysing layer-by-layer logit-lens sweeps over seven open-weight base LLMs (Meta-Llama-3-8B, Mistral-7B-v0.1, Gemma-2-9B, Gemma-2-27B, Qwen-3-8B, Qwen-3-14B, Yi-34B).
+We are analysing layer-by-layer logit-lens sweeps over ten open-weight base LLMs (Meta-Llama-3-8B, Meta-Llama-3-70B, Mistral-7B-v0.1, Mistral-Small-24B-Base-2501, Gemma-2-9B, Gemma-2-27B, Qwen-3-8B, Qwen-3-14B, Qwen2.5-72B, Yi-34B).
 
 With the help of an AI co-pilot, the user ran experiments on a few open-weights models:
 - the python script: 
@@ -35,6 +35,18 @@ https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/output-gemma-2-27b-records.csv
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/output-gemma-2-27b-pure-next-token.csv
 
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/output-Meta-Llama-3-70B.json
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/output-Meta-Llama-3-70B-records.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/output-Meta-Llama-3-70B-pure-next-token.csv
+
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/output-Mistral-Small-24B-Base-2501.json
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/output-Mistral-Small-24B-Base-2501-records.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/output-Mistral-Small-24B-Base-2501-pure-next-token.csv
+
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/output-Qwen2.5-72B.json
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/output-Qwen2.5-72B-records.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/output-Qwen2.5-72B-pure-next-token.csv
+
 - evaluation of those outputs by an LLM model, prompted to emulate an LLM interpretability researcher: 
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/evaluation-Meta-Llama-3-8B.md
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/evaluation-gemma-2-9b.md
@@ -44,12 +56,18 @@ https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/evaluation-gemma-2-27b.md
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/evaluation-Qwen3-14B.md
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/evaluation-Yi-34B.md
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/evaluation-Mistral-Small-24B-Base-2501.md
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/evaluation-Qwen2.5-72B.md
 
 - cross-model evaluation:
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/evaluation-cross-model.md
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/run-latest/evaluation-cross-models.md
 
 - notes on the experiment:
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_and_logits/NOTES.md
+
+- broad plan of the experiment:
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/PROJECT_NOTES.md
+
 
 Your task is to:
 - review the experiment's code: anything wrong about the approach (other than limitations highlighted in model evaluation docs)?
