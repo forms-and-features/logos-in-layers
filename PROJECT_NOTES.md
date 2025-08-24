@@ -10,7 +10,7 @@ By showing that LLMs contain robust, reusable internal structures, detected thro
 
 ## Provenance & Conventions (read me first)
 
-**Provenance.** The `run-latest` results dated by `run-latest/timestamp-*` were produced **before** Section **1.1**’s normalization fix was merged. Treat those files as **V1 (pre‑fix)** baselines. All re‑runs after the fix are **V2 (post‑fix)**. Record both in write‑ups when comparing depths or probabilities.
+**Provenance.** Section **1.1**’s normalization fix is merged and active. The current `run-latest` (e.g., `timestamp-20250824-1549`) is **V2 (post‑fix)**. Only archived runs before the fix should be treated as **V1 (pre‑fix)**; label them explicitly when comparing depths or probabilities.
 Runs after 2025‑08‑24 also decode logits with an fp32 unembedding when the model computes in bf16/fp16, and compute LN/RMS statistics in fp32 before casting back. This improves numerical stability without changing defaults for ≤27B CPU runs.
 
 **Layer indexing.** We decode **post‑block** unless otherwise stated. Rows `layer = 0 … (n_layers − 1)` are post‑block residuals; `layer = n_layers` is the **final unembed head** (the model’s actual output distribution).
@@ -58,11 +58,11 @@ norm_module = model.blocks[i].ln2 if probe_after_block else model.blocks[i].ln1
 (Wrap this in a helper; autodetect whether the architecture is Pre‑Norm or Post‑Norm.)
 3\) Add a unit test that decodes layer 0 twice: once with γ=1, once with learned γ. The KL between them should match KL between *raw* hidden states with and without γ, proving that scaling now matches semantics.
 
-**✅ IMPLEMENTATION STATUS: COMPLETED**
+**✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)**
 
 * All epsilon placement, architecture detection, and validation requirements implemented and unit‑tested.
 * Numerical precision policy: When compute dtype is bf16/fp16 (e.g., large CPU runs), unembedding/decoding uses fp32 and LN/RMS statistics are computed in fp32 and cast back. This stabilizes small logit gaps and entropy at negligible memory cost.
-* **Provenance note:** any artefacts in `001_layers_and_logits/run-latest/*` prior to commit *8fa091ce95f6fc68ae9dbca1a27d29ec736b2e8d* are **pre‑fix**. Re‑run those models to obtain **V2** numbers before drawing cross‑model conclusions.
+* **Provenance note:** the current `run-latest` directory (timestamped 2025‑08‑24) is **post‑fix (V2)**. Only archived outputs predating the fix (or the referenced commit) are **pre‑fix (V1)**; re‑run those models if you need comparable V2 numbers.
 
 ---
 
