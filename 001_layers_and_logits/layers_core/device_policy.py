@@ -14,7 +14,7 @@ def choose_dtype(device: str, model_id: str) -> torch.dtype:
 
     - cuda: float16 by default; Gemma models use bfloat16
     - mps: float16
-    - cpu: float32
+    - cpu: float32 (but prefer bfloat16 for very large models to reduce RAM)
     """
     device = device.lower()
     base = {
@@ -23,8 +23,17 @@ def choose_dtype(device: str, model_id: str) -> torch.dtype:
         "cpu": torch.float32,
     }[device]
 
+    # CUDA Gemma override
     if device == "cuda" and "gemma" in model_id.lower():
         return torch.bfloat16
+
+    # CPU: prefer bfloat16 for very large checkpoints to avoid FP32 blow-up
+    if device == "cpu":
+        params = resolve_param_count(model_id) or 0.0
+        # Threshold chosen to catch 30B+ class (e.g., Yi-34B) on 256GB hosts
+        if params >= 3.0e10:
+            return torch.bfloat16
+
     return base
 
 
@@ -62,6 +71,9 @@ _RESERVE_BYTES = {
     "cpu": int(4.0 * (1024 ** 3)),  # ~4 GB
 }
 
+# Extra reserve for very large CPU loads where transient duplication is likely
+_LARGE_CPU_EXTRA_RESERVE_BYTES = int(12.0 * (1024 ** 3))  # ~12 GB
+
 
 def _bytes_per_param(dtype: torch.dtype) -> int:
     if dtype in (torch.float16, torch.bfloat16):
@@ -70,6 +82,19 @@ def _bytes_per_param(dtype: torch.dtype) -> int:
         return 4
     # Default conservative assumption
     return 4
+
+
+def _assumed_checkpoint_bpp(model_id: str) -> int:
+    """Best-effort guess of on-disk checkpoint bytes/param.
+
+    Most modern large checkpoints ship in bf16/fp16 (2 bytes/param). Fall back
+    to 4 if unsure. We bias toward 2 for common families to be realistic about
+    load-time conversion peaks when CPU target dtype is fp32.
+    """
+    tail = model_id.lower()
+    if any(k in tail for k in ["llama", "mistral", "gemma", "qwen", "yi", "falcon", "gpt-neox", "gpt-j"]):
+        return 2
+    return 2  # default optimistic but common in practice
 
 
 def resolve_param_count(model_id: str) -> Optional[float]:
@@ -105,7 +130,18 @@ def estimate_model_peak_bytes(model_id: str, device: str, dtype: torch.dtype) ->
     overhead = _OVERHEAD_FACTOR.get(device, 0.30)
     reserve = _RESERVE_BYTES.get(device, int(2.0 * (1024 ** 3)))
     weights = int(params * bpp)
+
+    # Base estimate (steady-state after load)
     peak = int(weights * (1.0 + overhead) + reserve)
+
+    # For very large CPU models targeting FP32, account for load-time duplication:
+    # source (often bf16/fp16) + destination (fp32) may coexist transiently.
+    if device == "cpu" and dtype == torch.float32 and params >= 2.5e10:
+        src_bpp = _assumed_checkpoint_bpp(model_id)
+        dup_bytes = int(params * src_bpp)
+        # Apply overhead only once (assume duplication dominates activations), add extra reserve
+        peak = int((weights + dup_bytes) * (1.0 + max(overhead, 0.10)) + reserve + _LARGE_CPU_EXTRA_RESERVE_BYTES)
+
     return peak
 
 

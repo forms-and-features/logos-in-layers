@@ -33,7 +33,8 @@ huggingface-cli login  # Required for gated models
 ```
 
 ### Virtualenv & CLI Tips (for agents)
-- Always activate the venv before running project scripts: `source venv/bin/activate && <command>`.
+- Always activate the venv before running project scripts: `source venv/bin/activate && <command>`; for example: `source venv/bin/activate && scripts/run_cpu_tests.sh`. This is known to work.
+- DO NOT ASSSUME THAT PACKAGES ARE MISSING - ANY ISSUES YOU ENCOUNTER ARE BECAUSE YOU DID NOT ACTIVATE THE ENVIRONMENT PROPERLY. FOLLOW THE INSTRUCTION.
 - Prefer invoking helper scripts that already honor the venv, e.g. `scripts/run_cpu_tests.sh` (it uses `PYTHON_BIN` and defaults to `venv/bin/python`).
 - If `venv/bin/python` is a symlink to a host-managed interpreter and fails in a sandbox, use `source venv/bin/activate` instead of calling the path directly.
 - If activation still fails due to a broken interpreter path, recreate the venv inside the workspace and reinstall deps: `python -m venv venv && source venv/bin/activate && pip install -r requirements.txt`.
