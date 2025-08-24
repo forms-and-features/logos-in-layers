@@ -30,9 +30,10 @@ def test_choose_dtype_cpu_large_prefers_bf16():
 
 
 def test_should_auto_promote_unembed():
-    assert should_auto_promote_unembed(torch.float32) is True
-    assert should_auto_promote_unembed(torch.float16) is False
-    assert should_auto_promote_unembed(torch.bfloat16) is False
+    # Auto-promote when main compute runs in low precision
+    assert should_auto_promote_unembed(torch.float32) is False
+    assert should_auto_promote_unembed(torch.float16) is True
+    assert should_auto_promote_unembed(torch.bfloat16) is True
 
 
 def test_resolve_param_count_known_and_parsed():

@@ -38,8 +38,13 @@ def choose_dtype(device: str, model_id: str) -> torch.dtype:
 
 
 def should_auto_promote_unembed(compute_dtype: torch.dtype) -> bool:
-    """Auto-promote unembed to fp32 when the rest of the model runs in fp32."""
-    return compute_dtype == torch.float32
+    """Auto-promote unembed to fp32 when main compute runs in bf16/fp16.
+
+    Rationale: Keeping weights in bf16/fp16 saves memory, but decoding logits via
+    a float32 unembedding stabilizes small logit gaps and entropy with negligible
+    memory cost. For pure fp32 compute, promotion is unnecessary.
+    """
+    return compute_dtype in (torch.float16, torch.bfloat16)
 
 
 # ---- Dynamic fit policy -----------------------------------------------------

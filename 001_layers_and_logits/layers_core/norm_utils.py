@@ -65,29 +65,36 @@ def get_correct_norm_module(model, layer_idx, probe_after_block=True):
 
 
 def apply_norm_or_skip(residual: torch.Tensor, norm_module):
-    """Apply model's own normalization (LayerNorm or RMSNorm) to a residual stream.
+    """Apply model's normalization (LayerNorm or RMSNorm) with fp32 math, return original dtype.
 
-    - LayerNorm: faithful mean/var normalization with γ and β applied.
-    - RMSNorm: epsilon is inside sqrt (x / sqrt(mean(x^2) + eps)) and learns scale.
-    - If `norm_module` is None: return input unchanged (some models expose pre-norm).
+    - Computes LN/RMS statistics in float32 to reduce rounding error under bf16/fp16,
+      then casts the result back to the residual's dtype.
+    - LayerNorm: mean/var + γ/β; RMSNorm: ε is inside sqrt; optional learned scale.
+    - If `norm_module` is None: return input unchanged.
     """
     if norm_module is None:
         return residual
 
     with torch.no_grad():
+        in_dtype = residual.dtype
+        resid32 = residual.float()
+
         if isinstance(norm_module, nn.LayerNorm):
-            mean = residual.mean(dim=-1, keepdim=True)
-            var = residual.var(dim=-1, unbiased=False, keepdim=True)
-            normalized = (residual - mean) / torch.sqrt(var + norm_module.eps)
-            weight = norm_module.weight.to(residual.dtype)
-            bias = norm_module.bias.to(residual.dtype)
-            return normalized * weight + bias
+            mean32 = resid32.mean(dim=-1, keepdim=True)
+            var32 = resid32.var(dim=-1, unbiased=False, keepdim=True)
+            normalized32 = (resid32 - mean32) / torch.sqrt(var32 + float(norm_module.eps))
+            weight32 = norm_module.weight.detach().to(residual.device, dtype=torch.float32)
+            bias32 = norm_module.bias.detach().to(residual.device, dtype=torch.float32)
+            out32 = normalized32 * weight32 + bias32
+            return out32.to(dtype=in_dtype)
         else:
-            rms = torch.sqrt(residual.pow(2).mean(-1, keepdim=True) + norm_module.eps)
-            normalized = residual / rms
+            # RMSNorm-style module
+            rms32 = torch.sqrt(resid32.pow(2).mean(-1, keepdim=True) + float(getattr(norm_module, 'eps', 0.0)))
+            normalized32 = resid32 / rms32
             scale = _get_rms_scale(norm_module)
             if scale is not None:
-                scale = scale.detach().to(residual.device, dtype=residual.dtype)
-                return normalized * scale
-            return normalized
-
+                scale32 = scale.detach().to(residual.device, dtype=torch.float32)
+                out32 = normalized32 * scale32
+            else:
+                out32 = normalized32
+            return out32.to(dtype=in_dtype)

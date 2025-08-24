@@ -106,3 +106,7 @@ The project uses transformer-lens for interpretability tools and supports both:
 - Local GGUF models via llama-cpp (see `000_basic_chat/run.py`)
 
 Authentication required for gated models (Llama family) via `huggingface-cli login`.
+
+### Precision Policy (for agents)
+- CPU runs: models ≤27B use fp32 by default; ≥30B use bf16 to fit comfortably on 256 GiB hosts.
+- When compute is bf16/fp16, logits are decoded with an fp32 unembedding automatically, and LN/RMS statistics are computed in fp32 then cast back. No flags required; defaults remain unchanged for ≤27B.

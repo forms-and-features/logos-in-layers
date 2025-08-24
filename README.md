@@ -15,6 +15,8 @@ Across all four, we see the typical "copy plateau, then sharp entropy drop" that
 See `001_layers_and_logits/README.md` for detailed usage, outputs, testing, and internals. Evaluation reports for the latest run live in `001_layers_and_logits/run-latest/*.md`; additional implementation notes are in `001_layers_and_logits/NOTES.md`.
 Device notes: the script now auto-selects the best device per model (prefers `cuda` → `mps` → `cpu`) based on a conservative memory‑fit estimate. You can still override with `--device {cuda|mps|cpu}` when needed.
 
+Precision policy: on CPU, models ≤27B use fp32 by default; ≥30B use bf16 to fit comfortably on 256 GiB hosts. When the compute dtype is bf16/fp16, the unembedding matrix is automatically promoted to fp32 and logits are decoded in fp32 for stability. LayerNorm/RMSNorm statistics are computed in fp32 internally and cast back. No flags needed; defaults remain unchanged for ≤27B.
+
 ## Setup
 
 ### Requirements
