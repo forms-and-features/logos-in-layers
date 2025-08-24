@@ -12,7 +12,10 @@ Across these models, we see the typical "copy plateau, then sharp entropy drop" 
 
 ### 001: Layer-by-Layer Analysis
 
+Review of the latest iteration of the experiment: [`001_layers_and_logits/run-latest/meta-evaluation.md`](001_layers_and_logits/run-latest/meta-evaluation.md)
+
 See `001_layers_and_logits/README.md` for detailed usage, outputs, testing, and internals. Evaluation reports for the latest run live in `001_layers_and_logits/run-latest/*.md`; additional implementation notes are in `001_layers_and_logits/NOTES.md`.
+
 Device notes: the script now auto-selects the best device per model (prefers `cuda` → `mps` → `cpu`) based on a conservative memory‑fit estimate. You can still override with `--device {cuda|mps|cpu}` when needed.
 
 Precision policy: on CPU, models ≤27B use fp32 by default; ≥30B use bf16 to fit comfortably on 256 GiB hosts. When the compute dtype is bf16/fp16, the unembedding matrix is automatically promoted to fp32 and logits are decoded in fp32 for stability. LayerNorm/RMSNorm statistics are computed in fp32 internally and cast back. No flags needed; defaults remain unchanged for ≤27B.
@@ -93,6 +96,6 @@ MIT License - see LICENSE file for details.
 - **Apple** for Metal GPU acceleration
 
 ## AI-Assisted Development
-- Conceptual direction: **OpenAI GPT-5 pro**, **o3 pro**
-- Implementation: **OpenAI GPT-5** via **codex-cli**; **Anthropic Claude 4 Sonnet** and **OpenAI o4-mini** via **Cursor IDE**
-- Individual model evaluations and cross-model analysis: **OpenAI GPT-5**; **OpenAI o3**
+- Conceptual direction: **OpenAI GPT-5 Pro**, **o3 pro**
+- Implementation: **OpenAI codex-cli** with **GPT-5 medium/high**; **Anthropic Claude 4 Sonnet** and **OpenAI o4-mini** in **Cursor IDE**
+- Individual model evaluations and cross-model analysis: **OpenAI codex-cli** with **GPT-5 high**; **OpenAI o3**

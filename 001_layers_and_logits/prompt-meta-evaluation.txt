@@ -74,9 +74,11 @@ Your task is to:
 - review the results and analyses: anything incorrectly interpreted, over-stated, or missed?
 - do your own independent deep dive into the results, broadly following the structure of cross-model evaluation reports, and using your knowledge of latest LLM interpretability research (you may use search for articles, posts and code sources);
 - consider the usefulness of the findings for the realism vs nominalism debate, keeping in mind this is just the first iteration;
-- propose next steps, keeping in mind project context and goals.
+- review the plan in https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/PROJECT_NOTES.md and, if necessary, propose additions and/or adjustments to the next steps, keeping in mind project context and goals; make sure that suggestions would actually bring non-negligible value to the project (no bike-shedding!).
 
-Use your knowledge of cutting-edge LLM research. Be thorough and specific.
+Use your knowledge of cutting-edge LLM research. Look up and read papers, if necessary.
+
+Be thorough and specific - this is important.
 
 Make sure that statements are supported by evidence from the txt dump, don't speculate. Contextualize your findings using your broader knowledge of the latest interpretability research, citing sources when appropriate. Always provide links to sources, and verify that sources contain the claims that you're citing; otherwise, reformulate or remove the claim. In any case, never provide a non-existent source.
 
@@ -103,4 +105,4 @@ Known limitations to keep in mind:
 
 Accept these constraints as *scoping guards*: they keep this run self-consistent even if they leave some systematic bias uncorrected.
 
-Your response should read as a review, not as part of a conversation. The review should be well-formatted as markdown.
+Your response should read as a review, not as part of a conversation. DO NOT refer to user as "you", or to yourself as "I" - everything in the review MUST be in third person. The review should be in valid markdown format. Respond with review only and nothing else, no dialogue.
