@@ -41,7 +41,9 @@ CANDIDATE_MODELS = [
     "Qwen/Qwen3-14B",
     "google/gemma-2-27b",
     "01-ai/Yi-34B",
-    "meta-llama/Meta-Llama-3-70B"
+    "meta-llama/Meta-Llama-3-70B",
+    "mistralai/Mistral-Small-24B-Base-2501",
+    "Qwen/Qwen2.5-72B",
 ]
 
 # Backward-compatible name used throughout this script

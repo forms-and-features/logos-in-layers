@@ -60,6 +60,8 @@ _PARAMS_MAP = {
     "Qwen/Qwen3-14B": 14.0e9,
     "google/gemma-2-27b": 27.0e9,
     "01-ai/Yi-34B": 34.0e9,
+    "mistralai/Mistral-Small-24B-Base-2501": 24.0e9,
+    "Qwen/Qwen2.5-72B": 72.0e9,
 }
 
 _OVERHEAD_FACTOR = {
