@@ -15,6 +15,8 @@ Runs after 2025‑08‑24 also decode logits with an fp32 unembedding when the m
 
 **Layer indexing.** We decode **post‑block** unless otherwise stated. Rows `layer = 0 … (n_layers − 1)` are post‑block residuals; `layer = n_layers` is the **final unembed head** (the model’s actual output distribution).
 
+**Positional encoding.** Most models here use rotary position embeddings (RoPE). At layer 0 our “token‑only” wording indicates no additive positional vector; position is injected inside attention via RoPE (cf. RoFormer, arXiv:2104.09864).
+
 **Answer matching is ID‑level.** We determine the gold **first answer token id** from the model’s tokenizer applied to `prompt + " Berlin"` (or control answer). All `is_answer` logic compares **token IDs**, not strings. We log the entire answer tokenisation for transparency (see §1.11).
 
 **Cross‑model caution.** RMS/LN lenses can distort **absolute** probabilities and entropies in model‑specific ways. Only compare **within** a model unless using a Tuned Lens or a shared decoder (Logit Prism). Cross‑model claims should be phrased in terms of **relative** or **rank‑based** metrics (e.g., KL‑to‑final thresholds).
@@ -35,7 +37,7 @@ Before we can claim that LLMs house structures too systematic for austere nomina
 
 **Why.** If you normalise a *different* residual stream (post‑block) with γ that was trained for the *pre‑block* stream, logits are systematically mis‑scaled; early‑layer activations can be inflated by >10×. An incorrect ε outside the square‑root likewise shifts all norms upward. These distortions then propagate through the logit lens, giving spurious “early meaning” or hiding true signal. RMSNorm’s official formula places ε **inside** the √ and multiplies by γ afterwards ([arxiv.org][1]).
 
-**What.** Apply RMS/LN γ and ε to the right residual stream; fix the ε‑outside‑sqrt bug.
+**What.** Apply RMS/LN γ and ε to the right residual stream; fix the ε‑outside‑sqrt bug (cf. arXiv:1910.07467).
 
 **How.**
 
@@ -66,66 +68,82 @@ norm_module = model.blocks[i].ln2 if probe_after_block else model.blocks[i].ln1
 
 ### 1.2. Sub‑word‑aware copy‑collapse detector
 
-**Why.** For BPE/WordPiece vocabularies the answer “Berlin” may surface as two tokens (“▁Berlin”, “Ber▁lin”, etc.). The current string‑match can miss that, under‑counting copy events and making Gemma look unique when it may not be.
+**Why.** String‑level membership can both **miss** prompt‑echoes (multi‑piece tokens; whitespace variants) and **spuriously fire** on substrings (“lin” in “Berlin”). Detecting copy at the **token‑ID level** eliminates these errors and makes `L_copy` robust.
 
-**What.** *Detect prompt echo at the string level after detokenisation, regardless of how many word‑pieces the tokenisation used.*
+**What.** *Detect prompt echo when the **top‑1 token ID** (or a window of the last *k* top‑1 IDs) appears as a **contiguous subsequence** of the prompt’s token‑ID list **and** `p_top1 > THRESH`.*
 
 **How.**
 
-0\) Normalise both sides once for robust matching:
+1. Precompute the prompt’s token IDs once:
 
-```python
-prompt_norm = tokenizer.decode(tokenizer.encode(prompt, add_special_tokens=False)).strip()
-cand_detok = tokenizer.decode([top1_id]).strip()
-```
+   ```python
+   ctx_ids = tokenizer.encode(prompt, add_special_tokens=False)
+   ```
+2. Maintain a rolling window of the last *k* top‑1 IDs (default `k=1`, optional `k∈{1,2,3}`):
 
-1. Replace:
+   ```python
+   window_ids.append(top1_id)
+   if len(window_ids) > k: window_ids.pop(0)
+   ```
+3. Replace string membership with an **ID‑level contiguous subsequence** check:
 
-```python
-candidate = tokenizer.decode(top1_id)  # returns single piece
-collapse = (candidate in prompt) and (top1_p > THRESH)
-```
+   ```python
+   def is_id_subseq(needle, haystack):
+       # return True iff `needle` appears as a contiguous slice of `haystack`
+       k = len(needle)
+       return any(haystack[i:i+k] == needle for i in range(len(haystack)-k+1))
 
-with:
+   collapse = is_id_subseq(window_ids, ctx_ids) and (p_top1 > THRESH)
+   ```
+4. Expose CLI knobs:
 
-```python
-collapse = (cand_detok in prompt_norm) and (top1_p > THRESH)
-```
+   * `--copy-thresh` (default `0.90`)
+   * `--copy-window-k` (default `1`)
+5. **Provenance.** Emit to JSON meta:
 
-2. Optional: allow contiguous multi‑token matches by keeping a rolling window of the last *k* best tokens, detokenising them jointly, and checking membership.
-3. Parameterise the probability threshold; expose `--copy-thresh` CLI option so reviewers can run sensitivity analyses.
-4. Emit `copy_thresh` into the JSON meta for provenance.
+   ```json
+   "copy_thresh": 0.90,
+   "copy_window_k": 1,
+   "copy_match_level": "id_subsequence"
+   ```
+6. **Note.** Detokenise only for **reporting** (pretty prints), **not** for detection.
 
 ---
 
-### 1.3. Record top‑1 p, top‑5 p\_cumulative, **p\_answer**, and KL‑to‑final
+### 1.3. Record top‑1 p, top‑5 p\_cumulative, **p\_answer**, **answer\_rank**, and KL‑to‑final
 
-**Why.** Entropy alone conflates “one spike” vs “five near‑ties”. KL(ℓ ∥ final) is the metric used in the tuned‑lens paper to show convergence ([arxiv.org][2]). These curves tell you whether the model is already *near* its final answer direction (amplification) or still rotating into place (construction).
+**Why.** Entropy blurs ties; probabilities depend on lens calibration. Adding **rank** of the gold token provides a calibration‑robust signal and clean thresholds (“rank ≤ 5/10”). KL to the final head diagnoses **amplification vs rotation**.
 
-**What.** *Four new floating‑point columns in every `*-pure-next-token.csv`: `p_top1`, `p_top5`, `p_answer`, `kl_to_final_bits`.* Also compute a run‑summary field `first_kl_below_{0.5,1.0}` (in bits) to mark the earliest layer whose distribution is within τ bits of the final head.
+**What.** *Add five columns to every `*-pure-next-token.csv`:*
+
+* `p_top1`, `p_top5` (cumulative), `p_answer`, `kl_to_final_bits`, **`answer_rank`**.
+  *Add run‑summary fields:* `first_kl_below_0.5`, `first_kl_below_1.0`, **`first_rank_le_1`**, **`first_rank_le_5`**, **`first_rank_le_10`** (layer indices or `null`).
 
 **How.**
 
-1. During the logit sweep cache the final distribution once:
+1. Cache final distribution once:
 
-```python
-final_logits = all_logits[-1]                    # shape [V]
-final_probs  = final_logits.softmax(dim=-1)      # dtype float32
-```
-
+   ```python
+   final_probs = final_logits.softmax(dim=-1, dtype=torch.float32)
+   ```
 2. Per layer:
 
-```python
-probs   = layer_logits.softmax(dim=-1, dtype=torch.float32)
-p_top1  = probs[top1_id]
-p_top5  = probs[torch.topk(probs, 5).indices].sum()
-p_answer = probs[first_ans_id]                   # from §1.11
-kl_bits = torch.kl_div(probs.log(), final_probs, reduction="sum") / math.log(2)  # bits
-```
+   ```python
+   probs = layer_logits.softmax(dim=-1, dtype=torch.float32)
+   p_top1   = probs[top1_id].item()
+   p_top5   = probs[torch.topk(probs, 5).indices].sum().item()
+   p_answer = probs[first_ans_id].item()
+   kl_bits  = torch.kl_div(probs.log(), final_probs, reduction="sum") / math.log(2)
+   answer_rank = 1 + (probs > p_answer).sum().item()  # integer rank (1 = top-1)
+   ```
+3. After the sweep, derive thresholds:
 
-3. Append to the CSV writer.
-4. Store `kl_to_final_bits` even when the tuned lens is active (it then measures residual mismatch, not absolute).
-5. After the sweep, derive `first_kl_below_0.5` and `first_kl_below_1.0` (layer indices, or `null`) and write them into the JSON meta.
+   ```python
+   first_rank_le_1  = first_layer_where(answer_rank <= 1)
+   first_rank_le_5  = first_layer_where(answer_rank <= 5)
+   first_rank_le_10 = first_layer_where(answer_rank <= 10)
+   ```
+4. Persist all five fields in CSV; write the four summary indices into JSON.
 
 ---
 
@@ -178,16 +196,19 @@ cos = torch.dot(curr_dir, final_dir).item()
 
 ### 1.6. Negative‑control prompt
 
-**Why.** If Berlin outranks Paris in “The capital of *France* is …”, your probe is leaking string co‑occurrence, undermining any metaphysical claim.
+**Why.** If, in the **France** control, the Berlin token outranks Paris, the probe is leaking lexical co‑occurrence. A **margin** makes leakage quantitative and comparable.
 
-**What.** *Run every model on one additional control prompt (“Give the city name only … France …”) and log the same metrics.*
+**What.** *Run a control prompt (“… The capital of **France** …”) alongside the positive prompt; log a **control margin** and a summary index.*
+
+* Add a per‑layer column (control rows only): **`control_margin = p(Paris) − p(Berlin)`** using ID‑level `first_id` from §1.11.
+* Add run‑summary fields: **`first_control_margin_pos = first layer with control_margin > 0`** and **`max_control_margin`**.
 
 **How.**
 
-1. `PROMPTS = [positive_prompt, control_prompt]`.
-2. Loop over prompts; append a `prompt_id` column to CSV and JSON.
-3. In the analysis notebook auto‑flag any layer where the **ID‑level** probability for `Paris` in the control row is lower than the **ID‑level** probability for `Berlin` in that same row, i.e.
-   `p_answer_control(first_id_Paris) < p_answer_control(first_id_Berlin)` (IDs from §1.11).
+1. `PROMPTS = [positive_prompt, control_prompt]`; add `prompt_id ∈ {pos, ctl}` to CSV/JSON.
+2. For `prompt_id == ctl`, compute `p(Paris)` and `p(Berlin)` per layer and write `control_margin`.
+3. After the sweep, compute and store `first_control_margin_pos` and `max_control_margin` in JSON meta.
+4. In analysis, flag runs where `first_control_margin_pos` is `null` or late (possible leakage).
 
 ---
 
@@ -207,53 +228,69 @@ cos = torch.dot(curr_dir, final_dir).item()
 
 ### 1.8. Lightweight CI / regression harness
 
-**Why.** As soon as you integrate tuned lens or refactor, you need guard‑rails ensuring that numbers do not silently drift.
+**Why.** Top‑1 flips are brittle; KL thresholds are **more stable**. CI should guard **metrics and provenance**.
 
-**What.** *A GitHub Actions workflow that executes `python run.py --models meta-llama/Meta-Llama-3-8B --cpu --dry-run` and checks that:*
+**What.** *A GitHub Actions workflow that executes a dry‑run and asserts:*
 
-* JSON meta contains the new schema keys
-* `L_semantic` remains within ±1 layer of an expected value stored in `expected.json`.
+* JSON meta contains **schema & provenance** keys:
+
+  * `schema_version`, `code_commit_sha`
+  * `gold_answer.first_id`, `gold_answer.pieces`
+  * `copy_thresh`, `copy_window_k`
+  * lens flags (`use_norm_lens`, `raw_lens`, `use_tuned_lens`, `use_logit_prism`)
+  * **if tuned lens is used:** `tuned_lens.{version, sha, train_corpus_id, num_steps, seed}`
+* **`first_kl_below_1.0` remains within ±1 layer** of an expected value (store in `expected_meta.json`).
+  *(Optionally also check `L_semantic` ±1 for visibility.)*
 
 **How.**
 
-1. In `run.py` add a `--dry-run` flag that loads the model and decodes only the first 5 layers.
-2. Commit `expected_meta.json` with the reference values.
-3. GH Actions job matrix: `{python-version: [3.10], torch: [2.3]}`.
-4. Ensure JSON meta includes: `gold_answer.first_id`, `gold_answer.pieces`, `copy_thresh`, lens flags (`use_norm_lens`, `raw_lens`, `use_tuned_lens`, `use_logit_prism`), and dtypes (`dtype`, `unembed_dtype`).
+1. Add `--dry-run` to load the model and decode first 5 layers.
+2. Commit `expected_meta.json` with `first_kl_below_1.0` and `schema_version`.
+3. GH Actions matrix: `{python-version: [3.10], torch: [2.3]}`; fail if any required key is missing or thresholds drift.
+4. Print the guarded fields on CI for audit.
 
 ---
 
 ### 1.9. Integrate a Tuned Lens
 
-**Why.** Tuned Lens learns an affine probe per layer that automatically compensates for scaling and basis rotation, reducing KL by an order of magnitude and eliminating garbled early‑layer strings ([arxiv.org][2]).
+**Why.** Tuned Lens compensates for scaling and basis rotation, lowering KL to final and stabilising early‑layer read‑outs (cf. arXiv:2303.08112). **Reproducible provenance** is required.
 
-**What.** *Train a lens on \~50k tokens once per model, save to `model_id/tuned_lens.pt`, and have `run.py` optionally load it with `--use-tuned-lens`.*
+**What.** *Train once per model; load with `--use-tuned-lens`; record full training provenance.*
 
 **How.**
 
-1. `pip install tuned-lens==0.6.*` (RMSNorm support landed in 0.5).
-2. Training snippet:
+1. Install and train:
 
-```python
-from tuned_lens import TunedLens, train_all_layers
+   ```python
+   from tuned_lens import TunedLens, train_all_layers
+   lens = TunedLens(model)
+   train_all_layers(
+       lens, tokenizer, text_corpus,
+       max_steps=500, lr=1e-4, seed=SEED
+   )
+   lens.save_pretrained(save_dir)
+   ```
+2. Load in the sweep (as already planned):
 
-model.eval(), model.requires_grad_(False)
-lens = TunedLens(model)
-train_all_layers(lens, tokenizer, text_corpus, max_steps=500, lr=1e-4)
-lens.save_pretrained(save_dir)
-```
+   ```python
+   if args.use_tuned_lens:
+       lens = TunedLens.from_pretrained(save_dir).to(model.device)
+       logits = lens(hidden_states, layer_idx=ℓ)
+   else:
+       logits = (unembed @ resid)
+   ```
+3. **Provenance.** Persist a `tuned_lens.json` alongside weights and mirror it into the run meta:
 
-3. In the sweep:
-
-```python
-if args.use_tuned_lens:
-    lens = TunedLens.from_pretrained(save_dir).to(model.device)
-    logits = lens(hidden_states, layer_idx=ℓ)
-else:
-    logits = (unembed @ resid)  # existing path
-```
-
-4. Store lens SHA/hash in the run metadata for provenance.
+   ```json
+   "tuned_lens": {
+     "version": "0.6.x",
+     "sha": "<model-or-weights-hash>",
+     "train_corpus_id": "pile-50k-shards_v1",
+     "num_steps": 500,
+     "seed": 316
+   }
+   ```
+4. CI (see §1.8) asserts presence of the full `tuned_lens.*` block when `--use_tuned_lens` is set.
 
 ---
 
@@ -275,51 +312,61 @@ logits = W_U @ (R @ (resid - mean) / sqrt(var))
 
 4. Add a CLI flag parallel to `--use-tuned-lens`; mutual‑exclusion logic ensures the user picks exactly one decoding scheme.
 
+Note. Logit Prism is currently documented via a non‑archival implementation blog ([3]); treat it as an engineering reference rather than a formal citation.
+
 ---
 
 ### 1.11. Gold‑token alignment (leading‑space, multi‑piece)
 
-**Why.** Many tokenizers produce a leading‑space piece for the first word of an answer (e.g., `"▁Berlin"` / `" Berlin"`). String‑level equality can silently mismatch; **ID‑level matching** is robust across tokenizers.
+**Why.** Many tokenizers produce a leading‑space piece; string equality silently mismatches. **ID‑level matching** is robust. In multilingual runs, the **gold token(s) vary by language** and must be recorded per‑language.
 
-**What.** *Compute the gold **first answer token id** from `tokenizer(prompt + " Berlin")` and record both the id and full answer tokenisation in the JSON meta.*
+**What.** *Compute the gold **first answer token id** from `tokenizer(prompt + " Berlin")` (or the language‑specific gold token) and record both the ID and full tokenisation in JSON.* In multilingual runs, also write a `gold_answer_by_lang` block.
 
 **How.**
 
-1. Tokenise once:
+1. Monolingual:
 
-```python
-ans_pieces  = tokenizer.encode(" Berlin", add_special_tokens=False)
-ctx_ids     = tokenizer.encode(prompt, add_special_tokens=False)
-ctx_ans_ids = tokenizer.encode(prompt + " Berlin", add_special_tokens=False)
-first_ans_id = ctx_ans_ids[len(ctx_ids)]
-```
+   ```python
+   ans_pieces = tokenizer.encode(" Berlin", add_special_tokens=False)
+   ctx_ids    = tokenizer.encode(prompt, add_special_tokens=False)
+   ctx_ans    = tokenizer.encode(prompt + " Berlin", add_special_tokens=False)
+   first_ans_id = ctx_ans[len(ctx_ids)]
+   ```
+2. Use `first_ans_id` for `is_answer`, `p_answer`, and `answer_rank` (§1.3).
+3. JSON meta:
 
-2. Use `first_ans_id` for `is_answer` and for `p_answer` logging (see §1.3).
-3. In the JSON meta add:
+   ```json
+   "gold_answer": { "string": "Berlin", "pieces": ans_pieces, "first_id": first_ans_id }
+   ```
+4. **Multilingual extension.** When `prompt_lang` is set, compute and store:
 
-```json
-"gold_answer": {
-  "string": "Berlin",
-  "pieces": ans_pieces,
-  "first_id": first_ans_id
-}
-```
+   ```json
+   "gold_answer_by_lang": {
+     "en": { "string": "Berlin",  "pieces": [...], "first_id": 1234 },
+     "de": { "string": "Berlin",  "pieces": [...], "first_id": 5678 },
+     "es": { "string": "Berlín",  "pieces": [...], "first_id": 9012 },
+     "...": { "...": "..."}
+   }
+   ```
+
+   The analysis code must use the language‑appropriate `first_id` for all `p_answer` and `answer_rank` computations.
 
 ---
 
 ### 1.12. Metadata completeness
 
-**Why.** Reproducibility. Interpretability claims are fragile if dtype/device/probe flags aren’t recorded.
+**Why.** Reproducibility and auditability require stable **schema** and **provenance**.
 
 **What.** Add to JSON meta:
 
-* `seed`, `device`, `dtype`, `unembed_dtype`
-* `use_norm_lens`, `raw_lens` (if dual), `use_tuned_lens`, `use_logit_prism`
-* `gold_answer` block from §1.11
-* `copy_thresh`, and whether multi‑token copy windows were enabled
-* `layer_indexing`: `"post_block"` and a boolean `final_row_is_unembed: true`
+* Core: `schema_version`, `code_commit_sha`, `seed`, `device`, `dtype`, `unembed_dtype`
+* Lens flags: `use_norm_lens`, `raw_lens` (if dual), `use_tuned_lens`, `use_logit_prism`
+* Gold answer: `gold_answer` (and `gold_answer_by_lang` when multilingual)
+* Copy parameters: `copy_thresh`, `copy_window_k`, `copy_match_level`
+* Layer indexing: `layer_indexing: "post_block"`, `final_row_is_unembed: true`
+* **Tuned Lens provenance** (when used): `tuned_lens.{version, sha, train_corpus_id, num_steps, seed}`
 
-**How.** Populate from CLI/derived values at the start of each run; print to console and write into the meta JSON.
+**How.** Populate from CLI/derived values at run start; print to console and write into the meta JSON. Bump `schema_version` when keys change.
 
 ---
 
@@ -360,15 +407,16 @@ We run a first wave of low‑overhead variations that reuse the logit‑lens bas
 
 ### 2.2. Multilingual prompt – preliminary pass
 
-**Why.** Language‑independent behaviour is *compatible* with realism (a universal instantiated across linguistic frameworks) but *not mandated by it*. Conversely, if depth systematically depends on language, that is prima facie evidence that the model’s “relation” is tied to particular linguistic encodings—more in line with class‑nominalism, where each language’s term picks out its own class of particulars ([plato.stanford.edu][5]). A full causal/representational variant appears in Group 4; use this preliminary pass only as a quick consistency check until Group 3 tools are ready.
+**Why.** Language‑independent behaviour is compatible with realism but not mandated by it; language‑dependent depths are prima facie evidence for predicate‑tied behaviour. A **per‑language gold‑token alignment** prevents tokenizer artefacts from polluting comparisons.
 
-**What.** Translate the prompt into five major languages with equivalent subject–predicate order. Record normalised `L_sem / n_layers` and visualise variance.
+**What.** Translate the prompt into five major languages (matched subject–predicate order). Record normalised `L_sem / n_layers`, **`first_rank_le_{1,5,10}`**, and tuned‑lens KL thresholds; visualise variance. Use **ID‑level** gold tokens from `gold_answer_by_lang` (§1.11).
 
 **How.**
 
-1. Maintain a YAML file of prompts keyed by ISO codes.
-2. Run sweeps; bar‑plot and highlight deviations > 0.05.
-3. Have a bilingual reviewer (or a second LLM as a checker) verify that each translation preserves subject–predicate structure and informational content; store a `translation_ok: true/false` flag alongside the prompt in YAML.
+1. Maintain a YAML of prompts keyed by ISO codes (`prompt_lang`); include `translation_ok: true/false`.
+2. For each language, compute `first_id` and `pieces` and store under `gold_answer_by_lang` (§1.11).
+3. Run sweeps; bar‑plot layer‑fraction variance and **rank thresholds**; highlight deviations `> 0.05` (fraction) or delays `> 2` layers in `first_rank_le_5`.
+4. Prefer rank/KL‑threshold metrics over raw probabilities for cross‑language comparisons.
 
 ---
 
@@ -393,16 +441,36 @@ These tools move us beyond descriptive logit‑lens curves. They intervene direc
 
 ### 3.1. Layer‑wise activation patching (“causal tracing”)
 
-**Why.** Causal flips show when enough information to force the answer is present. If a narrow late window carries that power across many prompts, the driver looks like a reusable relation — something austere nominalism cannot explain away by citing individual token co‑occurrences. Metalinguistic nominalism might still reinterpret the driver as a sophisticated predicate routine; realism would treat it as evidence of an internal universal ([arxiv.org][8]).
+**Why.** Causal flips show when enough information to force the answer is present. Splitting by **sublayer** (Attention vs MLP) around `L_sem` distinguishes **retrieval** from **construction** (cf. Geva et al., arXiv:2012.14913).
 
-**What.** *Given a prompt pair (clean, corrupted), produce a CSV of “causal Δ log‑prob” per layer and record `causal_L_sem` = first layer whose patch flips the top‑1 token.*
+**What.** *Given a prompt pair (clean, corrupted), produce a CSV of “causal Δ log‑prob” per layer for **three modes** — `full` (standard residual patch), `attn_only`, `mlp_only` — and record:*
+
+* `causal_L_sem` (full), **`causal_L_sem_attn`**, **`causal_L_sem_mlp`**
+* **`delta_causal = causal_L_sem − L_semantic`**, plus **`delta_causal_attn`**, **`delta_causal_mlp`**
 
 **How.**
 
-1. Implement `patch_layer(hidden_clean, hidden_corr, ℓ)` inside `run.py`.
-2. For each ℓ, run the forward pass with the patched residual, **decode with the same lens as the baseline run (Tuned Lens or Prism)**, and log Δ p(Berlin) **using the ID from §1.11**.
-3. Stop when the answer flips; save `causal_L_sem` to JSON meta.
-4. Add CLI flags `--patching` and `--corrupted-answer "Paris"` to ease experimentation.
+1. Implement:
+
+   ```python
+   def patch_layer_full(h_clean, h_corr, ℓ): ...
+   def patch_layer_attn_only(h_clean, h_corr, ℓ): ...
+   def patch_layer_mlp_only(h_clean, h_corr, ℓ): ...
+   ```
+
+   Each returns patched hidden states at layer ℓ.
+2. For each ℓ and **mode ∈ {full, attn_only, mlp_only}**:
+
+   * Run forward with the patched stream,
+   * **Decode with the same lens** as the baseline (Tuned Lens or Prism),
+   * Log Δ log‑prob of the gold token (ID from §1.11).
+3. Define `causal_L_sem*` as the earliest ℓ where the top‑1 flips to the gold token under that mode.
+4. Write `causal_L_sem*` and **delta fields** into JSON meta; include all three per‑layer Δ values in the CSV (columns `dlogp_full`, `dlogp_attn`, `dlogp_mlp`).
+5. CLI:
+
+   * `--patching`
+   * `--patching-mode {full,attn,mlp,all}` (default `all`)
+   * `--corrupted-answer "Paris"`
 
 ---
 
@@ -428,7 +496,7 @@ These tools move us beyond descriptive logit‑lens curves. They intervene direc
 
 ### 3.3. Concept‑vector extraction via Causal Basis (CBE)
 
-**Why.** Belrose et al. show a low‑rank subspace can *causally* steer the model’s logits ([arxiv.org][11]). If a low‑rank vector learned in one context reliably boosts the correct capital in unseen prompts, that shows the model stores a portable shard of “capital‑of” information — already more structure than austere nominalism predicts. Whether this portability counts against metalinguistic nominalism, or is fully compatible with it, cannot be settled here; the result simply gives us a concrete target for the follow‑up tests in Group 4 that are designed to probe that distinction.
+**Why.** Belrose et al. show a low‑rank subspace can *causally* steer the model’s logits ([arxiv.org][11]). If a low‑rank vector learned in one context reliably boosts the correct capital in unseen prompts, that shows the model stores a portable shard of “capital‑of” information — already more structure than austere nominalism predicts. Whether this portability counts against metalinguistic nominalism, or is fully compatible with it, cannot be settled here; the result simply gives us a concrete target for the follow‑up tests in Group 4 that are designed to probe that distinction (see also Elhage et al., “Toy Models of Superposition,” arXiv:2209.10652).
 
 **What.** *Deliver a PyTorch module `CapitalDirection` with weights `{U, Σ}` such that adding `α · U Σ v` (for a learned v) to the residual stream at layer `L_sem` reliably increases the log‑prob of the correct capital across ≥ 80% of country prompts, while minimally disrupting unrelated outputs.*
 
@@ -485,6 +553,35 @@ These tools move us beyond descriptive logit‑lens curves. They intervene direc
 1. Adopt the open‑source `causal-scrubbing` library.
 2. Write a spec file mapping nodes to model components.
 3. Run exhaustive subset ablations on a 100‑prompt subset; visualise results as a lattice diagram.
+
+---
+
+### 3.7. *(Optional)* Targeted sparse autoencoders on decisive layers
+
+**Why.** Low‑rank concept bases (CBE) identify **subspaces**; sparse autoencoders (SAEs) can surface **discrete, sparse features** within those subspaces that admit **naming and causal tests** across prompts/languages. A small, targeted SAE on the decisive layer(s) provides feature‑level objects to test portability and causality — stronger evidence against austere nominalism (cf. arXiv:2409.14507; arXiv:2402.12201; arXiv:2209.10652).
+
+**What.** *Train a small SAE on residuals at `L_sem ± 1` for one 7–9B model; identify features whose activation **predicts and causally increases** the correct capital across prompts and in ≥3 languages; ship a minimal feature manifest.*
+
+**How.**
+
+1. **Data.** Collect residuals at `L_sem − 1, L_sem, L_sem + 1` over \~50k tokens drawn from country–capital prompts (and their multilingual variants).
+2. **Model.** Train a top‑k or L1‑regularised SAE with 8–16× overcompleteness:
+
+   ```python
+   sae = SparseAutoencoder(d_model, d_hidden=16*d_model, sparsity='topk', k=64)
+   sae.fit(residual_batch, epochs=2, seed=SEED)
+   ```
+3. **Screening.** For each learned feature:
+
+   * compute correlation with `p_answer` at `L_sem`,
+   * patch **feature ablation** (zero its coeff) and **feature activation** (+α along its decoder) and log Δ log‑prob of the gold token across a held‑out prompt set and ≥3 languages.
+4. **Success criterion.** ≥1 feature with median **Δ log‑prob ≥ 0.5 bits** on activation and ≤0 on unrelated tokens in ≥70% of held‑out prompts; portability holds across languages.
+5. **Outputs.**
+
+   * `sae_config.json` (arch, k/λ, seed),
+   * `sae_features.npz` (enc/dec),
+   * `feature_manifest.json` entries: `{feature_id, sparsity, name (optional), Δ_logp_median, languages_passed}`.
+6. **Scope.** Gate behind stability of §1.8 and availability of tuned/prism lens; keep to a single model/layer tranche to avoid scope creep.
 
 ---
 
@@ -720,8 +817,15 @@ After the above, we will have: *portable concept vectors*, *head‑level causal 
 * SEP‑Fictionalism — **“Fictionalism,”** *Stanford Encyclopedia of Philosophy* (2021).
 * Loux‑2023 — Michael J. Loux, *Metaphysics*, 4th ed., Routledge (2023).
 * Brandom‑2000 — Robert B. Brandom, *Articulating Reasons: An Introduction to Inferentialism*, Harvard UP (2000).
-* Levinstein‑2024 — Jacob Levinstein, “Counter‑factual Dataset Mixing for Robust Concept Probes,” arXiv:2403.12345 (2024).
-* Tuned Lens — Belrose et al., “Eliciting Latent Predictions with the Tuned Lens,” arXiv:2303.08112 (2023).
+* RMSNorm — Zhang & Sennrich, “Root Mean Square Layer Normalization,” arXiv:1910.07467 (2019).
+* RoFormer — Su et al., “RoFormer: Enhanced Transformer with Rotary Position Embedding,” arXiv:2104.09864 (2021).
+* Superposition — Elhage et al., “Toy Models of Superposition,” arXiv:2209.10652 (2022).
+* FFN as KV — Geva et al., “Transformer Feed‑Forward Layers Are Key‑Value Memories,” arXiv:2012.14913 (2020).
+* Tuned Lens — Belrose et al., “Eliciting Latent Predictions from Transformers with the Tuned Lens,” arXiv:2303.08112 (2023).
+* Logit Prisms — “Logit Prisms: Decomposing Transformer Outputs for Mechanistic …” (implementation blog), https://neuralblog.github.io/logit-prisms/.
+* SAE Absorption — Chanin et al., “A is for Absorption: Studying Feature Splitting and Absorption in Sparse Autoencoders,” arXiv:2409.14507 (2024).
+* Dictionary Learning (Othello‑GPT) — He et al., “Dictionary Learning Improves Patch‑Free Circuit Discovery in Mechanistic Interpretability: A Case Study on Othello‑GPT,” arXiv:2402.12201 (2024).
+* Monet — Park et al., “Monet: Mixture of Monosemantic Experts for Transformers,” arXiv:2412.04139 (2024).
 
 ---
 
