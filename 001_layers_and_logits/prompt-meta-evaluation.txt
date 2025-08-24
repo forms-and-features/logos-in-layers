@@ -102,3 +102,5 @@ Known limitations to keep in mind:
 * Attention patterns and MLP activations are not inspected—only residual projections—so entropy bumps caused by internal gating may be mis-attributed.
 
 Accept these constraints as *scoping guards*: they keep this run self-consistent even if they leave some systematic bias uncorrected.
+
+Your response should read as a review, not as part of a conversation. The review should be well-formatted as markdown.
