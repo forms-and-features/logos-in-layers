@@ -41,6 +41,7 @@ CANDIDATE_MODELS = [
     "Qwen/Qwen3-14B",
     "google/gemma-2-27b",
     "01-ai/Yi-34B",
+    "meta-llama/Meta-Llama-3-70B"
 ]
 
 # Backward-compatible name used throughout this script
