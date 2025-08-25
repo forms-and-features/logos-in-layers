@@ -426,6 +426,47 @@ We run a first wave of low‑overhead variations that reuse the logit‑lens bas
 
 ---
 
+### 2.3. Predicate‑Permutation Control (Quine guard)
+
+**Why.** Quine‑style “inscrutability of reference” argues that empirical evidence can be preserved under a systematic **re‑labelling** of terms. A global **permutation** of country (and optionally capital) names is a lightweight guard: if our heads/vectors merely track arbitrary labels, many of our metrics should look similar under the permutation; if they track **the original relation**, they should **fail** under the permutation in diagnostic ways.
+
+**What.** *Create a permuted control set by applying a fixed bijection `π` to the set of country tokens (optionally also to capital tokens) across the **entire** prompt battery. Evaluate whether the same heads/vectors that succeed on clean prompts also succeed under `π` when “truth” is still computed in the **original** (unpermuted) mapping.*
+
+* Add a per‑run block to JSON meta:
+
+  ```json
+  "permutation_control": {
+    "enabled": true,
+    "permute_countries": true,
+    "permute_capitals": false,
+    "perm_seed": 316,
+    "perm_coverage": 100
+  }
+  ```
+* Add per‑row fields to the CSV when permutation is active:
+
+  * `is_permuted ∈ {0,1}`
+  * `subject_id_permuted` (the ID of `π(country)`)
+  * `answer_id_permuted` (the ID of `π(capital)`, if capitals are permuted)
+
+**How.**
+
+1. **Construct `π`.** Build a random bijection over the set of countries used in the run; record `perm_seed` and the mapping in a sidecar `perm_map.json`. (Optional: a second run with capitals also permuted.)
+2. **Run the three diagnostics below** on the **same** models/prompts as the baseline:
+
+   * **(A) Control margin under permutation.** On permuted prompts, log per‑layer
+     `margin_perm = p(original_capital) − p(capital_of(π(country)))`.
+     *Summary:* `first_margin_perm_pos` (first layer with `margin_perm > 0`), `max_margin_perm`. Expect **late or absent** positive margins if structure truly keys to the original relation.
+   * **(B) Vector‑portability gap.** Extract the **CapitalDirection** (§3.3) on clean prompts. On permuted prompts, inject the **same** vector and log
+     `Δ_true = Δ log p(original_capital)`, `Δ_perm = Δ log p(π(capital))`, and
+     `portability_ratio = Δ_true / (Δ_true on clean)`.
+     *Summary:* median `portability_ratio` and median `Δ_perm`. Expect **low** `Δ_perm` and **low** `portability_ratio` if the vector does not just track labels.
+   * **(C) Head‑consistency drop.** Take `relation_heads.json` (§3.2) from the clean run. On permuted prompts, measure the share of those heads that still meet both criteria (high attention + ≥0.5‑bit effect on the *original* capital).
+     *Summary:* `head_consistency_ratio`. Expect a **drop** under permutation.
+3. **Report.** Add a one‑page Markdown summary per model with the four scalars: `first_margin_perm_pos`, `max_margin_perm`, `portability_ratio (median)`, `head_consistency_ratio`. Flag models where any scalar indicates **permutation‑robust success**, which would warrant a deeper check.
+
+---
+
 ### Closing note on epistemic modesty
 
 These variations are diagnostic, not decisive. Their job is to show which internal patterns ride above surface token variation and which do not. If the patterns hold, austere nominalism loses more credibility and we have a cleaner target set for the higher‑lift causal, multimodal, and synthetic‑language probes that might separate metalinguistic nominalism from realism in later stages.
@@ -721,6 +762,35 @@ Austere (extreme) nominalism says *every apparent regularity reduces to a list o
 1. Auto‑generate prompt grid.
 2. Batch activation patching; reuse style‑head list.
 3. Aggregate per cell; render three matplotlib heat‑maps.
+
+---
+
+### 4.7. Zero‑Shot Flag‑Grounding Check (Minimal)
+
+**Why.** To pressure **purely metalinguistic** explanations, add a small, low‑lift probe that routes **non‑linguistic** evidence (country flags) into the text‑only pipeline without fine‑tuning the LLM. A positive result (even if modest) strengthens the case that the “capital‑of” machinery is not *only* about word‑tokens.
+
+**What.** *Two quick tests using frozen components:*
+
+* **(A) VLM zero‑shot baseline (sanity).** With an off‑the‑shelf VLM (e.g., Qwen‑VL or LLaVA) **without fine‑tuning**, prompt each flag image with “Which country’s flag is this?”; take the top country string and feed it into the **standard text‑only** capital prompt. Log whether the overall pipeline returns the correct capital. *(This is a control that confirms the image→text hand‑off works; it is not itself an interpretability result.)*
+* **(B) Minimal vision→LM bridge (no LM training).** Use a frozen **OpenCLIP** image encoder to get a flag embedding `z_img`. Learn a **linear projector** `P` from CLIP **text** embeddings of country names to the LLM’s **residual space at the subject position** using **≈100** (country name) pairs (least‑squares; no LM gradients). At inference, project `z_img` via `P` and **inject** at `L_sem−1` in the sentence “The capital of ⟨IMG⟩ is …”. Measure Δ log‑prob for the correct capital vs the top distractor.
+
+**How.**
+
+1. **Data.** 50 countries with high‑quality flag images (SVG or PNG). Hold out 10 for evaluation of the bridge.
+2. **Bridge fit (text‑only supervision).** Compute CLIP **text** embeddings for the 40 training country names; compute the LLM **residual vectors** at the subject token for the same names; solve `min_P ‖P·clip_text − resid‖²`. Record `n_pairs`, `seed`, and norms in JSON meta under `vision_bridge.*`.
+3. **Injection.** For each held‑out flag, compute `z_img`, project `r̂ = P·z_img`, and add `α·r̂` at `L_sem−1` (scan `α ∈ {0.25, 0.5, 1.0}`) before decoding with the **same** lens used in Group 1. Log Δ log‑prob for the correct capital and for a frequency‑matched distractor.
+4. **Success criteria.** Report median Δ log‑prob ≥ **0.25 bits** at some `α` across the 10 held‑out flags, with ≤ **0** median gain for distractors. Include a per‑model summary block:
+
+   ```json
+   "vision_bridge": {
+     "clip_model": "openclip_ViT-B/32",
+     "n_pairs": 40,
+     "alpha_grid": [0.25, 0.5, 1.0],
+     "median_delta_logp_bits": 0.31,
+     "median_delta_logp_distractor_bits": -0.02
+   }
+   ```
+5. **Scope guard.** This is a **one‑day spike**: no VLM fine‑tuning, no LM weight updates, only a linear map and a single‑layer injection. If it fails noisily, defer multimodal work to §5.1.
 
 ---
 
