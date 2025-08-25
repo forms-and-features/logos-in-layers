@@ -7,8 +7,8 @@ class ExperimentConfig:
     device: str = "cuda"
     fp32_unembed: bool = False
     keep_residuals: bool = False
-    copy_threshold: float = 0.90
-    copy_margin: float = 0.05
+    copy_threshold: float = 0.95
+    copy_margin: float = 0.10
+    copy_window_k: int = 1
     out_dir: Optional[str] = None
     self_test: bool = False
-

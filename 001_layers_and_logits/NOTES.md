@@ -70,6 +70,9 @@ Each run emits `output-<model>-pure-next-token.csv`, logging entropy and top-k o
 ### Device / Precision Management
 The experiment supports CUDA, MPS and CPU with automatic dtype selection. Device selection is dynamic per model: a conservative memory‑fit estimator chooses `cuda → mps → cpu` when possible; otherwise the model is skipped. On CPU, models ≤27B use fp32; ≥30B use bf16. When compute runs in bf16/fp16, the unembedding matrix is auto‑promoted to fp32 and logits are decoded in fp32; LN/RMS statistics are computed in fp32 and cast back. See `run.py` and `layers_core/device_policy.py` for logic.
 
+## Sub‑word‑aware copy detection (2025-08-25)
+Copy‑collapse is now detected at the token‑ID level via a contiguous subsequence match against the prompt using a rolling window `k=1`. Defaults tightened to `copy_threshold=0.95` and `copy_margin=0.10`; no entropy fallback inside the copy rule (entropy collapse is tracked separately). Trivial whitespace/punctuation echoes are ignored. Provenance fields (`copy_thresh`, `copy_window_k`, `copy_match_level`) are included in diagnostics.
+
 ## Development Environment Notes
 - **Hardware**: Apple Silicon MacBook Pro M2 Max 64 GB
 - **Library stack**: TransformerLens, no quantisation, raw checkpoint format
@@ -99,3 +102,5 @@ Anthropic Interpretability post "Why LN2 is the Right Hook for Post-Block Analys
 
 ---
 Produced by OpenAI GPT-5, OpenAI o3
+
+---

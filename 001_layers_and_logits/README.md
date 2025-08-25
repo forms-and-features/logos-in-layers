@@ -7,7 +7,7 @@ Layer-by-layer logit-lens analysis for causal LLMs. Computes per-layer next-toke
 - Residual-lens with proper normalization: LN/RMS with ε inside sqrt, architecture-aware γ selection (pre/post‑norm).
 - Metrics per layer:
   - Entropy in bits (from full softmax)
-  - Copy-collapse: top‑1 is a prompt token with threshold + margin
+- Copy-collapse: ID-level contiguous subsequence of prompt token IDs (k=1) with threshold + margin (no entropy fallback)
   - Semantic collapse: top‑1 equals the ground-truth token (e.g., “Berlin”)
 - Outputs: compact JSON metadata and two CSVs (all positions; pure next‑token only).
 
@@ -50,8 +50,8 @@ Self-test notes: `--self-test` validates scaling and prints results; it does not
 - `--out_dir PATH` — output directory (default: `run-latest/` rotation)
 - `--fp32-unembed` — cast unembedding weights to fp32
 - `--keep-residuals` — save residual tensors (`*.pt`) alongside CSVs
-- `--copy-threshold FLOAT` — min P(top‑1) for copy collapse (default 0.90)
-- `--copy-margin FLOAT` — require P(top‑1) − P(top‑2) > margin (default 0.05)
+- `--copy-threshold FLOAT` — min P(top‑1) for copy collapse (default 0.95)
+- `--copy-margin FLOAT` — require P(top‑1) − P(top‑2) > margin (default 0.10)
 - `--self-test` — run KL sanity test; no artifacts are written
 
 ## layers_core (Internals)
@@ -59,7 +59,7 @@ Self-test notes: `--self-test` validates scaling and prints results; it does not
 - `norm_utils` — LN/RMS normalization, ε inside sqrt, architecture detection, γ selection
 - `numerics` — entropy in bits; safe casting before unembed (`force_fp32_unembed`)
 - `csv_io` — writers for records and pure next‑token CSVs (stable schemas with `rest_mass`)
-- `collapse_rules` — copy‑collapse (threshold + margin + optional entropy fallback) and semantic match
+- `collapse_rules` — copy‑collapse (ID‑subsequence with threshold + margin; no entropy fallback) and semantic match
 - `device_policy` — dtype selection (CUDA fp16; Gemma bf16; MPS fp16; CPU fp32); unembed auto‑promotion rule
 - `hooks` — attach/detach residual hooks (embeddings, pos, resid_post)
 - `run_dir` — `run-latest/` rotation with timestamp

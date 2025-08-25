@@ -61,7 +61,12 @@ from layers_core.numerics import (
     safe_cast_for_unembed,
 )
 from layers_core.csv_io import write_csv_files
-from layers_core.collapse_rules import detect_copy_collapse, is_semantic_top1
+from layers_core.collapse_rules import (
+    detect_copy_collapse,
+    is_semantic_top1,
+    detect_copy_collapse_id_subseq,
+    is_pure_whitespace_or_punct,
+)
 from layers_core.device_policy import (
     choose_dtype,
     should_auto_promote_unembed,
@@ -303,9 +308,11 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         
         # Tokenize the context prompt (without "Answer:" to avoid teacher-forcing)
         tokens = model.to_tokens(context_prompt)      # let Accelerate move it
-        
-        # Prepare prompt token IDs for stronger copy-collapse detection
-        prompt_token_ids = set(model.tokenizer(context_prompt, add_special_tokens=False)["input_ids"])
+
+        # Prepare prompt token IDs (ordered) for sub-word-aware copy detection
+        ctx_ids = model.tokenizer(context_prompt, add_special_tokens=False)["input_ids"]
+        # Rolling window of the last k top-1 IDs
+        window_ids: list[int] = []
         
         # Storage to collect pure_next_token_records for L_copy/L_semantic computation
         collected_pure_records = []
@@ -354,7 +361,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 else:
                     print("Using RAW residual stream (normalization disabled)")
                 print("Note: Shown probabilities are from full softmax (calibrated and comparable)")
-                print("copy-collapse: first layer where top-1 token is in prompt & p>0.9")
+                print(f"copy-collapse: top-1 ID-window in prompt & p>{config.copy_threshold}")
                 if config.keep_residuals:
                     print("💾 Saving residual tensors to disk (--keep-residuals enabled)")
                 print("-" * 60)
@@ -426,19 +433,25 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 _, last_top_indices = torch.topk(last_logits, TOP_K_RECORD, largest=True, sorted=True)
                 last_top_probs = last_full_probs[last_top_indices]
                 last_top_tokens = [model.tokenizer.decode([idx]) for idx in last_top_indices]
+                # Maintain rolling window (k recent top-1 IDs)
+                top1_id = last_top_indices[0].item()
+                window_ids.append(top1_id)
+                if len(window_ids) > config.copy_window_k:
+                    window_ids.pop(0)
                 
                 # ------------------------------------------------------------------- #
                 #  1.  Is this layer "copy-collapsed" (prompt echo)?   -> L_copy
                 #  2.  Does top-1 equal the ground-truth answer token? -> L_semantic
                 # ------------------------------------------------------------------- #
-                copy_collapse = detect_copy_collapse(
+                copy_collapse = detect_copy_collapse_id_subseq(
                     last_logits,
-                    prompt_token_ids,
+                    ctx_ids,
+                    window_ids,
                     copy_threshold=config.copy_threshold,
                     copy_margin=config.copy_margin,
-                    entropy_bits=last_entropy_bits,
-                    entropy_fallback_threshold=1.0,
                 )
+                if copy_collapse and is_pure_whitespace_or_punct(last_top_tokens[0]):
+                    copy_collapse = False
                 entropy_collapse = last_entropy_bits <= 1.0
                 is_answer = is_semantic_top1(last_top_tokens[0], "Berlin")
                 
@@ -528,19 +541,25 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     _, last_top_indices = torch.topk(last_logits, TOP_K_RECORD, largest=True, sorted=True)
                     last_top_probs = last_full_probs[last_top_indices]
                     last_top_tokens = [model.tokenizer.decode([idx]) for idx in last_top_indices]
+                    # Update rolling window
+                    top1_id = last_top_indices[0].item()
+                    window_ids.append(top1_id)
+                    if len(window_ids) > config.copy_window_k:
+                        window_ids.pop(0)
                     
                     # ------------------------------------------------------------------- #
                     #  1.  Is this layer "copy-collapsed" (prompt echo)?   -> L_copy
                     #  2.  Does top-1 equal the ground-truth answer token? -> L_semantic
                     # ------------------------------------------------------------------- #
-                    copy_collapse = detect_copy_collapse(
+                    copy_collapse = detect_copy_collapse_id_subseq(
                         last_logits,
-                        prompt_token_ids,
+                        ctx_ids,
+                        window_ids,
                         copy_threshold=config.copy_threshold,
                         copy_margin=config.copy_margin,
-                        entropy_bits=last_entropy_bits,
-                        entropy_fallback_threshold=1.0,
                     )
+                    if copy_collapse and is_pure_whitespace_or_punct(last_top_tokens[0]):
+                        copy_collapse = False
                     entropy_collapse = last_entropy_bits <= 1.0
                     is_answer = is_semantic_top1(last_top_tokens[0], "Berlin")
                     
@@ -585,11 +604,16 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         break
 
                 # Attach to diagnostics block
-                diag.update({"L_copy": L_copy,
-                             "L_copy_H": L_copy_H,
-                             "L_semantic": L_sem,
-                             "delta_layers": None if (L_copy is None or L_sem is None)
-                                                  else L_sem - L_copy})
+                diag.update({
+                    "L_copy": L_copy,
+                    "L_copy_H": L_copy_H,
+                    "L_semantic": L_sem,
+                    "delta_layers": None if (L_copy is None or L_sem is None) else L_sem - L_copy,
+                    # provenance for copy detector
+                    "copy_thresh": config.copy_threshold,
+                    "copy_window_k": getattr(config, "copy_window_k", 1),
+                    "copy_match_level": "id_subsequence",
+                })
                 json_data["diagnostics"] = diag
                 
             finally:
@@ -866,9 +890,9 @@ def parse_cli():
     p.add_argument("--keep-residuals",
                    action="store_true",
                    help="Dump full residual tensors; if absent, keep only per-layer logits")
-    p.add_argument("--copy-threshold", type=float, default=0.90,
+    p.add_argument("--copy-threshold", type=float, default=0.95,
                    help="Minimum P(top-1) for copy collapse")
-    p.add_argument("--copy-margin", type=float, default=0.05,
+    p.add_argument("--copy-margin", type=float, default=0.10,
                    help="Require P(top-1) − P(top-2) > margin for copy collapse")
     p.add_argument("model_id", nargs="?", default=None,
                    help="Model ID for single-run (when invoking as subprocess)")

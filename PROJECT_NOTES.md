@@ -72,7 +72,7 @@ norm_module = model.blocks[i].ln2 if probe_after_block else model.blocks[i].ln1
 
 ---
 
-### 1.2. Sub‑word‑aware copy‑collapse detector
+### 1.2. [x] Sub‑word‑aware copy‑collapse detector
 
 **Why.** String‑level membership can both **miss** prompt‑echoes (multi‑piece tokens; whitespace variants) and **spuriously fire** on substrings (“lin” in “Berlin”). Detecting copy at the **token‑ID level** eliminates these errors and makes `L_copy` robust.
 
@@ -113,6 +113,8 @@ norm_module = model.blocks[i].ln2 if probe_after_block else model.blocks[i].ln1
    "copy_match_level": "id_subsequence"
    ```
 6. **Note.** Detokenise only for **reporting** (pretty prints), **not** for detection.
+
+**✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)**
 
 ---
 

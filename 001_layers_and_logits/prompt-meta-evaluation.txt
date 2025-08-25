@@ -88,7 +88,7 @@ Known limitations of the approach that we accepted in this iteration (but sugges
 
 The script:
 * **Applies each model's own normaliser** (RMSNorm for RMS models, LayerNorm for LN models) to every residual stream before projecting through the model's unembedding matrix.
-* **Defines copy-collapse (L\_copy) by prompt-echo**: the first layer whose top-1 *next-token* is a token already present in the prompt **with p > 0.90**.  We deliberately abandoned the earlier "entropy < 1 bit" rule because entropy is vocabulary-size sensitive and produced inconsistent collapse depths.
+* **Defines copy-collapse (L\_copy) by prompt-echo**: the first layer whose top-1 *next-token* (or a k=1 window) forms an ID-level contiguous subsequence of the prompt's token IDs with **p > 0.95** and margin **p1 − p2 > 0.10**. No entropy fallback; whitespace/punctuation top‑1s are ignored. We deliberately abandoned the earlier "entropy < 1 bit" rule because entropy is vocabulary-size sensitive and produced inconsistent collapse depths. Provenance fields are present in diagnostics (`copy_thresh`, `copy_window_k`, `copy_match_level`).
 * **Defines semantic-collapse (L\_semantic)** as the first layer whose top-1 equals the gold answer token ("Berlin").  Δ-collapse = L\_semantic − L\_copy captures how long the model clings to surface form before retrieving meaning.
 * Uses a single fixed prompt
   `Give the city name only, plain text. The capital of Germany is called simply`

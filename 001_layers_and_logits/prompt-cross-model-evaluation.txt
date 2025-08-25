@@ -62,7 +62,8 @@ Use tools to review these JSON and CSV files as needed.
 
 - CROSS‑EVAL output file: 001_layers_and_logits/run-latest/evaluation-cross-models.md
 
-- Parameters: copy_threshold = 0.90, copy_margin = 0.05
+- Parameters: copy_threshold = 0.95, copy_margin = 0.10
+  Copy rule: ID-level contiguous subsequence (k=1), τ=0.95, δ=0.10; no entropy fallback; ignore whitespace/punctuation tokens for copy. Use `copy_thresh`, `copy_window_k`, `copy_match_level` from diagnostics; note `L_copy` may be null under the stricter rule.
 
 - Your own expertise.
 
