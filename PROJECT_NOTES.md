@@ -118,7 +118,7 @@ norm_module = model.blocks[i].ln2 if probe_after_block else model.blocks[i].ln1
 
 ---
 
-### 1.3. Record top‑1 p, top‑5 p\_cumulative, **p\_answer**, **answer\_rank**, and KL‑to‑final
+### 1.3. [x] Record top‑1 p, top‑5 p\_cumulative, **p\_answer**, **answer\_rank**, and KL‑to‑final
 
 **Why.** Entropy blurs ties; probabilities depend on lens calibration. Adding **rank** of the gold token provides a calibration‑robust signal and clean thresholds (“rank ≤ 5/10”). KL to the final head diagnoses **amplification vs rotation**.
 
@@ -152,6 +152,13 @@ norm_module = model.blocks[i].ln2 if probe_after_block else model.blocks[i].ln1
    first_rank_le_10 = first_layer_where(answer_rank <= 10)
    ```
 4. Persist all five fields in CSV; write the four summary indices into JSON.
+
+**✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)**
+
+* Pure next‑token CSV now includes: `p_top1`, `p_top5`, `p_answer`, `kl_to_final_bits`, `answer_rank`.
+* Diagnostics JSON includes summary thresholds: `first_kl_below_0.5`, `first_kl_below_1.0`, `first_rank_le_1`, `first_rank_le_5`, `first_rank_le_10`.
+* KL is computed as KL(P_layer || P_final) in bits via a centralized helper `layers_core.numerics.kl_bits`.
+* Probability/rank metrics are factored in `layers_core.metrics.compute_next_token_metrics` to avoid duplication in `run.py`.
 
 ---
 

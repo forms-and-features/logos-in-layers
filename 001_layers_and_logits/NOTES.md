@@ -41,7 +41,7 @@ The sections below were migrated from `PROJECT_NOTES.md` verbatim for historical
 - **File structure**: Reorganized from single script to proper experiment directory
 - **Analysis**: Individual model reports + cross-model comparison (AI-generated)
 
-## Key Technical Implementation Details
+## Updates and Key Technical Implementation Details
 
 ### Deterministic Seed & Reproducibility (2025-06-29)
 `run.py` now initialises a deterministic bootstrap (`SEED = 316`) and enables `torch.use_deterministic_algorithms(True)` plus cuBLAS workspace settings.  Every sweep is repeatable bit-for-bit across runs and machines.
@@ -73,6 +73,14 @@ The experiment supports CUDA, MPS and CPU with automatic dtype selection. Device
 ## Sub‑word‑aware copy detection (2025-08-25)
 Copy‑collapse is now detected at the token‑ID level via a contiguous subsequence match against the prompt using a rolling window `k=1`. Defaults tightened to `copy_threshold=0.95` and `copy_margin=0.10`; no entropy fallback inside the copy rule (entropy collapse is tracked separately). Trivial whitespace/punctuation echoes are ignored. Provenance fields (`copy_thresh`, `copy_window_k`, `copy_match_level`) are included in diagnostics.
 
+## Per‑layer probability and KL metrics (2025-08-26)
+Added the following per‑layer pure next‑token metrics (PROJECT_NOTES §1.3):
+
+- CSV columns: `p_top1`, `p_top5` (cumulative), `p_answer`, `kl_to_final_bits`, `answer_rank`.
+- JSON diagnostics: `first_kl_below_0.5`, `first_kl_below_1.0`, `first_rank_le_1`, `first_rank_le_5`, `first_rank_le_10`.
+- KL details: KL(P_layer || P_final) in bits, computed via `layers_core.numerics.kl_bits` in fp32 with epsilon guards.
+- Implementation detail: metric computation factored as `layers_core.metrics.compute_next_token_metrics` and used by `run.py`.
+
 ## Development Environment Notes
 - **Hardware**: Apple Silicon MacBook Pro M2 Max 64 GB
 - **Library stack**: TransformerLens, no quantisation, raw checkpoint format
@@ -102,5 +110,3 @@ Anthropic Interpretability post "Why LN2 is the Right Hook for Post-Block Analys
 
 ---
 Produced by OpenAI GPT-5, OpenAI o3
-
----

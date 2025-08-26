@@ -44,7 +44,7 @@ Note: each JSON is a compact summary; the bulky per-token records are stored onl
 001_layers_and_logits/run-latest/output-Yi-34B-pure-next-token.csv
 
 Both CSV flavours contain a `rest_mass` column (probability mass not covered by the top-k tokens).
-The pure-next-token CSV also adds boolean flags `copy_collapse`, `entropy_collapse`, and `is_answer` that the script computes for every layer.
+The pure-next-token CSV also adds boolean flags `copy_collapse`, `entropy_collapse`, and `is_answer` that the script computes for every layer, plus per-layer probability and calibration fields: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, and `kl_to_final_bits` (bits).
 
 Use tools to review these JSON and CSV files as needed.
 
@@ -77,12 +77,13 @@ The result of your evaluation must be in that file, don't put it into your respo
 Write concise but thorough paragraphs that correlate quantitative patterns across models, drawing on your extensive knowledge of LLM interpretability research; relate them to published interpretability findings (cite DOI/arXiv).
 
 Compare copy-reflex across models using the `copy_collapse` flags in the pure-next-token CSVs (treat any model whose pure-next-token CSV marks copy_collapse = True in layers 0–3 as having a copy-reflex); highlight any outlier.
+Use rank‑based milestones (`first_rank_le_1`, `first_rank_le_5`, `first_rank_le_10`) for cross‑model comparisons; avoid cross‑model claims based solely on raw probabilities. Treat KL milestones (`first_kl_below_1.0`, `first_kl_below_0.5`) as within‑model diagnostics and compare their relative depths (layer/n_layers). Exclude models whose last‑layer `kl_to_final_bits` is not ≈ 0 from KL‑based conclusions, or annotate a final‑lens vs final‑head mismatch.
 
 Investigate and write a paragraph about notable similarities and differences between models of the same family (Qwen, gemma).
 
 Use `L_copy` (or fallback `L_copy_H`) and `L_semantic` from each model's `diagnostics` block for consistent Δ calculation.
 
-Δ̂ = delta_layers / n_layers (relative depth); note this when discussing size effects.
+Δ̂ = delta_layers / n_layers (relative depth); note this when discussing size effects. Summarize emergence timing with Δ̂, rank milestones, and whether KL decreases with depth alongside rank improvements (rotation vs amplification).
 For each model describe the entropy drop between L_copy and L_semantic (e.g. ‘sharp 13-bit plunge’, ‘gradual 6-bit taper’). Use the entropy column in pure-next-token CSV.
 
 Group models into “meaning emerges at early (< 70 % depth) vs late (≥ 70 %)” instead of citing raw layer numbers.
@@ -107,6 +108,7 @@ These limitations are known and accepted:
 * Single-prompt probing may over-fit tokenizer quirks; copy-collapse depth can change if wording or punctuation shifts.
 * Attention patterns and MLP activations are not inspected—only residual projections—so entropy bumps caused by internal gating may be mis-attributed.
 * Un-embed weights may be promoted to FP32 ("use_fp32_unembed": true) in some models, slightly shrinking entropy gaps; keep comparisons qualitative.
+* Final‑lens vs final‑head mismatches can keep last‑layer KL > 0 for some families/precisions; prefer rank thresholds for cross‑model conclusions and treat KL trends qualitatively within model.
 * Layer counts differ (8 B ≈ 32 layers, 34 B ≈ 48); compare relative depths, not absolute indices.
 * Current results are correlation-only; causal evidence (patching) awaits a later run.
 So focus on concrete reasons - these limitations aside - the present data can mislead.

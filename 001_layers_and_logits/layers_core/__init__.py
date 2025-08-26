@@ -12,6 +12,7 @@ from .norm_utils import (
 from .numerics import (
     bits_entropy_from_logits,
     safe_cast_for_unembed,
+    kl_bits,
 )
 from .csv_io import (
     write_csv_files,
@@ -35,6 +36,9 @@ from .run_dir import (
 from .config import (
     ExperimentConfig,
 )
+from .metrics import (
+    compute_next_token_metrics,
+)
 
 __all__ = [
     "_get_rms_scale",
@@ -44,6 +48,7 @@ __all__ = [
     # numerics
     "bits_entropy_from_logits",
     "safe_cast_for_unembed",
+    "kl_bits",
     # csv io
     "write_csv_files",
     # collapse rules
@@ -60,4 +65,6 @@ __all__ = [
     "setup_run_latest_directory",
     # config
     "ExperimentConfig",
+    # metrics
+    "compute_next_token_metrics",
 ]

@@ -15,6 +15,8 @@ ${PY} 001_layers_and_logits/tests/test_collapse_rules.py
 ${PY} 001_layers_and_logits/tests/test_device_policy.py
 ${PY} 001_layers_and_logits/tests/test_hooks.py
 ${PY} 001_layers_and_logits/tests/test_run_dir.py
+${PY} 001_layers_and_logits/tests/test_rank_metrics.py
+${PY} 001_layers_and_logits/tests/test_kl_metrics.py
 
 (
   cd 001_layers_and_logits/tests

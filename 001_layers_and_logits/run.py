@@ -59,7 +59,9 @@ from layers_core.norm_utils import (
 from layers_core.numerics import (
     bits_entropy_from_logits,
     safe_cast_for_unembed,
+    kl_bits,
 )
+from layers_core.metrics import compute_next_token_metrics
 from layers_core.csv_io import write_csv_files
 from layers_core.collapse_rules import (
     detect_copy_collapse,
@@ -310,7 +312,24 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         tokens = model.to_tokens(context_prompt)      # let Accelerate move it
 
         # Prepare prompt token IDs (ordered) for sub-word-aware copy detection
-        ctx_ids = model.tokenizer(context_prompt, add_special_tokens=False)["input_ids"]
+        # Prefer HF-style tokenizer; fall back to model.to_tokens for mock/test models
+        try:
+            ctx_ids = model.tokenizer(context_prompt, add_special_tokens=False)["input_ids"]
+        except Exception:
+            try:
+                ctx_ids = model.to_tokens(context_prompt)[0].tolist()
+            except Exception:
+                ctx_ids = []
+        # Gold answer first-token id (ID-level matching; see PROJECT_NOTES §1.3)
+        try:
+            ans_ids_full = model.tokenizer(context_prompt + " " + ground_truth, add_special_tokens=False)["input_ids"]
+            first_ans_id = ans_ids_full[len(ctx_ids)] if len(ans_ids_full) > len(ctx_ids) else None
+        except Exception:
+            try:
+                ans_tokens = model.to_tokens(context_prompt + " " + ground_truth)[0].tolist()
+                first_ans_id = ans_tokens[len(ctx_ids)] if len(ans_tokens) > len(ctx_ids) else None
+            except Exception:
+                first_ans_id = None
         # Rolling window of the last k top-1 IDs
         window_ids: list[int] = []
         
@@ -332,6 +351,10 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             try:
                 # Run forward pass with targeted hooks
                 logits = model(tokens)
+
+                # Cache final head reference distribution once (for KL-to-final)
+                final_logits = logits[0, -1, :].float()
+                final_probs = torch.softmax(final_logits, dim=0)
                 
                 # Debug: print device placements of cached activations and tokens
                 for name, t in residual_cache.items():
@@ -454,11 +477,16 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     copy_collapse = False
                 entropy_collapse = last_entropy_bits <= 1.0
                 is_answer = is_semantic_top1(last_top_tokens[0], "Berlin")
-                
+                # Additional §1.3 metrics (factored helper)
+                metrics = compute_next_token_metrics(
+                    last_full_probs, top1_id, final_probs, first_ans_id, topk_cum=5
+                )
+
                 record_extra = {
                     "copy_collapse": copy_collapse,
                     "entropy_collapse": entropy_collapse,
                     "is_answer": is_answer,
+                    **metrics,
                 }
                 
                 # Collect for L_copy/L_semantic computation
@@ -466,7 +494,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     "layer": 0,
                     "copy_collapse": copy_collapse,
                     "entropy_collapse": entropy_collapse,
-                    "is_answer": is_answer
+                    "is_answer": is_answer,
+                    "kl_to_final_bits": metrics["kl_to_final_bits"],
+                    "answer_rank": metrics["answer_rank"],
                 })
                 
                 print_summary(0, last_pos, last_token_str, last_entropy_bits, last_top_tokens, last_top_probs, is_pure_next_token=True, extra=record_extra)
@@ -562,11 +592,16 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         copy_collapse = False
                     entropy_collapse = last_entropy_bits <= 1.0
                     is_answer = is_semantic_top1(last_top_tokens[0], "Berlin")
-                    
+                    # Additional §1.3 metrics (factored helper)
+                    metrics = compute_next_token_metrics(
+                        last_full_probs, top1_id, final_probs, first_ans_id, topk_cum=5
+                    )
+
                     record_extra = {
                         "copy_collapse": copy_collapse,
                         "entropy_collapse": entropy_collapse,
                         "is_answer": is_answer,
+                        **metrics,
                     }
                     
                     # Collect for L_copy/L_semantic computation
@@ -574,7 +609,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         "layer": layer + 1,
                         "copy_collapse": copy_collapse,
                         "entropy_collapse": entropy_collapse,
-                        "is_answer": is_answer
+                        "is_answer": is_answer,
+                        "kl_to_final_bits": metrics["kl_to_final_bits"],
+                        "answer_rank": metrics["answer_rank"],
                     })
                     
                     print_summary(layer + 1, last_pos, last_token_str, last_entropy_bits, last_top_tokens, last_top_probs, is_pure_next_token=True, extra=record_extra)
@@ -589,10 +626,16 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 # ---------------------------------------------------------------
                 #  Compute L_copy  (first copy-collapsed layer, prompt echo rule)
                 #  Compute L_semantic (first layer whose top-1 == "Berlin")
+                #  Compute KL/rank thresholds (PROJECT_NOTES §1.3)
                 # ---------------------------------------------------------------
                 L_copy = None
                 L_copy_H = None  # Legacy entropy-based metric
                 L_sem = None
+                first_kl_below_0_5 = None
+                first_kl_below_1_0 = None
+                first_rank_le_1 = None
+                first_rank_le_5 = None
+                first_rank_le_10 = None
                 for rec in collected_pure_records:    # already collected in RAM
                     if L_copy is None and rec["copy_collapse"]:
                         L_copy = rec["layer"]
@@ -600,8 +643,21 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         L_copy_H = rec["layer"]          # optional: legacy metric
                     if L_sem is None and rec["is_answer"]:
                         L_sem = rec["layer"]
-                    if L_copy is not None and L_copy_H is not None and L_sem is not None:
-                        break
+                    # KL thresholds
+                    if first_kl_below_0_5 is None and (rec.get("kl_to_final_bits") is not None) and (rec["kl_to_final_bits"] <= 0.5):
+                        first_kl_below_0_5 = rec["layer"]
+                    if first_kl_below_1_0 is None and (rec.get("kl_to_final_bits") is not None) and (rec["kl_to_final_bits"] <= 1.0):
+                        first_kl_below_1_0 = rec["layer"]
+                    # Rank thresholds (only when answer_rank available)
+                    ar = rec.get("answer_rank")
+                    if ar is not None:
+                        if first_rank_le_1 is None and ar <= 1:
+                            first_rank_le_1 = rec["layer"]
+                        if first_rank_le_5 is None and ar <= 5:
+                            first_rank_le_5 = rec["layer"]
+                        if first_rank_le_10 is None and ar <= 10:
+                            first_rank_le_10 = rec["layer"]
+                    # Do not break early; we also derive KL/rank thresholds across depth
 
                 # Attach to diagnostics block
                 diag.update({
@@ -613,6 +669,12 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     "copy_thresh": config.copy_threshold,
                     "copy_window_k": getattr(config, "copy_window_k", 1),
                     "copy_match_level": "id_subsequence",
+                    # §1.3 summary thresholds
+                    "first_kl_below_0.5": first_kl_below_0_5,
+                    "first_kl_below_1.0": first_kl_below_1_0,
+                    "first_rank_le_1": first_rank_le_1,
+                    "first_rank_le_5": first_rank_le_5,
+                    "first_rank_le_10": first_rank_le_10,
                 })
                 json_data["diagnostics"] = diag
                 
@@ -635,18 +697,14 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             print("=" * 60)
             print("ACTUAL MODEL PREDICTION (for comparison):")
 
-            final_logits = logits[0, -1, :]
-            if USE_FP32_UNEMBED:
-                # Ensure consistent precision for final prediction
-                final_logits = final_logits.float()
+            # final_logits already computed above; ensure float
+            final_logits = final_logits.float()
             _, final_top_indices = torch.topk(final_logits, 20, largest=True, sorted=True)
             final_full_probs = torch.softmax(final_logits, dim=0)
             final_top_probs = final_full_probs[final_top_indices]
             
-            # Calculate final entropy efficiently (convert to bits)
-            final_log_probs = torch.log_softmax(final_logits, dim=0).to(torch.float32)
-            final_entropy_nats = -torch.sum(torch.exp(final_log_probs) * final_log_probs)
-            final_entropy_bits = max(final_entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
+            # Calculate final entropy via zero-safe helper
+            final_entropy_bits = bits_entropy_from_logits(final_logits)
             
             # Collect final prediction data
             final_record = {

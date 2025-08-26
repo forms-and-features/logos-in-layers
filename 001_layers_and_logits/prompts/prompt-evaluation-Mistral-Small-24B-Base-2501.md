@@ -15,6 +15,7 @@ Note: this JSON is a compact version; the bulky per-token records live only in t
 001_layers_and_logits/run-latest/output-Mistral-Small-24B-Base-2501-records.csv
 001_layers_and_logits/run-latest/output-Mistral-Small-24B-Base-2501-pure-next-token.csv
 Each CSV now includes a `rest_mass` column (probability not covered by the listed top-k tokens); the pure-next-token CSV also adds boolean flags `copy_collapse`, `entropy_collapse`, and `is_answer` produced by the script.
+The pure-next-token CSV further includes per-layer probability and calibration fields: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, and `kl_to_final_bits` (bits).
 
 - Parameters (copy-collapse): copy_threshold = 0.95, copy_margin = 0.10
 
@@ -41,6 +42,7 @@ One paragraph: do JSON and CSV confirm that positional encodings and the intende
 Verify context_prompt ends with “called simply” (no trailing space).
 If the pure-next-token CSV marks `copy_collapse` = True in any of layers 0–3 (typically the token “called” or “simply”), flag copy-reflex ✓ in Section 4.
 Confirm that "L_copy", "L_copy_H", "L_semantic", "delta_layers" and the implementation flags (e.g. "use_norm_lens", "unembed_dtype") are present in diagnostics. The copy rule is ID-level contiguous subsequence (k=1) with threshold τ=0.95 and margin δ=0.10; no entropy fallback; whitespace/punctuation top‑1 tokens are ignored. Cite `copy_thresh`, `copy_window_k`, `copy_match_level` from diagnostics.
+Report summary indices from diagnostics: `first_kl_below_0.5`, `first_kl_below_1.0`, `first_rank_le_1`, `first_rank_le_5`, `first_rank_le_10`. Confirm units for KL/entropy are bits. Check the last-layer `kl_to_final_bits` is ≈ 0; if not, note a possible final‑lens vs final‑head mismatch and prefer rank-based statements.
 Copy-collapse flag check: first row with `copy_collapse = True`  
   layer = … , token_id₁ = … , p₁ = … , token_id₂ = … , p₂ = …  
   ✓ rule satisfied / ✗ fired spuriously
@@ -53,8 +55,12 @@ Use only the pure-next-token CSV (it already contains entropy in bits plus the c
 
 Add beneath the table:
 ΔH (bits) = entropy(L_copy) − entropy(L_semantic) = …
-Confidence milestones:  
-p > 0.30 at layer …, p > 0.60 at layer …, final-layer p = …
+Confidence milestones (from pure CSV):  
+p_top1 > 0.30 at layer …, p_top1 > 0.60 at layer …, final-layer p_top1 = …
+Rank milestones (from diagnostics):  
+rank ≤ 10 at layer …, rank ≤ 5 at layer …, rank ≤ 1 at layer …
+KL milestones (from diagnostics):  
+first_kl_below_1.0 at layer …, first_kl_below_0.5 at layer …; comment on whether KL decreases with depth and is ≈ 0 at final.
 
 You may consult records CSV for additional context,
 but do not use it for the table or for bolding the collapse layer.
@@ -67,6 +73,7 @@ but do not use it for the table or for bolding the collapse layer.
 - Investigate "records" CSV and write a paragraph on the evolution "important words" (as defined in the SCRIPT) alongside the expected answer ("Berlin") throughout the layers as well as words semantically close to the expected answer.
 - Comment on whether the collapse-layer index shifts when the “one-word” instruction is absent, citing the test-prompt JSON block.
 - Rest-mass sanity: “Rest_mass falls steadily; max after L_semantic = …” (or) “Rest_mass spikes to 0.37 at layer …, suggesting precision loss.”
+ - Rotation vs amplification: Compare decreasing `kl_to_final_bits` with rising `p_answer` and improving `answer_rank`. If rank improves early while KL stays high, note “early direction, late calibration”. If final-layer KL is not ≈ 0, flag “final‑lens vs final‑head mismatch” and prefer rank-based statements.
 - Temperature robustness: “At T = 0.1, Berlin rank 1 (p = …); at T = 2.0, Berlin rank … (p = …). Entropy rises from … bits to … bits.”
 - Important-word trajectory — “Berlin first enters any top-5 at layer …, stabilises by layer …. Germany remains in top-5 through layer …. capital drops out after layer ….”
 - To support the claims, add a short inline quote + line number, e.g. > “… (‘Berlin’, 0.92)” [L541].
@@ -84,6 +91,7 @@ but do not use it for the table or for bolding the collapse layer.
 5. Limitations & data quirks  
 Anything that reduces confidence; keep to facts.
 Rest_mass > 0.3 after L_semantic indicates potential norm-lens mis-scale.
+KL is lens-sensitive; a non-zero final KL may reflect final-lens vs final-head mismatch. Prefer rank milestones for cross-model claims; treat KL trends qualitatively.
 
 6. Model fingerprint (one sentence)  
 Example: “Llama‑3‑8B: collapse at L 32; final entropy 1.8 bits; ‘Paris’ appears rank 2 mid‑stack.”

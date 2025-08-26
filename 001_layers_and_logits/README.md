@@ -31,9 +31,9 @@ python run.py --device cpu --out_dir ./some_dir mistralai/Mistral-7B-v0.1
 
 Run creates or rotates `run-latest/` (previous → `run-YYYYMMDD-HHMM/`). For each model:
 
-- `output-<model>.json` — compact metadata: diagnostics (including `L_copy`, `L_semantic`), final prediction, model stats
+- `output-<model>.json` — compact metadata: diagnostics (including `L_copy`, `L_semantic`, summary thresholds `first_kl_below_0.5`, `first_kl_below_1.0`, `first_rank_le_1`, `first_rank_le_5`, `first_rank_le_10`), final prediction, model stats
 - `output-<model>-records.csv` — per-layer/per-position top‑k with `rest_mass`
-- `output-<model>-pure-next-token.csv` — per-layer pure next‑token top‑k with flags (`copy_collapse`, `entropy_collapse`, `is_answer`)
+- `output-<model>-pure-next-token.csv` — per-layer pure next‑token top‑k with flags and metrics: `copy_collapse`, `entropy_collapse`, `is_answer`, `p_top1`, `p_top5`, `p_answer`, `kl_to_final_bits`, `answer_rank`
 
 ## Scripts
 

@@ -55,7 +55,18 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
         header = ["layer", "pos", "token", "entropy"]
         for i in range(1, top_k_verbose + 1):
             header.extend([f"top{i}", f"prob{i}"])
-        header.extend(["rest_mass", "copy_collapse", "entropy_collapse", "is_answer"])
+        # Extended schema per PROJECT_NOTES §1.3
+        header.extend([
+            "rest_mass",
+            "copy_collapse",
+            "entropy_collapse",
+            "is_answer",
+            "p_top1",
+            "p_top5",
+            "p_answer",
+            "kl_to_final_bits",
+            "answer_rank",
+        ])
         writer.writerow(header)
 
         for rec in pure_next_token_records:
@@ -70,11 +81,18 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
                     tok, prob = "", ""
                 row.extend([tok, prob])
             rest_mass = max(0.0, 1.0 - topk_prob_sum)
+            def _nz(val):
+                # Normalize None to empty string for CSV cleanliness
+                return "" if val is None else val
             row.extend([
                 rest_mass,
                 rec.get("copy_collapse", ""),
                 rec.get("entropy_collapse", ""),
                 rec.get("is_answer", ""),
+                _nz(rec.get("p_top1")),
+                _nz(rec.get("p_top5")),
+                _nz(rec.get("p_answer")),
+                _nz(rec.get("kl_to_final_bits")),
+                _nz(rec.get("answer_rank")),
             ])
             writer.writerow(row)
-
