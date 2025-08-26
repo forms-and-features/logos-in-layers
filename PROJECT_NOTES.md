@@ -605,32 +605,89 @@ These tools move us beyond descriptive logit‑lens curves. They intervene direc
 
 ---
 
-### 3.7. *(Optional)* Targeted sparse autoencoders on decisive layers
+### 3.7. Targeted Sparse Autoencoders on decisive layers — **ambitious, feature‑level causal tests** *(replaces current §3.7; no scaffolding changes to `run.py`)*
 
-**Why.** Low‑rank concept bases (CBE) identify **subspaces**; sparse autoencoders (SAEs) can surface **discrete, sparse features** within those subspaces that admit **naming and causal tests** across prompts/languages. A small, targeted SAE on the decisive layer(s) provides feature‑level objects to test portability and causality — stronger evidence against austere nominalism (cf. arXiv:2409.14507; arXiv:2402.12201; arXiv:2209.10652).
+**Objective.** Move beyond depth curves to **feature‑level** evidence. Identify sparse features at the decisive layers that **predict** and **causally control** capital answers across **prompts and languages**, with **reliability gates** to avoid seed/capacity artefacts.
 
-**What.** *Train a small SAE on residuals at `L_sem ± 1` for one 7–9B model; identify features whose activation **predicts and causally increases** the correct capital across prompts and in ≥3 languages; ship a minimal feature manifest.*
+**Scope & placement.** One base model to start (use a model already in `run-latest/`). Layers: `L_sem − 1`, `L_sem`, `L_sem + 1` from that model’s JSON summary.
 
-**How.**
+**Data.** \~50k country→capital prompts including paraphrases and ≥3 languages (small fixed list). Use the same gold‑token IDs procedure as §1.11 for each language.
 
-1. **Data.** Collect residuals at `L_sem − 1, L_sem, L_sem + 1` over \~50k tokens drawn from country–capital prompts (and their multilingual variants).
-2. **Model.** Train a top‑k or L1‑regularised SAE with 8–16× overcompleteness:
+**Method (single, focused script or notebook: `sae_pass.py` — edit defaults inline; no new CLI knobs):**
 
-   ```python
-   sae = SparseAutoencoder(d_model, d_hidden=16*d_model, sparsity='topk', k=64)
-   sae.fit(residual_batch, epochs=2, seed=SEED)
-   ```
-3. **Screening.** For each learned feature:
+1. **Collect residuals.** Forward the base model once per prompt, hook the **post‑block residual** at each target layer (the same tap point used in `run.py`), and store activations to a local `.npz`.
+   *Normalization and unembed follow whatever `run.py` used; do not change lensing here.*
 
-   * compute correlation with `p_answer` at `L_sem`,
-   * patch **feature ablation** (zero its coeff) and **feature activation** (+α along its decoder) and log Δ log‑prob of the gold token across a held‑out prompt set and ≥3 languages.
-4. **Success criterion.** ≥1 feature with median **Δ log‑prob ≥ 0.5 bits** on activation and ≤0 on unrelated tokens in ≥70% of held‑out prompts; portability holds across languages.
-5. **Outputs.**
+2. **Train SAEs (reliability via replication).** Train **three** SAEs with the **same architecture** (Top‑K or L1; 8–16× overcomplete) but **different seeds** on the concatenated residuals from the 3 layers. Save encoders/decoders.
 
-   * `sae_config.json` (arch, k/λ, seed),
+3. **Screen features (per seed).** For each latent:
+
+   * **Predictive link.** Compute Pearson correlation between latent activation and `p_answer` at `L_sem` across the dataset. Keep latents with corr ≥ **0.2** (weak but consistent).
+   * **Causal link (held‑out).** On a held‑out set, run **latent ablation** (zero its coeff) and **latent activation** (+α·decoder with α∈{0.25,0.5,1.0}) at the layer where correlation peaked. Log **Δ log‑prob** for the correct capital and for the top distractor, per language.
+
+4. **Cross‑seed consensus (stability gate).** Match latents across seeds by **decoder‑cosine ≥ 0.8** and **Jaccard ≥ 0.5** overlap of top‑activating examples. Define `consensus_score = matched_seeds / 3`. Retain only latents with `consensus_score ≥ 2/3`.
+
+5. **Decomposition check (non‑canonicity gate).** For each retained latent, fit a **small meta‑SAE** on its **top‑activating residual snippets**. If ≥30% of its variance is explained by ≥2 sub‑latents with **distinct** activation profiles, mark it as a **bundle**; otherwise **unitary**.
+
+6. **Negative & permutation controls.**
+
+   * **Predicate‑permutation:** Repeat causal tests under the §2.3 permutation prompts; expect **loss** of effect on the *original* correct capital.
+   * **France‑control:** Ensure steering does **not** increase `p(Berlin)` in “France → ?” prompts.
+
+7. **Success criteria (advance only if all hold).**
+
+   * Median **Δ log‑prob ≥ 0.5 bits** for the correct capital at some α, **and** ≤0 for unrelated token set (months/colors) on the same prompts.
+   * **Portability:** effect remains positive across **≥3 languages** with median Δ ≥ 0.25 bits each.
+   * **Stability:** `consensus_score ≥ 2/3`.
+   * **Controls:** effect **drops** under permutation control.
+
+8. **Outputs (written alongside `run-latest/…`):**
+
+   * `sae_config.json` (arch, sparsity, seeds, layers used),
    * `sae_features.npz` (enc/dec),
-   * `feature_manifest.json` entries: `{feature_id, sparsity, name (optional), Δ_logp_median, languages_passed}`.
-6. **Scope.** Gate behind stability of §1.8 and availability of tuned/prism lens; keep to a single model/layer tranche to avoid scope creep.
+   * `feature_manifest.json` entries:
+     `{feature_id, layer, consensus_score, unitary_or_bundle, Δ_logp_median, Δ_logp_by_lang, α_star, control_drop}`,
+   * `sae_reliability.json` (cross‑seed matches, decomposition flags, validation snippets).
+
+> *Implementation note:* Keep this pass isolated (separate script/notebook). Defaults live in the file; edit them directly for each iteration. No CI, no profiles, no extra flags.
+
+---
+
+### 3.8. SAE reliability & consensus scoring *(implementation detail; pairs with §3.7)*
+
+**Goal.** Standardize how stability and non‑canonicity are reported, without adding harness.
+
+**Procedure.**
+
+* **Consensus across seeds.** Build bipartite matches between latents from seed‑A and seed‑B by **decoder‑cosine**; extend to seed‑C transitively. Compute `consensus_score` per latent (0–1).
+* **Decomposition flag.** From the meta‑SAE (§3.7‑5), record `unitary` vs `bundle`.
+* **Run‑level summary.** Print to console and save `sae_reliability.json` with: median `consensus_score`, `% bundle`, and a short list of advanced features with their scores.
+
+**Why it matters.** Prevents over‑claiming from one‑off latents; makes later philosophical claims depend on **replicable** causal features.
+
+---
+
+### 3.9. Cross‑model SAE universality probe *(exploratory; ambitious but compact)*
+
+**Objective.** Test for **model‑independent** real patterns by checking whether **analogous** sparse features exist—and are **causally efficacious**—in **two different base models**.
+
+**Setup.** Choose two models already run in `run-latest/`. Train/obtain SAEs at `L_sem` for each (repeat §3.7 on both, but you can skip the meta‑SAE on the second model if compute is tight).
+
+**Method (single notebook/script `universality_probe.py`):**
+
+1. **Activation signatures.** For each model, compute per‑feature **activation signatures** over a **shared 500‑prompt set** (mean activation per prompt).
+2. **Alignment & matching.** Align the two feature collections using **SVCCA** (or RSA on signatures). Select top‑k **matched pairs** (highest similarity with one‑to‑one matching).
+3. **Causal concordance.** For each pair, **steer** each model with its own feature (+α at the same relative layer) and compute standardized effect sizes (Δ log‑prob / σ across prompts).
+4. **Universality metrics (report 3 scalars + plots):**
+
+   * `feature_match_ratio = matched_pairs / min(nA, nB)`,
+   * `effect_size_corr` (Pearson over prompts between the two models’ effect size vectors),
+   * `universality_pass = share of pairs with positive effect in both models`.
+5. **Interpretation guardrails.** Treat positive results as **real‑pattern** evidence; negative results are informative—record and move on. No weight‑sharing or latent transfer attempted.
+
+**Outputs.** `universality_summary.json` (the three metrics), plus a small PDF/PNG plot showing matched pairs and effect‑size scatter.
+
+
 
 ---
 
@@ -652,6 +709,16 @@ These tools move us beyond descriptive logit‑lens curves. They intervene direc
 ## 4. Consolidating the Case Against Austere Nominalism
 
 Austere (extreme) nominalism says *every apparent regularity reduces to a list of concrete token‑tokens* — no predicates, no properties, no relations 〖SEP‑Nominalism〗〖Loux‑2023〗. The Group 3 tools (tuned lens, activation patching, head fingerprinting, concept vectors) are designed to test whether LLMs in fact contain reusable, portable structures that would resist such a paraphrase. If the experiments below confirm that hunch, austere nominalism loses its footing; if they do not, the debate stays open.
+
+---
+
+**Operational notes (for all four sections):**
+
+* Do **not** modify `run.py`. Each pass is a **single, focused script or notebook** with **defaults defined inside**; edit once per iteration.
+* Reuse artifacts from `run-latest/` (gold IDs, `L_sem`, prompts) to stay consistent with the main sweep.
+---
+
+
 
 ### 4.1. Instruction Words vs Capital‑Relation (Causal Check)
 
@@ -793,6 +860,31 @@ Austere (extreme) nominalism says *every apparent regularity reduces to a list o
    }
    ```
 5. **Scope guard.** This is a **one‑day spike**: no VLM fine‑tuning, no LM weight updates, only a linear map and a single‑layer injection. If it fails noisily, defer multimodal work to §5.1.
+
+
+---
+
+### 4.8. Feature‑steering side‑effects & risk profile *(minimal instrumentation, strong safeguards)*
+
+**Purpose.** Show that steering a “capital‑of” feature **does what is intended** with **limited collateral effects**—critical for credible philosophical claims.
+
+**Method (small script/notebook `steering_profile.py`; uses features advanced in §3.7):**
+
+* **Neutral set.** 200 simple sentences unrelated to geography (in‑repo text file).
+* **For each advanced feature and α ∈ {0.25, 0.5, 1.0}:**
+
+  1. **Target efficacy.** Re‑measure Δ log‑prob for the correct capital on the capital prompts; record the minimal α that meets the §3.7 threshold (call it `α*`).
+  2. **Collateral metrics on neutral set:**
+
+     * `KL_drift_bits`: mean KL(logits\_steered ∥ logits\_base),
+     * `PPL_delta`: relative perplexity change,
+     * `unrelated_token_shift`: mean Δ log‑prob on a frequency‑matched distractor list,
+     * `target_vs_distractor_ratio`: (Δ on correct capital) / (max Δ over top‑5 distractors) on the capital prompts.
+* **Report.** Emit `steering_profile.json` per feature with metrics at each α and highlight `α*` with the **lowest** KL\_drift that still satisfies target efficacy.
+
+**Success criterion.** At `α*`, `KL_drift_bits` small (target: ≤0.05 bits), `PPL_delta` near 0, `unrelated_token_shift ≤ 0`, and `target_vs_distractor_ratio ≥ 2`.
+
+**Why this matters.** Prevents over‑interpreting features that “work” only by globally perturbing the model; strengthens the case that a **specific mechanism** underlies the observed competence.
 
 ---
 
