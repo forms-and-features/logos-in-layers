@@ -162,23 +162,49 @@ norm_module = model.blocks[i].ln2 if probe_after_block else model.blocks[i].ln1
 
 ---
 
-### 1.4. Raw‑activation lens toggle
+### 1.4. [x] Raw‑vs‑Norm dual‑lens sanity (baked‑in)
 
-**Why.** If “early meaning” disappears when you skip normalisation, that meaning was an artefact of the lens, not the model.
+**Why.** If “early meaning” disappears when you skip normalisation, that meaning was an artefact of the lens, not the model. This check should run repeatedly, not as a one‑off toggle, to guard against regressions and model‑family differences (pre‑ vs post‑norm; future Tuned‑Lens, etc.).
 
-**What.** *A boolean CLI flag `--raw-lens` that bypasses `apply_norm_or_skip`.*
+**What.** Baked‑in, low‑cost sanity comparisons between the normalized lens and the raw activation lens at a few sampled depths. Record divergence metrics in JSON; avoid growing the public CLI surface.
+
+**✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)**
 
 **How.**
 
-1. Add `parser.add_argument("--raw-lens", action="store_true")`.
-2. Wrap the call:
+1. At each sampled layer L ∈ {0, ⌊n/4⌋, ⌊n/2⌋, ⌊3n/4⌋}:
+   - Capture `resid_raw` before normalization; compute `logits_raw` and `P_raw` for the pure next‑token (last position only).
+   - Apply the correct normalizer (per §1.1) to get `resid_norm`; compute `logits_norm` and `P_norm`.
+2. Compute per‑layer divergence metrics:
+   - `kl_norm_vs_raw_bits = KL(P_norm || P_raw)` (bits)
+   - `top1_agree` (bool)
+   - `p_top1_norm`, `p_top1_raw`
+   - `p_answer_norm`, `p_answer_raw`, `answer_rank_norm`, `answer_rank_raw` (when gold first‑token id is known; see §1.3)
+3. Persist into JSON under `raw_lens_check.samples` with entries:
+   ```json
+   {"layer": L, "kl_norm_vs_raw_bits": x, "top1_agree": true/false,
+    "p_top1_norm": ..., "p_top1_raw": ..., "p_answer_norm": ..., "p_answer_raw": ...,
+    "answer_rank_norm": ..., "answer_rank_raw": ...}
+   ```
+4. Add run‑summary fields:
+   - `first_norm_only_semantic_layer` = first L where `is_answer_norm` is true and `is_answer_raw` is false
+   - `max_kl_norm_vs_raw_bits` over sampled layers
+   - `lens_artifact_risk` ∈ {`low`,`medium`,`high`} via simple heuristics (tune empirically; e.g., `low` < 0.5 bits, `high` ≥ 1.0 bits or any early norm‑only semantics)
 
-```python
-resid_to_decode = residual if args.raw_lens else apply_norm_or_skip(residual, norm_mod)
-```
+**Defaults & cost.**
 
-3. Output the flag value into the JSON meta file so that result artefacts are traceable.
-4. Optional `--dual-lens N` to emit both raw and norm lens rows for layers `0..N-1` with a `lens` column ∈ {`raw`,`norm`} (debug only).
+- Default mode is “sampled”: only a handful of layers and only the pure next‑token, so runtime overhead is negligible (a second unembed+softmax at ~3–4 layers).
+- No change to CSV schemas by default; JSON carries the sanity results. A debug sidecar CSV can be added later if needed.
+
+**Optional controls (no new public CLI flag).**
+
+- Environment variable: `LOGOS_RAW_LENS ∈ {off|sample|full}` with default `sample`.
+  - `off`: disable the check entirely.
+  - `sample`: run the default sampled comparison and write JSON summaries.
+  - `full`: compute dual‑lens for all layers (pure next‑token), optionally emitting a small sidecar CSV with a `lens ∈ {raw,norm}` column for inspection.
+- In `--self-test`, auto‑escalate to `full` and warn/error if large `kl_norm_vs_raw_bits` or early norm‑only semantics are detected.
+
+**Why not a CLI flag.** Keeping this as a baked‑in QA signal avoids a “one‑and‑done” toggle and ensures every run remains robust to lens‑induced artefacts without burdening the user with additional switches.
 
 ---
 

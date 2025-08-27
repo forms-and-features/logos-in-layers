@@ -8,6 +8,28 @@ cd "$ROOT_DIR"
 
 echo "Running CPU-only tests with $PY"
 
+# Preflight: ensure selected Python exists and can import torch
+if [ ! -x "$PY" ]; then
+  echo "Error: Python interpreter not executable at: $PY"
+  echo "Hint: activate the venv and re-run: source venv/bin/activate && scripts/run_cpu_tests.sh"
+  exit 1
+fi
+
+echo "Preflight: verifying torch import …"
+if ! "$PY" - <<'PY'
+try:
+    import torch
+    print("torch ok:", getattr(torch, "__version__", "unknown"))
+except Exception as e:
+    print("torch import failed:", e)
+    raise SystemExit(1)
+PY
+then
+  echo "Error: torch is not importable with $PY"
+  echo "Hint: ensure the project venv is active: source venv/bin/activate && scripts/run_cpu_tests.sh"
+  exit 1
+fi
+
 ${PY} 001_layers_and_logits/tests/test_norm_utils.py
 ${PY} 001_layers_and_logits/tests/test_numerics.py
 ${PY} 001_layers_and_logits/tests/test_csv_io.py
@@ -17,6 +39,8 @@ ${PY} 001_layers_and_logits/tests/test_hooks.py
 ${PY} 001_layers_and_logits/tests/test_run_dir.py
 ${PY} 001_layers_and_logits/tests/test_rank_metrics.py
 ${PY} 001_layers_and_logits/tests/test_kl_metrics.py
+${PY} 001_layers_and_logits/tests/test_summaries.py
+${PY} 001_layers_and_logits/tests/test_raw_lens.py
 
 (
   cd 001_layers_and_logits/tests

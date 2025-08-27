@@ -59,7 +59,6 @@ from layers_core.norm_utils import (
 from layers_core.numerics import (
     bits_entropy_from_logits,
     safe_cast_for_unembed,
-    kl_bits,
 )
 from layers_core.metrics import compute_next_token_metrics
 from layers_core.csv_io import write_csv_files
@@ -77,6 +76,14 @@ from layers_core.device_policy import (
 from layers_core.hooks import build_cache_hook, attach_residual_hooks, detach_hooks
 from layers_core.run_dir import setup_run_latest_directory
 from layers_core.config import ExperimentConfig
+from layers_core.raw_lens import (
+    get_raw_lens_mode,
+    init_raw_lens_check,
+    should_sample_layer,
+    record_dual_lens_sample,
+    summarize_raw_lens_check,
+)
+from layers_core.summaries import summarize_pure_records
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -249,6 +256,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         has_additive_pos_embed = 'hook_pos_embed' in model.hook_dict
         layer0_position_info = "additive_pos_embed_included" if has_additive_pos_embed else "token_only_rotary_model"
         
+        # Raw-vs-Norm dual-lens mode (env-controlled; default: sampled checks)
+        RAW_LENS_MODE = get_raw_lens_mode(config.self_test)
+
         diag = {
             "type": "diagnostics",
             "model": model_id,
@@ -275,7 +285,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             "temperature_exploration": [],
             "diagnostics": None,
             "final_prediction": None,
-            "model_stats": None
+            "model_stats": None,
+            # Raw-vs-Norm sanity block (PROJECT_NOTES §1.4)
+            "raw_lens_check": init_raw_lens_check(RAW_LENS_MODE),
         }
         IMPORTANT_WORDS = ["Germany", "Berlin", "capital", "Answer", "word", "simply"]
 
@@ -401,6 +413,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     resid = residual_cache['hook_embed']
                     print("[diagnostic] No separate positional embedding hook found (as expected for rotary models).")
                     print("[diagnostic] Layer 0 contains TOKEN information only; positional info is injected inside attention layers.")
+                # Keep a raw copy before normalization for dual-lens sanity
+                resid_raw_L0 = resid
                 # FIXED: Apply first real normalizer to embeddings if using norm-lens
                 # This gives us the normalized embeddings that the model actually sees
                 if USE_NORM_LENS:
@@ -500,6 +514,23 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 })
                 
                 print_summary(0, last_pos, last_token_str, last_entropy_bits, last_top_tokens, last_top_probs, is_pure_next_token=True, extra=record_extra)
+
+                # Dual-lens sanity at layer 0 (always if not "off")
+                if RAW_LENS_MODE != "off":
+                    # Append a dual-lens sample using helper
+                    record_dual_lens_sample(
+                        json_data["raw_lens_check"],
+                        layer_out_idx=0,
+                        last_logits_norm=last_logits,
+                        resid_raw_last_vec=resid_raw_L0[0, last_pos, :],
+                        W_U=analysis_W_U,
+                        b_U=analysis_b_U,
+                        force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED),
+                        tokenizer=model.tokenizer,
+                        final_probs=final_probs,
+                        first_ans_id=first_ans_id,
+                        ground_truth=ground_truth,
+                    )
                 
                 # --- free Layer-0 residual to keep host RAM flat ---------------------
                 del resid
@@ -514,11 +545,16 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 
                 # Determine number of layers for iteration (no longer set by hook attachment)
                 n_layers = model.cfg.n_layers
+                # Decide which layers to sample for raw-vs-norm (1-indexed for post-block layers)
+                # Build a closure to test sampling quickly
+                def _should_sample(one_indexed: int) -> bool:
+                    return should_sample_layer(RAW_LENS_MODE, n_layers, one_indexed)
 
                 for layer in range(n_layers):
                     print(f"Layer {layer + 1:2d} (after transformer block {layer}):")
                     # Get residual stream after this layer's block
                     resid = residual_cache[f'blocks.{layer}.hook_resid_post']
+                    resid_raw = resid  # keep pre-norm for raw lens
                     
                     # Apply normalization if requested
                     if USE_NORM_LENS:
@@ -615,6 +651,22 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     })
                     
                     print_summary(layer + 1, last_pos, last_token_str, last_entropy_bits, last_top_tokens, last_top_probs, is_pure_next_token=True, extra=record_extra)
+
+                    # Dual-lens sanity at selected layers
+                    if (RAW_LENS_MODE != "off") and _should_sample(layer + 1):
+                        record_dual_lens_sample(
+                            json_data["raw_lens_check"],
+                            layer_out_idx=layer + 1,
+                            last_logits_norm=last_logits,
+                            resid_raw_last_vec=resid_raw[0, last_pos, :],
+                            W_U=analysis_W_U,
+                            b_U=analysis_b_U,
+                            force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED),
+                            tokenizer=model.tokenizer,
+                            final_probs=final_probs,
+                            first_ans_id=first_ans_id,
+                            ground_truth=ground_truth,
+                        )
                     
                     # --- free residual for this layer -----------------------------------
                     del resid
@@ -623,60 +675,24 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
                 
-                # ---------------------------------------------------------------
-                #  Compute L_copy  (first copy-collapsed layer, prompt echo rule)
-                #  Compute L_semantic (first layer whose top-1 == "Berlin")
-                #  Compute KL/rank thresholds (PROJECT_NOTES §1.3)
-                # ---------------------------------------------------------------
-                L_copy = None
-                L_copy_H = None  # Legacy entropy-based metric
-                L_sem = None
-                first_kl_below_0_5 = None
-                first_kl_below_1_0 = None
-                first_rank_le_1 = None
-                first_rank_le_5 = None
-                first_rank_le_10 = None
-                for rec in collected_pure_records:    # already collected in RAM
-                    if L_copy is None and rec["copy_collapse"]:
-                        L_copy = rec["layer"]
-                    if L_copy_H is None and rec["entropy_collapse"]:
-                        L_copy_H = rec["layer"]          # optional: legacy metric
-                    if L_sem is None and rec["is_answer"]:
-                        L_sem = rec["layer"]
-                    # KL thresholds
-                    if first_kl_below_0_5 is None and (rec.get("kl_to_final_bits") is not None) and (rec["kl_to_final_bits"] <= 0.5):
-                        first_kl_below_0_5 = rec["layer"]
-                    if first_kl_below_1_0 is None and (rec.get("kl_to_final_bits") is not None) and (rec["kl_to_final_bits"] <= 1.0):
-                        first_kl_below_1_0 = rec["layer"]
-                    # Rank thresholds (only when answer_rank available)
-                    ar = rec.get("answer_rank")
-                    if ar is not None:
-                        if first_rank_le_1 is None and ar <= 1:
-                            first_rank_le_1 = rec["layer"]
-                        if first_rank_le_5 is None and ar <= 5:
-                            first_rank_le_5 = rec["layer"]
-                        if first_rank_le_10 is None and ar <= 10:
-                            first_rank_le_10 = rec["layer"]
-                    # Do not break early; we also derive KL/rank thresholds across depth
-
-                # Attach to diagnostics block
-                diag.update({
-                    "L_copy": L_copy,
-                    "L_copy_H": L_copy_H,
-                    "L_semantic": L_sem,
-                    "delta_layers": None if (L_copy is None or L_sem is None) else L_sem - L_copy,
-                    # provenance for copy detector
-                    "copy_thresh": config.copy_threshold,
-                    "copy_window_k": getattr(config, "copy_window_k", 1),
-                    "copy_match_level": "id_subsequence",
-                    # §1.3 summary thresholds
-                    "first_kl_below_0.5": first_kl_below_0_5,
-                    "first_kl_below_1.0": first_kl_below_1_0,
-                    "first_rank_le_1": first_rank_le_1,
-                    "first_rank_le_5": first_rank_le_5,
-                    "first_rank_le_10": first_rank_le_10,
-                })
+                # Summarize collapse and thresholds via helper
+                diag.update(
+                    summarize_pure_records(
+                        collected_pure_records,
+                        copy_threshold=config.copy_threshold,
+                        copy_window_k=getattr(config, "copy_window_k", 1),
+                        copy_match_level="id_subsequence",
+                    )
+                )
                 json_data["diagnostics"] = diag
+
+                # Summarize raw-vs-norm sanity samples (PROJECT_NOTES §1.4)
+                try:
+                    json_data["raw_lens_check"]["summary"] = summarize_raw_lens_check(
+                        json_data["raw_lens_check"]["samples"]
+                    )
+                except Exception:
+                    pass
                 
             finally:
                 # Clean up hooks and cache

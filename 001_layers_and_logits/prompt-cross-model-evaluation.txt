@@ -79,6 +79,8 @@ Write concise but thorough paragraphs that correlate quantitative patterns acros
 Compare copy-reflex across models using the `copy_collapse` flags in the pure-next-token CSVs (treat any model whose pure-next-token CSV marks copy_collapse = True in layers 0–3 as having a copy-reflex); highlight any outlier.
 Use rank‑based milestones (`first_rank_le_1`, `first_rank_le_5`, `first_rank_le_10`) for cross‑model comparisons; avoid cross‑model claims based solely on raw probabilities. Treat KL milestones (`first_kl_below_1.0`, `first_kl_below_0.5`) as within‑model diagnostics and compare their relative depths (layer/n_layers). Exclude models whose last‑layer `kl_to_final_bits` is not ≈ 0 from KL‑based conclusions, or annotate a final‑lens vs final‑head mismatch.
 
+Include lens sanity from each model’s JSON `raw_lens_check.summary`: list models with `first_norm_only_semantic_layer` present (norm‑only semantics) and report `lens_artifact_risk` and `max_kl_norm_vs_raw_bits`. For models with `high` risk, downgrade confidence in early‑semantics claims and prefer rank‑based statements; note the `mode` (sample/full) for context.
+
 Investigate and write a paragraph about notable similarities and differences between models of the same family (Qwen, gemma).
 
 Use `L_copy` (or fallback `L_copy_H`) and `L_semantic` from each model's `diagnostics` block for consistent Δ calculation.
@@ -98,6 +100,7 @@ Check that you've covered the following:
 * entropy-drop shape (sharp/taper)
 * relation to d_model / n_heads
 * link collapse depth to MMLU/ARC
+* lens sanity across models (risk tiers; any norm‑only semantics)
 
 2. Misinterpretations in existing EVALS
 Bullet each over‑statement or error you found; cite the exact EVAL line.

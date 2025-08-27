@@ -47,6 +47,8 @@ Copy-collapse flag check: first row with `copy_collapse = True`
   layer = … , token_id₁ = … , p₁ = … , token_id₂ = … , p₂ = …  
   ✓ rule satisfied / ✗ fired spuriously
 
+Lens sanity (JSON `raw_lens_check`): note `mode` (sample/full) and summarize `summary`: `lens_artifact_risk`, `max_kl_norm_vs_raw_bits`, and `first_norm_only_semantic_layer` (if any). If `first_norm_only_semantic_layer` is not null, flag “norm‑only semantics” and caution that early semantics may be lens‑induced.
+
 
 3. Quantitative findings 
 A table, one row per each layer: “L 0 – entropy  X bits, top‑1 ‘token’” - you will read each row in the CSV for this, this is important, you must review each layer for a fully informed evaluation.
@@ -73,7 +75,8 @@ but do not use it for the table or for bolding the collapse layer.
 - Investigate "records" CSV and write a paragraph on the evolution "important words" (as defined in the SCRIPT) alongside the expected answer ("Berlin") throughout the layers as well as words semantically close to the expected answer.
 - Comment on whether the collapse-layer index shifts when the “one-word” instruction is absent, citing the test-prompt JSON block.
 - Rest-mass sanity: “Rest_mass falls steadily; max after L_semantic = …” (or) “Rest_mass spikes to 0.37 at layer …, suggesting precision loss.”
- - Rotation vs amplification: Compare decreasing `kl_to_final_bits` with rising `p_answer` and improving `answer_rank`. If rank improves early while KL stays high, note “early direction, late calibration”. If final-layer KL is not ≈ 0, flag “final‑lens vs final‑head mismatch” and prefer rank-based statements.
+- Rotation vs amplification: Compare decreasing `kl_to_final_bits` with rising `p_answer` and improving `answer_rank`. If rank improves early while KL stays high, note “early direction, late calibration”. If final-layer KL is not ≈ 0, flag “final‑lens vs final‑head mismatch” and prefer rank-based statements.
+- Lens sanity: Quote the JSON `raw_lens_check.summary` and, if helpful, one sampled `raw_lens_check.samples` row. If `lens_artifact_risk` is `high` or `first_norm_only_semantic_layer` is present, explicitly caution that early semantics may be lens‑induced; prefer rank‑based statements and within‑model comparisons.
 - Temperature robustness: “At T = 0.1, Berlin rank 1 (p = …); at T = 2.0, Berlin rank … (p = …). Entropy rises from … bits to … bits.”
 - Important-word trajectory — “Berlin first enters any top-5 at layer …, stabilises by layer …. Germany remains in top-5 through layer …. capital drops out after layer ….”
 - To support the claims, add a short inline quote + line number, e.g. > “… (‘Berlin’, 0.92)” [L541].
@@ -92,6 +95,7 @@ but do not use it for the table or for bolding the collapse layer.
 Anything that reduces confidence; keep to facts.
 Rest_mass > 0.3 after L_semantic indicates potential norm-lens mis-scale.
 KL is lens-sensitive; a non-zero final KL may reflect final-lens vs final-head mismatch. Prefer rank milestones for cross-model claims; treat KL trends qualitatively.
+Raw‑vs‑norm lens differences: consult `raw_lens_check` and note the `mode`; if only `sample`, treat findings as sampled sanity rather than exhaustive.
 
 6. Model fingerprint (one sentence)  
 Example: “Llama‑3‑8B: collapse at L 32; final entropy 1.8 bits; ‘Paris’ appears rank 2 mid‑stack.”

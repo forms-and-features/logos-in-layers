@@ -40,6 +40,22 @@ huggingface-cli login  # Required for gated models
 - If activation still fails due to a broken interpreter path, recreate the venv inside the workspace and reinstall deps: `python -m venv venv && source venv/bin/activate && pip install -r requirements.txt`.
 - Network-restricted runs: CPU-only tests and most unit tests do not require network. The KL self-test may need network/HF auth; ask for approval to run without sandbox if blocked.
 
+### Running Tests (for agents)
+- Preferred: run `scripts/test.sh` — it activates the venv and runs the full CPU-only suite (`scripts/run_cpu_tests.sh`).
+- Alternate: `source venv/bin/activate && scripts/run_cpu_tests.sh` (uses `PYTHON_BIN=venv/bin/python`).
+- The test driver performs a preflight torch import check and exits with a helpful hint if the venv isn’t active.
+- In sandboxed/approval modes, request escalation when invoking these scripts so venv activation “sticks”.
+- For the KL scaling check: `scripts/self_test.sh [MODEL_ID] [DEVICE]` or `cd 001_layers_and_logits && python run.py --self-test <MODEL_ID>`.
+
+### Timeouts & Approvals (for agents)
+- Tool calls are non-interactive and stateless: activation and the command must run in the same call.
+- Long tasks (full test suite, multi-model runs) can exceed the default timeout. When using the shell tool, set a longer timeout (e.g., `timeout_ms: 600000`).
+- Many shells restrict executing `venv/bin/python` or project scripts without approval. Request escalated permissions for:
+  - `source venv/bin/activate && scripts/run_cpu_tests.sh`
+  - `bash scripts/test.sh` (wrapper that activates the venv and runs the suite)
+- If a command times out, rerun with escalation and an explicit long timeout.
+- Prefer grouped commands: “activate venv + run tests” in one call rather than separate calls — state does not persist between calls.
+
 ### Running Experiments
 ```bash
 # Basic chat interface
