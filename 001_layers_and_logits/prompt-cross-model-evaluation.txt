@@ -44,7 +44,7 @@ Note: each JSON is a compact summary; the bulky per-token records are stored onl
 001_layers_and_logits/run-latest/output-Yi-34B-pure-next-token.csv
 
 Both CSV flavours contain a `rest_mass` column (probability mass not covered by the top-k tokens).
-The pure-next-token CSV also adds boolean flags `copy_collapse`, `entropy_collapse`, and `is_answer` that the script computes for every layer, plus per-layer probability and calibration fields: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, and `kl_to_final_bits` (bits).
+The pure-next-token CSV also adds boolean flags `copy_collapse`, `entropy_collapse`, and `is_answer` that the script computes for every layer, plus per-layer probability and calibration fields: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, and `kl_to_final_bits` (bits). It also includes `cos_to_final` (cosine similarity to the final logits direction; PROJECT_NOTES §1.5). Treat `cos_to_final` as a within-model trend; avoid cross-family comparisons of absolute cosine values.
 
 Use tools to review these JSON and CSV files as needed.
 
@@ -77,7 +77,7 @@ The result of your evaluation must be in that file, don't put it into your respo
 Write concise but thorough paragraphs that correlate quantitative patterns across models, drawing on your extensive knowledge of LLM interpretability research; relate them to published interpretability findings (cite DOI/arXiv).
 
 Compare copy-reflex across models using the `copy_collapse` flags in the pure-next-token CSVs (treat any model whose pure-next-token CSV marks copy_collapse = True in layers 0–3 as having a copy-reflex); highlight any outlier.
-Use rank‑based milestones (`first_rank_le_1`, `first_rank_le_5`, `first_rank_le_10`) for cross‑model comparisons; avoid cross‑model claims based solely on raw probabilities. Treat KL milestones (`first_kl_below_1.0`, `first_kl_below_0.5`) as within‑model diagnostics and compare their relative depths (layer/n_layers). Exclude models whose last‑layer `kl_to_final_bits` is not ≈ 0 from KL‑based conclusions, or annotate a final‑lens vs final‑head mismatch.
+Use rank‑based milestones (`first_rank_le_1`, `first_rank_le_5`, `first_rank_le_10`) for cross‑model comparisons; avoid cross‑model claims based solely on raw probabilities. Treat KL milestones (`first_kl_below_1.0`, `first_kl_below_0.5`) as within‑model diagnostics and compare their relative depths (layer/n_layers). Exclude models whose last‑layer `kl_to_final_bits` is not ≈ 0 from KL‑based conclusions, or annotate a final‑lens vs final‑head mismatch. For `cos_to_final`, report per‑model trajectories qualitatively as within‑model evidence of direction alignment; do not compare absolute cosine levels across families.
 
 Include lens sanity from each model’s JSON `raw_lens_check.summary`: list models with `first_norm_only_semantic_layer` present (norm‑only semantics) and report `lens_artifact_risk` and `max_kl_norm_vs_raw_bits`. For models with `high` risk, downgrade confidence in early‑semantics claims and prefer rank‑based statements; note the `mode` (sample/full) for context.
 
@@ -85,7 +85,7 @@ Investigate and write a paragraph about notable similarities and differences bet
 
 Use `L_copy` (or fallback `L_copy_H`) and `L_semantic` from each model's `diagnostics` block for consistent Δ calculation.
 
-Δ̂ = delta_layers / n_layers (relative depth); note this when discussing size effects. Summarize emergence timing with Δ̂, rank milestones, and whether KL decreases with depth alongside rank improvements (rotation vs amplification).
+Δ̂ = delta_layers / n_layers (relative depth); note this when discussing size effects. Summarize emergence timing with Δ̂, rank milestones, and whether KL decreases with depth alongside rank improvements. You may mention within‑model rises in `cos_to_final` as evidence of direction alignment, but do not draw cross‑family comparisons from cosine.
 For each model describe the entropy drop between L_copy and L_semantic (e.g. ‘sharp 13-bit plunge’, ‘gradual 6-bit taper’). Use the entropy column in pure-next-token CSV.
 
 Group models into “meaning emerges at early (< 70 % depth) vs late (≥ 70 %)” instead of citing raw layer numbers.
@@ -99,6 +99,7 @@ Check that you've covered the following:
 * Δ and Δ̂ trends vs size
 * entropy-drop shape (sharp/taper)
 * relation to d_model / n_heads
+* Per‑model `cos_to_final` alignment (within‑model only; no cross‑family comparison)
 * link collapse depth to MMLU/ARC
 * lens sanity across models (risk tiers; any norm‑only semantics)
 

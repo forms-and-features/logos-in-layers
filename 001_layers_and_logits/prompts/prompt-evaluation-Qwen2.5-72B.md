@@ -15,7 +15,7 @@ Note: this JSON is a compact version; the bulky per-token records live only in t
 001_layers_and_logits/run-latest/output-Qwen2.5-72B-records.csv
 001_layers_and_logits/run-latest/output-Qwen2.5-72B-pure-next-token.csv
 Each CSV now includes a `rest_mass` column (probability not covered by the listed top-k tokens); the pure-next-token CSV also adds boolean flags `copy_collapse`, `entropy_collapse`, and `is_answer` produced by the script.
-The pure-next-token CSV further includes per-layer probability and calibration fields: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, and `kl_to_final_bits` (bits).
+The pure-next-token CSV further includes per-layer probability and calibration fields: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, and `kl_to_final_bits` (bits), and `cos_to_final` (cosine similarity to the final logits direction; PROJECT_NOTES §1.5).
 
 - Parameters (copy-collapse): copy_threshold = 0.95, copy_margin = 0.10
 
@@ -63,6 +63,8 @@ Rank milestones (from diagnostics):
 rank ≤ 10 at layer …, rank ≤ 5 at layer …, rank ≤ 1 at layer …
 KL milestones (from diagnostics):  
 first_kl_below_1.0 at layer …, first_kl_below_0.5 at layer …; comment on whether KL decreases with depth and is ≈ 0 at final.
+Cosine milestones (from pure CSV):  
+first `cos_to_final ≥ 0.2` at layer …, `≥ 0.4` at layer …, `≥ 0.6` at layer …; final `cos_to_final = …`.
 
 You may consult records CSV for additional context,
 but do not use it for the table or for bolding the collapse layer.
@@ -75,7 +77,7 @@ but do not use it for the table or for bolding the collapse layer.
 - Investigate "records" CSV and write a paragraph on the evolution "important words" (as defined in the SCRIPT) alongside the expected answer ("Berlin") throughout the layers as well as words semantically close to the expected answer.
 - Comment on whether the collapse-layer index shifts when the “one-word” instruction is absent, citing the test-prompt JSON block.
 - Rest-mass sanity: “Rest_mass falls steadily; max after L_semantic = …” (or) “Rest_mass spikes to 0.37 at layer …, suggesting precision loss.”
-- Rotation vs amplification: Compare decreasing `kl_to_final_bits` with rising `p_answer` and improving `answer_rank`. If rank improves early while KL stays high, note “early direction, late calibration”. If final-layer KL is not ≈ 0, flag “final‑lens vs final‑head mismatch” and prefer rank-based statements.
+- Rotation vs amplification: Compare decreasing `kl_to_final_bits` with rising `p_answer`, improving `answer_rank`, and rising `cos_to_final`. If `cos_to_final` rises early while KL stays high, note “early direction, late calibration”. If final-layer KL is not ≈ 0, flag “final‑lens vs final‑head mismatch” and prefer rank-based statements.
 - Lens sanity: Quote the JSON `raw_lens_check.summary` and, if helpful, one sampled `raw_lens_check.samples` row. If `lens_artifact_risk` is `high` or `first_norm_only_semantic_layer` is present, explicitly caution that early semantics may be lens‑induced; prefer rank‑based statements and within‑model comparisons.
 - Temperature robustness: “At T = 0.1, Berlin rank 1 (p = …); at T = 2.0, Berlin rank … (p = …). Entropy rises from … bits to … bits.”
 - Important-word trajectory — “Berlin first enters any top-5 at layer …, stabilises by layer …. Germany remains in top-5 through layer …. capital drops out after layer ….”

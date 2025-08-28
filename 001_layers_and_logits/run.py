@@ -367,6 +367,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 # Cache final head reference distribution once (for KL-to-final)
                 final_logits = logits[0, -1, :].float()
                 final_probs = torch.softmax(final_logits, dim=0)
+                # Representation-drift baseline direction (PROJECT_NOTES §1.5)
+                _final_norm = torch.norm(final_logits) + 1e-12
+                final_dir = (final_logits / _final_norm)
                 
                 # Debug: print device placements of cached activations and tokens
                 for name, t in residual_cache.items():
@@ -496,11 +499,16 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     last_full_probs, top1_id, final_probs, first_ans_id, topk_cum=5
                 )
 
+                # Cosine to final direction (PROJECT_NOTES §1.5)
+                _curr_norm = torch.norm(last_logits) + 1e-12
+                cos_to_final = torch.dot((last_logits / _curr_norm), final_dir).item()
+
                 record_extra = {
                     "copy_collapse": copy_collapse,
                     "entropy_collapse": entropy_collapse,
                     "is_answer": is_answer,
                     **metrics,
+                    "cos_to_final": cos_to_final,
                 }
                 
                 # Collect for L_copy/L_semantic computation
@@ -633,11 +641,16 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         last_full_probs, top1_id, final_probs, first_ans_id, topk_cum=5
                     )
 
+                    # Cosine to final direction (PROJECT_NOTES §1.5)
+                    _curr_norm = torch.norm(last_logits) + 1e-12
+                    cos_to_final = torch.dot((last_logits / _curr_norm), final_dir).item()
+
                     record_extra = {
                         "copy_collapse": copy_collapse,
                         "entropy_collapse": entropy_collapse,
                         "is_answer": is_answer,
                         **metrics,
+                        "cos_to_final": cos_to_final,
                     }
                     
                     # Collect for L_copy/L_semantic computation

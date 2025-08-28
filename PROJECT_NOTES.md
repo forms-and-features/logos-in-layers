@@ -208,11 +208,15 @@ norm_module = model.blocks[i].ln2 if probe_after_block else model.blocks[i].ln1
 
 ---
 
-### 1.5. Representation‑drift cosine curve
+### 1.5. [x] Representation‑drift cosine curve
 
 **Why.** A realist reading predicts an answer‑token direction that exists early and merely grows in magnitude; a nominalist picture predicts the direction rotates into place late. Cosine similarity across depth quantifies which is true.
 
 **What.** *A per‑layer scalar `cos_to_final` written alongside entropy metrics.*
+
+**✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)**
+* Implemented in `run.py` for the pure next‑token at layer 0 and all post‑block layers.
+* Persisted to `output-*-pure-next-token.csv` as `cos_to_final` (see 001 README Outputs).
 
 **How.**
 
@@ -229,7 +233,7 @@ curr_dir = layer_logits / layer_logits.norm()
 cos = torch.dot(curr_dir, final_dir).item()
 ```
 
-3. Write `cos_to_final` column; include in diagnostic plots.
+3. Write `cos_to_final` column; included in pure next‑token CSV. (Plots to be added in analysis notebooks.)
 
 **Note.** Cosine is computed on **logit directions** (not residuals). With a Tuned Lens (§1.9), `cos_to_final` measures closeness to the **tuned** head—still interpretable as “distance to the model’s decision boundary”.
 

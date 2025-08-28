@@ -66,6 +66,8 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
             "p_answer",
             "kl_to_final_bits",
             "answer_rank",
+            # Representation-drift cosine (PROJECT_NOTES §1.5)
+            "cos_to_final",
         ])
         writer.writerow(header)
 
@@ -94,5 +96,6 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
                 _nz(rec.get("p_answer")),
                 _nz(rec.get("kl_to_final_bits")),
                 _nz(rec.get("answer_rank")),
+                _nz(rec.get("cos_to_final")),
             ])
             writer.writerow(row)

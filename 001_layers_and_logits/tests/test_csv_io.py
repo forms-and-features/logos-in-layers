@@ -44,10 +44,10 @@ def test_csv_writers_headers_and_rows():
         with open(pure_path, newline='', encoding='utf-8') as f:
             rows = list(csv.reader(f))
         header = rows[0]
-        # Pure next-token CSV now includes five extra §1.3 columns
-        expected_len = 4 + 2 * top_k + 1 + 3 + 5
+        # Pure next-token CSV now includes §1.3 metrics plus §1.5 cosine column
+        expected_len = 4 + 2 * top_k + 1 + 3 + 5 + 1
         assert len(header) == expected_len
-        assert header[-9:] == [
+        assert header[-10:] == [
             "rest_mass",
             "copy_collapse",
             "entropy_collapse",
@@ -57,6 +57,7 @@ def test_csv_writers_headers_and_rows():
             "p_answer",
             "kl_to_final_bits",
             "answer_rank",
+            "cos_to_final",
         ]
         # Validate row shapes and rest_mass range
         rest_idx = header.index("rest_mass")
