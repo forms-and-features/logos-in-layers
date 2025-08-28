@@ -2,5 +2,5 @@ torch>=2.6
 transformers>=4.51
 accelerate==0.27.2
 transformer-lens==2.16.1
-bitsandbytes==0.43.2        # not available on mac os!
+bitsandbytes>=0.42.0
 tqdm==4.67.1
