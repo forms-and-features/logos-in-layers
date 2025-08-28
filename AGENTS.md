@@ -126,3 +126,24 @@ Authentication required for gated models (Llama family) via `huggingface-cli log
 ### Precision Policy (for agents)
 - CPU runs: models ≤27B use fp32 by default; ≥30B use bf16 to fit comfortably on 256 GiB hosts.
 - When compute is bf16/fp16, logits are decoded with an fp32 unembedding automatically, and LN/RMS statistics are computed in fp32 then cast back. No flags required; defaults remain unchanged for ≤27B.
+
+## Commit Messages (for agents)
+
+- Top line: concise, imperative, and focused on the core code change only. Avoid conventional‑commit prefixes (e.g., no “feat:” unless explicitly requested). Example: `Add cos_to_final metric to pure CSV`.
+- Body: use short bullet lines for scope, rationale, and notable side changes (tests, prompts, docs). Keep each line under ~100 chars.
+- Multi‑line with a single `-m`: pass one `-m` argument containing real newlines (do not use the literal characters `\n`). Wrap in single quotes to avoid shell interpolation. Example:
+
+  ```bash
+  git commit -m 'Add cos_to_final metric to pure CSV
+  - Compute cosine-to-final for pure next-token at L0 and post-block layers (fp32; small epsilon)
+  - Emit cos_to_final column; update CSV writer and tests; README mentions metric
+  - Update prompt templates and per-model prompts to include cos_to_final; add cosine milestones
+  - Mark implementation in notes; CPU-only tests pass'
+  ```
+
+- Shell safety: do not include Markdown backticks in commit messages; in double‑quoted strings they trigger command substitution (e.g., cos_to_final becomes a shell command). Prefer plain identifiers or quotes. If you must include backticks, use single‑quoted `-m` and avoid double quotes.
+- Avoid single quotes inside the message. If unavoidable, escape them with the standard `'
+  '"'"'
+  '` pattern, or simplify wording to remove them.
+- Verification: after committing, run `git show --no-patch --pretty=fuller` to verify the message rendered as intended.
+- Approvals: committing writes to disk; in sandboxed/approval modes, request escalation when running `git commit`.
