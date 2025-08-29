@@ -415,6 +415,39 @@ Note. Logit Prism is currently documented via a non‑archival implementation bl
 
 ---
 
+### 1.13. [x] Last‑layer consistency check (lens vs final head)
+
+Why. In pre‑norm models, our normalized lens at the last post‑block layer should agree with the model’s actual final head. A persistent KL(P_last_layer || P_final) > 0.5 bits at the last layer (as observed on Gemma‑2‑9B) indicates a mismatch (scaling/affine) between the lens decode and the model’s final readout. Making this check permanent prevents subtle regressions across families.
+
+What. Always compute and store a JSON diagnostic block that compares the last post‑block lens distribution to the model’s final head distribution:
+
+```json
+"diagnostics": {
+  "last_layer_consistency": {
+    "kl_to_final_bits": <float>,
+    "top1_agree": true,
+    "p_top1_lens": <float>,
+    "p_top1_model": <float>,
+    "p_answer_lens": <float>,
+    "answer_rank_lens": <int|null>
+  }
+}
+```
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+* Implemented in `run.py` during the last post‑block iteration, using the already cached `final_probs` and the lens logits at the last position.
+* Adds negligible overhead and no new CLI flags. The per‑layer CSV already includes `kl_to_final_bits`; this JSON block surfaces the last‑layer comparison directly for quick audits and automated checks.
+
+How.
+
+1. Cache `final_probs = softmax(final_logits)` from the model forward.
+2. On the last post‑block layer, compute `P_last = softmax(last_logits_lens)` and set:
+   - `kl_to_final_bits = KL(P_last || final_probs)` (reuses §1.3 helper)
+   - `top1_agree = argmax(P_last) == argmax(final_probs)`
+   - `p_top1_lens = max(P_last)`, `p_top1_model = max(final_probs)`
+   - `p_answer_lens`, `answer_rank_lens` using §1.3’s ID‑level gold token
+3. Persist under `diagnostics.last_layer_consistency`.
+
 #### Wrap‑up
 
 Executing the items in **Group 1** upgrades the measurement pipeline from an informative prototype to a rigour‑grade toolchain. Only after this foundation is secure should we move on to the broader prompt battery and causal‑intervention work.

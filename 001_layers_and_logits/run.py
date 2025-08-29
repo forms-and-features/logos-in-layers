@@ -254,6 +254,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         # Raw-vs-Norm dual-lens mode (env-controlled; default: sampled checks)
         RAW_LENS_MODE = get_raw_lens_mode(config.self_test)
 
+        # Track a last-layer consistency snapshot (lens vs model final head)
+        last_layer_consistency = None
+
         diag = {
             "type": "diagnostics",
             "model": model_id,
@@ -455,6 +458,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 # Representation-drift baseline direction (PROJECT_NOTES §1.5)
                 _final_norm = torch.norm(final_logits) + 1e-12
                 final_dir = (final_logits / _final_norm)
+                final_top1_id = int(torch.argmax(final_probs).item())
                 
                 # Debug: print device placements of cached activations and tokens
                 for name, t in residual_cache.items():
@@ -642,6 +646,25 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         do_raw_lens_sample=_should_sample(layer + 1),
                         resid_raw_tensor=resid_raw,
                     )
+
+                    # Record last-layer lens vs final-head consistency snapshot
+                    if layer == (n_layers - 1):
+                        # Use the exact values we just computed for the last position
+                        last_pos = tokens.shape[1] - 1
+                        last_logits = logits_all[last_pos]
+                        last_full_probs = torch.softmax(last_logits, dim=0)
+                        _, last_top_indices = torch.topk(last_logits, TOP_K_RECORD, largest=True, sorted=True)
+                        lens_top1_id = int(last_top_indices[0].item())
+                        # metrics relative to final head
+                        m = compute_next_token_metrics(last_full_probs, lens_top1_id, final_probs, first_ans_id, topk_cum=5)
+                        last_layer_consistency = {
+                            "kl_to_final_bits": m.get("kl_to_final_bits"),
+                            "top1_agree": bool(lens_top1_id == final_top1_id),
+                            "p_top1_lens": m.get("p_top1"),
+                            "p_top1_model": float(final_probs[final_top1_id].item()),
+                            "p_answer_lens": m.get("p_answer"),
+                            "answer_rank_lens": m.get("answer_rank"),
+                        }
                     
                     # --- free residual for this layer -----------------------------------
                     del resid
@@ -660,6 +683,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     )
                 )
                 json_data["diagnostics"] = diag
+                if last_layer_consistency is not None:
+                    json_data["diagnostics"]["last_layer_consistency"] = last_layer_consistency
 
                 # Summarize raw-vs-norm sanity samples (PROJECT_NOTES §1.4)
                 try:
