@@ -1,4 +1,3 @@
-import transformer_lens
 from transformer_lens import HookedTransformer
 import torch
 import torch.nn as nn
@@ -63,7 +62,6 @@ from layers_core.numerics import (
 from layers_core.metrics import compute_next_token_metrics
 from layers_core.csv_io import write_csv_files
 from layers_core.collapse_rules import (
-    detect_copy_collapse,
     is_semantic_top1,
     detect_copy_collapse_id_subseq,
     is_pure_whitespace_or_punct,
@@ -191,9 +189,6 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         # Debug: inspect model parameter devices
         unique_param_devices = {p.device for p in model.parameters()}
         print(f"[DEBUG MODEL] Unique parameter devices: {unique_param_devices}")
-        
-        # Get the primary device of the model
-        primary_device = device
         
         # Toggle for using normalized lens (recommended for accurate interpretation)
         USE_NORM_LENS = True
@@ -439,15 +434,15 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 if config.keep_residuals:
                     clean_name = clean_model_name(model_id)
                     resid_filename = f"{clean_name}_00_resid.pt"
-                    resid_path = os.path.join(os.path.dirname(meta_filepath), resid_filename)
+                    # Use configured output directory; meta_filepath is not available here
+                    resid_path = os.path.join(config.out_dir or os.getcwd(), resid_filename)
                     resid_cpu = resid.to(dtype=model.cfg.dtype if hasattr(model.cfg, 'dtype') else torch.float32).cpu()
                     torch.save(resid_cpu, resid_path)
                     del resid_cpu
                 
                 for pos in range(tokens.shape[1]):
                     layer_logits = logits_all[pos]
-                    # Compute log-probs for entropy and selective probabilities
-                    log_probs = torch.log_softmax(layer_logits, dim=0).to(torch.float32)
+                    # Compute entropy in bits via centralized helper
                     entropy_bits = bits_entropy_from_logits(layer_logits)  # Prevent negative zero
 
                     token_str = str_tokens[pos]
@@ -581,7 +576,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     if config.keep_residuals:
                         clean_name = clean_model_name(model_id)
                         resid_filename = f"{clean_name}_{layer+1:02d}_resid.pt"
-                        resid_path = os.path.join(os.path.dirname(meta_filepath), resid_filename)
+                        # Use configured output directory; meta_filepath is not available here
+                        resid_path = os.path.join(config.out_dir or os.getcwd(), resid_filename)
                         resid_cpu = resid.to(dtype=model.cfg.dtype if hasattr(model.cfg, 'dtype') else torch.float32).cpu()
                         torch.save(resid_cpu, resid_path)
                         del resid_cpu
@@ -590,7 +586,6 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         layer_logits = logits_all[pos]
                         # fresh per-token probabilities for THIS layer
                         full_probs  = torch.softmax(layer_logits, dim=0)
-                        log_probs   = torch.log(full_probs)          # needed only for entropy & top-k
                         entropy_bits = bits_entropy_from_logits(layer_logits)
 
                         token_str = str_tokens[pos]
