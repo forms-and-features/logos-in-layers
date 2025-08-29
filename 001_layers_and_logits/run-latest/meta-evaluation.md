@@ -165,9 +165,9 @@ A **representation‑drift** curve (**cosine(logits\_ℓ, logits\_final)**) woul
 * **CSV schema**:
   Add columns to `*-pure-next-token.csv`: `p_top1`, `p_top5`, `p_answer`, `kl_to_final_bits`, `cos_to_final`. Add JSON run‑summary keys `first_kl_below_{0.5,1.0}`. (Plan §1.3–§1.5.) ([GitHub][5])
 * **Flags**:
-  Add `--raw-lens`, `--use-tuned-lens`, `--use-logit-prism`, `--copy-thresh`, `--dual-lens N`. Record all flags in JSON under a `lens` block for provenance. (Plan §1.4, §1.9–§1.10.) ([GitHub][5])
+  Add `--raw-lens`, `--use-tuned-lens`, `--use-logit-prism`, `--copy-thresh`, `--dual-lens N`. Record all flags in JSON under a `lens` block for provenance. (Plan §1.4, §1.10–§1.11.) ([GitHub][5])
 * **Negative control**:
-  Add a 2‑prompt run mode with `prompt_id` in CSV/JSON. (Plan §1.6.) ([GitHub][5])
+  Add a 2‑prompt run mode with `prompt_id` in CSV/JSON. (Plan §1.8.) ([GitHub][5])
 
 ---
 
