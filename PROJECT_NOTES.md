@@ -23,7 +23,7 @@ By showing that LLMs contain robust, reusable internal structures, detected thro
 
 **Positional encoding.** Most models here use rotary position embeddings (RoPE). At layer 0 our “token‑only” wording indicates no additive positional vector; position is injected inside attention via RoPE (cf. RoFormer, arXiv:2104.09864).
 
-**Answer matching is ID‑level.** We determine the gold **first answer token id** from the model’s tokenizer applied to `prompt + " Berlin"` (or control answer). All `is_answer` logic compares **token IDs**, not strings. We log the entire answer tokenisation for transparency (see §1.11).
+**Answer matching is ID‑level.** We determine the gold **first answer token id** from the model’s tokenizer applied to `prompt + " Berlin"` (or control answer). All `is_answer` logic compares **token IDs**, not strings. We log the entire answer tokenisation for transparency (see §1.7).
 
 **Cross‑model caution.** RMS/LN lenses can distort **absolute** probabilities and entropies in model‑specific ways. Only compare **within** a model unless using a Tuned Lens or a shared decoder (Logit Prism). Cross‑model claims should be phrased in terms of **relative** or **rank‑based** metrics (e.g., KL‑to‑final thresholds).
 
@@ -235,187 +235,11 @@ cos = torch.dot(curr_dir, final_dir).item()
 
 3. Write `cos_to_final` column; included in pure next‑token CSV. (Plots to be added in analysis notebooks.)
 
-**Note.** Cosine is computed on **logit directions** (not residuals). With a Tuned Lens (§1.9), `cos_to_final` measures closeness to the **tuned** head—still interpretable as “distance to the model’s decision boundary”.
+**Note.** Cosine is computed on **logit directions** (not residuals). With a Tuned Lens (§1.11), `cos_to_final` measures closeness to the **tuned** head—still interpretable as “distance to the model’s decision boundary”.
 
 ---
 
-### 1.6. Negative‑control prompt
-
-**Why.** If, in the **France** control, the Berlin token outranks Paris, the probe is leaking lexical co‑occurrence. A **margin** makes leakage quantitative and comparable.
-
-**What.** *Run a control prompt (“… The capital of **France** …”) alongside the positive prompt; log a **control margin** and a summary index.*
-
-* Add a per‑layer column (control rows only): **`control_margin = p(Paris) − p(Berlin)`** using ID‑level `first_id` from §1.11.
-* Add run‑summary fields: **`first_control_margin_pos = first layer with control_margin > 0`** and **`max_control_margin`**.
-
-**How.**
-
-1. `PROMPTS = [positive_prompt, control_prompt]`; add `prompt_id ∈ {pos, ctl}` to CSV/JSON.
-2. For `prompt_id == ctl`, compute `p(Paris)` and `p(Berlin)` per layer and write `control_margin`.
-3. After the sweep, compute and store `first_control_margin_pos` and `max_control_margin` in JSON meta.
-4. In analysis, flag runs where `first_control_margin_pos` is `null` or late (possible leakage).
-
----
-
-### 1.7. Ablate stylistic filler (`simply`)
-
-**Why.** Gemma’s early copy‑collapse may be triggered by instruction‑style cues, not semantics. Removing “simply” tests that hypothesis.
-
-**What.** *Rerun the base prompt with and without filler and compare `L_copy`, `L_semantic`.*
-
-**How.**
-
-1. Duplicate prompt; drop the adverb.
-2. Record both runs with `prompt_variant` metadata.
-3. Plot `Δ-collapse` for the two variants; a large shift confirms the stylistic‑cue explanation.
-
----
-
-### 1.8. Lightweight CI / regression harness
-
-**Why.** Top‑1 flips are brittle; KL thresholds are **more stable**. CI should guard **metrics and provenance**.
-
-**What.** *A GitHub Actions workflow that executes a dry‑run and asserts:*
-
-* JSON meta contains **schema & provenance** keys:
-
-  * `schema_version`, `code_commit_sha`
-  * `gold_answer.first_id`, `gold_answer.pieces`
-  * `copy_thresh`, `copy_window_k`
-  * lens flags (`use_norm_lens`, `raw_lens`, `use_tuned_lens`, `use_logit_prism`)
-  * **if tuned lens is used:** `tuned_lens.{version, sha, train_corpus_id, num_steps, seed}`
-* **`first_kl_below_1.0` remains within ±1 layer** of an expected value (store in `expected_meta.json`).
-  *(Optionally also check `L_semantic` ±1 for visibility.)*
-
-**How.**
-
-1. Add `--dry-run` to load the model and decode first 5 layers.
-2. Commit `expected_meta.json` with `first_kl_below_1.0` and `schema_version`.
-3. GH Actions matrix: `{python-version: [3.10], torch: [2.3]}`; fail if any required key is missing or thresholds drift.
-4. Print the guarded fields on CI for audit.
-
----
-
-### 1.9. Integrate a Tuned Lens
-
-**Why.** Tuned Lens compensates for scaling and basis rotation, lowering KL to final and stabilising early‑layer read‑outs (cf. arXiv:2303.08112). **Reproducible provenance** is required.
-
-**What.** *Train once per model; load with `--use-tuned-lens`; record full training provenance.*
-
-**How.**
-
-1. Install and train:
-
-   ```python
-   from tuned_lens import TunedLens, train_all_layers
-   lens = TunedLens(model)
-   train_all_layers(
-       lens, tokenizer, text_corpus,
-       max_steps=500, lr=1e-4, seed=SEED
-   )
-   lens.save_pretrained(save_dir)
-   ```
-2. Load in the sweep (as already planned):
-
-   ```python
-   if args.use_tuned_lens:
-       lens = TunedLens.from_pretrained(save_dir).to(model.device)
-       logits = lens(hidden_states, layer_idx=ℓ)
-   else:
-       logits = (unembed @ resid)
-   ```
-3. **Provenance.** Persist a `tuned_lens.json` alongside weights and mirror it into the run meta:
-
-   ```json
-   "tuned_lens": {
-     "version": "0.6.x",
-     "sha": "<model-or-weights-hash>",
-     "train_corpus_id": "pile-50k-shards_v1",
-     "num_steps": 500,
-     "seed": 316
-   }
-   ```
-4. CI (see §1.8) asserts presence of the full `tuned_lens.*` block when `--use_tuned_lens` is set.
-
----
-
-### 1.10. *(Optional)* Logit Prism shared decoder
-
-**Why.** A single whitening + rotation matrix (`W_prism`) that works for *all* layers makes cross‑layer geometry directly comparable and reduces probe freedom ([neuralblog.github.io][3]).
-
-**What.** *Fit `W_prism` on a slice of hidden states (e.g., 100k tokens, every other layer), save to disk, and expose `--use-logit-prism` which bypasses per‑layer lenses.*
-
-**How.**
-
-1. Sample hidden states `H` size `[N, d_model]`, compute per‑component variance and mean; whiten.
-2. Solve for `R` that minimises reconstruction `‖W_U · R · H_i − logits_final‖`. `torch.linalg.lstsq` is fine at 8–9B scale.
-3. Save `{mean, var, R}` to a `*.npz`; load at runtime and apply:
-
-```python
-logits = W_U @ (R @ (resid - mean) / sqrt(var))
-```
-
-4. Add a CLI flag parallel to `--use-tuned-lens`; mutual‑exclusion logic ensures the user picks exactly one decoding scheme.
-
-Note. Logit Prism is currently documented via a non‑archival implementation blog ([3]); treat it as an engineering reference rather than a formal citation.
-
----
-
-### 1.11. Gold‑token alignment (leading‑space, multi‑piece)
-
-**Why.** Many tokenizers produce a leading‑space piece; string equality silently mismatches. **ID‑level matching** is robust. In multilingual runs, the **gold token(s) vary by language** and must be recorded per‑language.
-
-**What.** *Compute the gold **first answer token id** from `tokenizer(prompt + " Berlin")` (or the language‑specific gold token) and record both the ID and full tokenisation in JSON.* In multilingual runs, also write a `gold_answer_by_lang` block.
-
-**How.**
-
-1. Monolingual:
-
-   ```python
-   ans_pieces = tokenizer.encode(" Berlin", add_special_tokens=False)
-   ctx_ids    = tokenizer.encode(prompt, add_special_tokens=False)
-   ctx_ans    = tokenizer.encode(prompt + " Berlin", add_special_tokens=False)
-   first_ans_id = ctx_ans[len(ctx_ids)]
-   ```
-2. Use `first_ans_id` for `is_answer`, `p_answer`, and `answer_rank` (§1.3).
-3. JSON meta:
-
-   ```json
-   "gold_answer": { "string": "Berlin", "pieces": ans_pieces, "first_id": first_ans_id }
-   ```
-4. **Multilingual extension.** When `prompt_lang` is set, compute and store:
-
-   ```json
-   "gold_answer_by_lang": {
-     "en": { "string": "Berlin",  "pieces": [...], "first_id": 1234 },
-     "de": { "string": "Berlin",  "pieces": [...], "first_id": 5678 },
-     "es": { "string": "Berlín",  "pieces": [...], "first_id": 9012 },
-     "...": { "...": "..."}
-   }
-   ```
-
-   The analysis code must use the language‑appropriate `first_id` for all `p_answer` and `answer_rank` computations.
-
----
-
-### 1.12. Metadata completeness
-
-**Why.** Reproducibility and auditability require stable **schema** and **provenance**.
-
-**What.** Add to JSON meta:
-
-* Core: `schema_version`, `code_commit_sha`, `seed`, `device`, `dtype`, `unembed_dtype`
-* Lens flags: `use_norm_lens`, `raw_lens` (if dual), `use_tuned_lens`, `use_logit_prism`
-* Gold answer: `gold_answer` (and `gold_answer_by_lang` when multilingual)
-* Copy parameters: `copy_thresh`, `copy_window_k`, `copy_match_level`
-* Layer indexing: `layer_indexing: "post_block"`, `final_row_is_unembed: true`
-* **Tuned Lens provenance** (when used): `tuned_lens.{version, sha, train_corpus_id, num_steps, seed}`
-
-**How.** Populate from CLI/derived values at run start; print to console and write into the meta JSON. Bump `schema_version` when keys change.
-
----
-
-### 1.13. [x] Last‑layer consistency check (lens vs final head)
+### 1.6. [x] Last‑layer consistency check (lens vs final head)
 
 Why. The last post‑block row should agree with the model’s true output distribution. If `KL(P_last || P_final)` stays large (e.g., Gemma‑2‑9B ≈ 1.0 bits), the discrepancy is likely a family‑specific final‑head transform (e.g., temperature or softcap), not a bug in the lens. Making this check permanent prevents subtle regressions across families and highlights when a model’s head applies extra calibration.
 
@@ -451,6 +275,100 @@ How.
 4. If the model/config exposes head transforms (e.g., `final_logit_scale`, `final_logit_softcap`), apply them to the last‑layer lens logits only and report `kl_after_transform_bits`.
 
 Note on scope. Only the final row is “aligned” to the model’s head. All earlier layers remain decoded with the standard normalized lens to preserve comparability of depth‑wise metrics (entropy, ranks, KL‑to‑final, cosine).
+
+### 1.7. Gold‑token alignment (leading‑space, multi‑piece)
+
+Why. Tokenization differences (leading spaces, multi‑piece tokens) can create apparent mismatches if we compare strings instead of IDs. Making the gold tokenization explicit prevents such drift.
+
+What. Persist `gold_answer` in JSON with `{ string, pieces, first_id }`. Use `first_id` for `is_answer`, `p_answer`, and `answer_rank` throughout.
+
+How.
+
+1. Compute once via tokenizer (no special tokens):
+
+   ```python
+   ctx_ids  = tokenizer.encode(prompt, add_special_tokens=False)
+   ctx_ans  = tokenizer.encode(prompt + " Berlin", add_special_tokens=False)
+   first_id = ctx_ans[len(ctx_ids)]
+   pieces   = tokenizer.convert_ids_to_tokens(ctx_ans[len(ctx_ids):len(ctx_ids)+3])
+   ```
+2. Use `first_id` for `is_answer`, `p_answer`, and `answer_rank` (§1.3), and store in JSON:
+
+   ```json
+   "gold_answer": { "string": "Berlin", "pieces": pieces, "first_id": first_id }
+   ```
+
+### 1.8. Negative‑control prompt
+
+Why. If, in the France control, the Berlin token outranks Paris, the probe is leaking lexical co‑occurrence. A margin makes leakage quantitative and comparable.
+
+What. Run a control prompt (“… The capital of France …”) alongside the positive prompt; log a control margin and a summary index.
+
+• Per‑layer (control rows only): `control_margin = p(Paris) − p(Berlin)` using ID‑level `first_id` from §1.7.
+• Summary: `first_control_margin_pos` (first layer with `control_margin > 0`) and `max_control_margin`.
+
+How.
+
+1. `PROMPTS = [positive_prompt, control_prompt]`; add `prompt_id ∈ {pos, ctl}` to CSV/JSON.
+2. For `prompt_id == ctl`, compute the two probabilities and write `control_margin` per layer.
+3. After the sweep, store the two summary indices in JSON meta and annotate late/null cases as possible leakage.
+
+### 1.9. Ablate stylistic filler ("simply")
+
+Why. Gemma’s early copy‑collapse may be triggered by instruction‑style cues, not semantics. Removing “simply” tests that hypothesis.
+
+What. Rerun the base prompt with and without the filler and compare `L_copy`, `L_semantic`.
+
+How.
+
+1. Duplicate prompt; drop the adverb.
+2. Record both runs with `prompt_variant` metadata.
+3. Plot `Δ-collapse` for the two variants; a large shift confirms the stylistic‑cue explanation.
+
+### 1.10. *(Optional)* Logit Prism shared decoder
+
+Why. A single whitening + rotation matrix (`W_prism`) that works for all layers makes cross‑layer geometry directly comparable and reduces probe freedom ([neuralblog.github.io][3]).
+
+What. Fit `W_prism` on a slice of hidden states (e.g., 100k tokens, every other layer), save to disk, and expose `--use-logit-prism` which bypasses per‑layer lenses.
+
+How.
+
+1. Sample hidden states across depth; compute `W_prism` that whitens and rotates into the unembed basis.
+2. Replace per‑layer decode with `logits = (W_prism @ resid).softmax(-1)` when enabled.
+3. Persist prism provenance (version/sha/data) in JSON.
+
+### 1.11. Integrate a Tuned Lens
+
+Why. Tuned Lens compensates for scaling and basis rotation, lowering KL to final and stabilising early‑layer read‑outs (cf. arXiv:2303.08112). Reproducible provenance is required.
+
+What. Train once per model; load with `--use-tuned-lens`; record full training provenance.
+
+How.
+
+1. Train and save a lens per model (seeded): see prior plan.
+2. Load in the sweep; replace raw unembed with tuned logits when enabled.
+3. Provenance. Persist a `tuned_lens.json` (version/sha/corpus/steps/seed) and mirror into run meta.
+4. CI (see §1.12) asserts presence of the full `tuned_lens.*` block when `--use_tuned_lens` is set.
+
+### 1.12. *(Optional)* Lightweight CI / regression harness
+
+Why. Top‑1 flips are brittle; KL thresholds are more stable. CI should guard metrics and provenance.
+
+What. A GitHub Actions workflow that executes a dry‑run and asserts schema/provenance keys and threshold stability.
+
+How.
+
+1. Add `--dry-run` to load the model and decode first 5 layers.
+2. Commit `expected_meta.json` with `first_kl_below_1.0` and `schema_version`.
+3. Fail CI on missing keys or drift; print guarded fields for audit.
+
+### 1.13. *(Optional)* Metadata completeness
+
+Why. Reproducibility and auditability require stable schema and provenance.
+
+What. Add to JSON meta: core config, lens flags, gold answer, copy parameters, layer indexing, tuned‑lens provenance (when used).
+
+How. Populate from CLI/derived values at run start; echo to console and write into meta. Bump `schema_version` when keys change.
 
 #### Wrap‑up
 
@@ -491,12 +409,12 @@ We run a first wave of low‑overhead variations that reuse the logit‑lens bas
 
 **Why.** Language‑independent behaviour is compatible with realism but not mandated by it; language‑dependent depths are prima facie evidence for predicate‑tied behaviour. A **per‑language gold‑token alignment** prevents tokenizer artefacts from polluting comparisons.
 
-**What.** Translate the prompt into five major languages (matched subject–predicate order). Record normalised `L_sem / n_layers`, **`first_rank_le_{1,5,10}`**, and tuned‑lens KL thresholds; visualise variance. Use **ID‑level** gold tokens from `gold_answer_by_lang` (§1.11).
+**What.** Translate the prompt into five major languages (matched subject–predicate order). Record normalised `L_sem / n_layers`, **`first_rank_le_{1,5,10}`**, and tuned‑lens KL thresholds; visualise variance. Use **ID‑level** gold tokens from `gold_answer_by_lang` (§1.7).
 
 **How.**
 
 1. Maintain a YAML of prompts keyed by ISO codes (`prompt_lang`); include `translation_ok: true/false`.
-2. For each language, compute `first_id` and `pieces` and store under `gold_answer_by_lang` (§1.11).
+2. For each language, compute `first_id` and `pieces` and store under `gold_answer_by_lang` (§1.7).
 3. Run sweeps; bar‑plot layer‑fraction variance and **rank thresholds**; highlight deviations `> 0.05` (fraction) or delays `> 2` layers in `first_rank_le_5`.
 4. Prefer rank/KL‑threshold metrics over raw probabilities for cross‑language comparisons.
 
@@ -550,7 +468,7 @@ These variations are diagnostic, not decisive. Their job is to show which intern
 ### Caution on metrics
 
 Raw “semantic‑collapse depth” (the layer where the gold token first becomes top‑1) is a correlational signal. Before drawing philosophical conclusions, validate any depth‑based claim with at least one causal or representational check (activation patching, tuned‑lens KL, concept‑vector alignment). See Group 3 & 4 tasks.
-**Cross‑model caveat.** Absolute probabilities/entropies under a norm‑based lens are **not** comparable across models using different normalisers; use Tuned Lens (§1.9) or Logit Prism (§1.10) for cross‑model comparisons, or prefer rank/KL‑threshold metrics.
+**Cross‑model caveat.** Absolute probabilities/entropies under a norm‑based lens are **not** comparable across models using different normalisers; use Tuned Lens (§1.11) or Logit Prism (§1.10) for cross‑model comparisons, or prefer rank/KL‑threshold metrics.
 
 [4]: https://plato.stanford.edu/entries/properties/ "Properties — Stanford Encyclopedia of Philosophy"
 [5]: https://plato.stanford.edu/entries/nominalism-metaphysics/ "Nominalism in Metaphysics — Stanford Encyclopedia of Philosophy"
@@ -586,7 +504,7 @@ These tools move us beyond descriptive logit‑lens curves. They intervene direc
 
    * Run forward with the patched stream,
    * **Decode with the same lens** as the baseline (Tuned Lens or Prism),
-   * Log Δ log‑prob of the gold token (ID from §1.11).
+   * Log Δ log‑prob of the gold token (ID from §1.7).
 3. Define `causal_L_sem*` as the earliest ℓ where the top‑1 flips to the gold token under that mode.
 4. Write `causal_L_sem*` and **delta fields** into JSON meta; include all three per‑layer Δ values in the CSV (columns `dlogp_full`, `dlogp_attn`, `dlogp_mlp`).
 5. CLI:
@@ -685,7 +603,7 @@ These tools move us beyond descriptive logit‑lens curves. They intervene direc
 
 **Scope & placement.** One base model to start (use a model already in `run-latest/`). Layers: `L_sem − 1`, `L_sem`, `L_sem + 1` from that model’s JSON summary.
 
-**Data.** \~50k country→capital prompts including paraphrases and ≥3 languages (small fixed list). Use the same gold‑token IDs procedure as §1.11 for each language.
+**Data.** \~50k country→capital prompts including paraphrases and ≥3 languages (small fixed list). Use the same gold‑token IDs procedure as §1.7 for each language.
 
 **Method (single, focused script or notebook: `sae_pass.py` — edit defaults inline; no new CLI knobs):**
 
