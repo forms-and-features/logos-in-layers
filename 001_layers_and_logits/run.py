@@ -258,6 +258,30 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         # Track a last-layer consistency snapshot (lens vs model final head)
         last_layer_consistency = None
 
+        # Helper: detect simple final-head transforms exposed by the model/config
+        def _detect_head_transforms():
+            def _get_num(obj, names):
+                for n in names:
+                    try:
+                        v = getattr(obj, n)
+                    except Exception:
+                        continue
+                    if isinstance(v, (int, float)):
+                        return float(v)
+                return None
+
+            cfg = getattr(model, 'cfg', None)
+            scale = None
+            softcap = None
+            if cfg is not None:
+                scale = _get_num(cfg, ['final_logit_scale', 'logit_scale', 'final_logits_scale']) or scale
+                softcap = _get_num(cfg, ['final_logit_softcap', 'logit_softcap', 'final_logits_softcap', 'softcap']) or softcap
+            scale = _get_num(model, ['final_logit_scale', 'logit_scale']) or scale
+            softcap = _get_num(model, ['final_logit_softcap', 'logit_softcap']) or softcap
+            return scale, softcap
+
+        head_scale_cfg, head_softcap_cfg = _detect_head_transforms()
+
         diag = {
             "type": "diagnostics",
             "model": model_id,
@@ -676,6 +700,32 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                             best_s = None
                             best_kl = None
 
+                        # KL after simple family-specific transforms (last layer only)
+                        kl_after_scale = None
+                        kl_after_softcap = None
+                        kl_after_scale_then_softcap = None
+                        cfg_transform = {"scale": head_scale_cfg, "softcap": head_softcap_cfg}
+
+                        try:
+                            zs = last_logits.float()
+                            if head_scale_cfg is not None and head_scale_cfg > 0:
+                                P = torch.softmax(zs / float(head_scale_cfg), dim=0)
+                                kl = float(kl_bits(P, final_probs))
+                                kl_after_scale = kl
+                            if head_softcap_cfg is not None and head_softcap_cfg > 0:
+                                c = float(head_softcap_cfg)
+                                zs_c = torch.tanh(zs / c) * c
+                                P = torch.softmax(zs_c, dim=0)
+                                kl_after_softcap = float(kl_bits(P, final_probs))
+                            if (head_scale_cfg is not None and head_scale_cfg > 0) and (head_softcap_cfg is not None and head_softcap_cfg > 0):
+                                c = float(head_softcap_cfg)
+                                s = float(head_scale_cfg)
+                                zs_sc = torch.tanh((zs / s) / c) * c
+                                P = torch.softmax(zs_sc, dim=0)
+                                kl_after_scale_then_softcap = float(kl_bits(P, final_probs))
+                        except Exception:
+                            pass
+
                         last_layer_consistency = {
                             "kl_to_final_bits": m.get("kl_to_final_bits"),
                             "top1_agree": bool(lens_top1_id == final_top1_id),
@@ -686,6 +736,13 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                             # Temperature probe: best scalar s and KL after rescale
                             "temp_est": best_s,
                             "kl_after_temp_bits": best_kl,
+                            # Config-reported head transforms and KL after applying them
+                            "cfg_transform": cfg_transform,
+                            "kl_after_transform_bits": {
+                                "scale": kl_after_scale,
+                                "softcap": kl_after_softcap,
+                                "scale_then_softcap": kl_after_scale_then_softcap,
+                            },
                             # Advisory warning for family-agnostic visibility
                             "warn_high_last_layer_kl": bool(m.get("kl_to_final_bits") is not None and m.get("kl_to_final_bits") > 0.5),
                         }

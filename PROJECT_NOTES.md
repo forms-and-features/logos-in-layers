@@ -417,9 +417,9 @@ Note. Logit Prism is currently documented via a non‑archival implementation bl
 
 ### 1.13. [x] Last‑layer consistency check (lens vs final head)
 
-Why. In pre‑norm models, our normalized lens at the last post‑block layer should agree with the model’s actual final head. A persistent KL(P_last_layer || P_final) > 0.5 bits at the last layer (as observed on Gemma‑2‑9B) indicates a mismatch (scaling/affine) between the lens decode and the model’s final readout. Making this check permanent prevents subtle regressions across families.
+Why. The last post‑block row should agree with the model’s true output distribution. If `KL(P_last || P_final)` stays large (e.g., Gemma‑2‑9B ≈ 1.0 bits), the discrepancy is likely a family‑specific final‑head transform (e.g., temperature or softcap), not a bug in the lens. Making this check permanent prevents subtle regressions across families and highlights when a model’s head applies extra calibration.
 
-What. Always compute and store a JSON diagnostic block that compares the last post‑block lens distribution to the model’s final head distribution:
+What. Always write a JSON diagnostic comparing the lens’ last‑layer distribution to the model’s final head, then probe simple transforms:
 
 ```json
 "diagnostics": {
@@ -429,24 +429,28 @@ What. Always compute and store a JSON diagnostic block that compares the last po
     "p_top1_lens": <float>,
     "p_top1_model": <float>,
     "p_answer_lens": <float>,
-    "answer_rank_lens": <int|null>
+    "answer_rank_lens": <int|null>,
+    "temp_est": <float|null>,
+    "kl_after_temp_bits": <float|null>,
+    "warn_high_last_layer_kl": <bool>,
+    "cfg_transform": { "scale": <float|null>, "softcap": <float|null> },
+    "kl_after_transform_bits": { "scale": <float|null>, "softcap": <float|null>, "scale_then_softcap": <float|null> }
   }
 }
 ```
 
 ✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
-* Implemented in `run.py` during the last post‑block iteration, using the already cached `final_probs` and the lens logits at the last position.
-* Adds negligible overhead and no new CLI flags. The per‑layer CSV already includes `kl_to_final_bits`; this JSON block surfaces the last‑layer comparison directly for quick audits and automated checks.
+* The core comparison and a scalar‑temperature probe (`temp_est`, `kl_after_temp_bits`) are implemented.
+* A follow‑up adds detection of simple family‑specific transforms (scale/softcap) via model/config and reports KL after applying them at the last layer only (no change to earlier layers).
 
 How.
 
-1. Cache `final_probs = softmax(final_logits)` from the model forward.
-2. On the last post‑block layer, compute `P_last = softmax(last_logits_lens)` and set:
-   - `kl_to_final_bits = KL(P_last || final_probs)` (reuses §1.3 helper)
-   - `top1_agree = argmax(P_last) == argmax(final_probs)`
-   - `p_top1_lens = max(P_last)`, `p_top1_model = max(final_probs)`
-   - `p_answer_lens`, `answer_rank_lens` using §1.3’s ID‑level gold token
-3. Persist under `diagnostics.last_layer_consistency`.
+1. Cache `final_probs = softmax(final_logits)` once per run.
+2. On the last post‑block layer, compute `P_last = softmax(last_logits_lens)`; record KL, top‑1 agreement, and answer metrics (ID‑level).
+3. Fit a scalar temperature `s ∈ [0.1,10]` minimizing `KL(softmax(z/s) || final_probs)`; record `temp_est`, `kl_after_temp_bits`.
+4. If the model/config exposes head transforms (e.g., `final_logit_scale`, `final_logit_softcap`), apply them to the last‑layer lens logits only and report `kl_after_transform_bits`.
+
+Note on scope. Only the final row is “aligned” to the model’s head. All earlier layers remain decoded with the standard normalized lens to preserve comparability of depth‑wise metrics (entropy, ranks, KL‑to‑final, cosine).
 
 #### Wrap‑up
 
