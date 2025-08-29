@@ -5,7 +5,6 @@ from datetime import datetime
 import os
 import subprocess
 import sys
-import math
 import json
 import argparse
 import gc  # For garbage collection
@@ -17,7 +16,8 @@ SEED = 316
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
-torch.cuda.manual_seed_all(SEED)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(SEED)
 
 torch.use_deterministic_algorithms(True)   # PyTorch 2.x+
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"  # harmless on CPU, required for CUDA
@@ -314,6 +314,96 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 json_data["pure_next_token_records"].append(record)
             else:
                 json_data["records"].append(record)
+
+        # Helper: robust single-id decode (tensor or int)
+        def decode_id(idx):
+            return model.tokenizer.decode([idx.item() if hasattr(idx, 'item') else int(idx)])
+
+        # Helper: emit pure next-token metrics and record (reduces duplication)
+        def emit_pure_next_token_record(
+            layer_out_idx: int,
+            logits_all: torch.Tensor,
+            tokens_tensor: torch.Tensor,
+            ctx_ids_list,
+            window_ids_list,
+            final_probs_tensor: torch.Tensor,
+            first_ans_token_id,
+            final_dir_vec: torch.Tensor,
+            collected_records: list,
+            do_raw_lens_sample: bool,
+            resid_raw_tensor: torch.Tensor | None,
+        ):
+            last_pos = tokens_tensor.shape[1] - 1
+            last_logits = logits_all[last_pos]
+            last_entropy_bits = bits_entropy_from_logits(last_logits)
+            last_full_probs = torch.softmax(last_logits, dim=0)
+            last_token_str = "⟨NEXT⟩"
+            _, last_top_indices = torch.topk(last_logits, TOP_K_RECORD, largest=True, sorted=True)
+            last_top_probs = last_full_probs[last_top_indices]
+            last_top_tokens = [decode_id(idx) for idx in last_top_indices]
+
+            # Update rolling window
+            top1_id = last_top_indices[0].item()
+            window_ids_list.append(top1_id)
+            if len(window_ids_list) > config.copy_window_k:
+                window_ids_list.pop(0)
+
+            # Copy / semantic flags and metrics
+            copy_collapse = detect_copy_collapse_id_subseq(
+                last_logits,
+                ctx_ids_list,
+                window_ids_list,
+                copy_threshold=config.copy_threshold,
+                copy_margin=config.copy_margin,
+            )
+            if copy_collapse and is_pure_whitespace_or_punct(last_top_tokens[0]):
+                copy_collapse = False
+            entropy_collapse = last_entropy_bits <= 1.0
+            is_answer = is_semantic_top1(last_top_tokens[0], "Berlin")
+
+            metrics = compute_next_token_metrics(
+                last_full_probs, top1_id, final_probs_tensor, first_ans_token_id, topk_cum=5
+            )
+
+            # Cosine to final direction (PROJECT_NOTES §1.5)
+            _curr_norm = torch.norm(last_logits) + 1e-12
+            cos_to_final = torch.dot((last_logits / _curr_norm), final_dir_vec).item()
+
+            record_extra = {
+                "copy_collapse": copy_collapse,
+                "entropy_collapse": entropy_collapse,
+                "is_answer": is_answer,
+                **metrics,
+                "cos_to_final": cos_to_final,
+            }
+
+            # Collect for L_copy/L_semantic computation
+            collected_records.append({
+                "layer": layer_out_idx,
+                "copy_collapse": copy_collapse,
+                "entropy_collapse": entropy_collapse,
+                "is_answer": is_answer,
+                "kl_to_final_bits": metrics["kl_to_final_bits"],
+                "answer_rank": metrics["answer_rank"],
+            })
+
+            print_summary(layer_out_idx, last_pos, last_token_str, last_entropy_bits, last_top_tokens, last_top_probs, is_pure_next_token=True, extra=record_extra)
+
+            # Dual-lens sanity sample (PROJECT_NOTES §1.4)
+            if RAW_LENS_MODE != "off" and do_raw_lens_sample and resid_raw_tensor is not None:
+                record_dual_lens_sample(
+                    json_data["raw_lens_check"],
+                    layer_out_idx=layer_out_idx,
+                    last_logits_norm=last_logits,
+                    resid_raw_last_vec=resid_raw_tensor[0, last_pos, :],
+                    W_U=analysis_W_U,
+                    b_U=analysis_b_U,
+                    force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED),
+                    tokenizer=model.tokenizer,
+                    final_probs=final_probs_tensor,
+                    first_ans_id=first_ans_token_id,
+                    ground_truth=ground_truth,
+                )
         
         # Tokenize the context prompt (without "Answer:" to avoid teacher-forcing)
         tokens = model.to_tokens(context_prompt)      # let Accelerate move it
@@ -454,86 +544,24 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     _, top_indices_k = torch.topk(layer_logits, k, largest=True, sorted=True)
                     full_probs  = torch.softmax(layer_logits, dim=0)
                     top_probs_k = full_probs[top_indices_k]
-                    top_tokens_k = [model.tokenizer.decode([idx]) for idx in top_indices_k]
+                    top_tokens_k = [decode_id(idx) for idx in top_indices_k]
                     print_summary(0, pos, token_str, entropy_bits, top_tokens_k, top_probs_k)
                     # Verbose console output removed to reduce noise - data still captured in files
                 
-                # FIXED: Also emit pure next-token record (last position only)
-                # This avoids deflated entropy from tokens the model has already seen
-                last_pos = tokens.shape[1] - 1
-                last_logits = logits_all[last_pos]
-                last_entropy_bits = bits_entropy_from_logits(last_logits)
-                last_full_probs   = torch.softmax(last_logits, dim=0)
-                last_token_str = "⟨NEXT⟩"  # Pure next-token prediction, not the last prompt token
-                _, last_top_indices = torch.topk(last_logits, TOP_K_RECORD, largest=True, sorted=True)
-                last_top_probs = last_full_probs[last_top_indices]
-                last_top_tokens = [model.tokenizer.decode([idx]) for idx in last_top_indices]
-                # Maintain rolling window (k recent top-1 IDs)
-                top1_id = last_top_indices[0].item()
-                window_ids.append(top1_id)
-                if len(window_ids) > config.copy_window_k:
-                    window_ids.pop(0)
-                
-                # ------------------------------------------------------------------- #
-                #  1.  Is this layer "copy-collapsed" (prompt echo)?   -> L_copy
-                #  2.  Does top-1 equal the ground-truth answer token? -> L_semantic
-                # ------------------------------------------------------------------- #
-                copy_collapse = detect_copy_collapse_id_subseq(
-                    last_logits,
-                    ctx_ids,
-                    window_ids,
-                    copy_threshold=config.copy_threshold,
-                    copy_margin=config.copy_margin,
+                # Pure next-token record via helper (layer 0)
+                emit_pure_next_token_record(
+                    layer_out_idx=0,
+                    logits_all=logits_all,
+                    tokens_tensor=tokens,
+                    ctx_ids_list=ctx_ids,
+                    window_ids_list=window_ids,
+                    final_probs_tensor=final_probs,
+                    first_ans_token_id=first_ans_id,
+                    final_dir_vec=final_dir,
+                    collected_records=collected_pure_records,
+                    do_raw_lens_sample=True,
+                    resid_raw_tensor=resid_raw_L0,
                 )
-                if copy_collapse and is_pure_whitespace_or_punct(last_top_tokens[0]):
-                    copy_collapse = False
-                entropy_collapse = last_entropy_bits <= 1.0
-                is_answer = is_semantic_top1(last_top_tokens[0], "Berlin")
-                # Additional §1.3 metrics (factored helper)
-                metrics = compute_next_token_metrics(
-                    last_full_probs, top1_id, final_probs, first_ans_id, topk_cum=5
-                )
-
-                # Cosine to final direction (PROJECT_NOTES §1.5)
-                _curr_norm = torch.norm(last_logits) + 1e-12
-                cos_to_final = torch.dot((last_logits / _curr_norm), final_dir).item()
-
-                record_extra = {
-                    "copy_collapse": copy_collapse,
-                    "entropy_collapse": entropy_collapse,
-                    "is_answer": is_answer,
-                    **metrics,
-                    "cos_to_final": cos_to_final,
-                }
-                
-                # Collect for L_copy/L_semantic computation
-                collected_pure_records.append({
-                    "layer": 0,
-                    "copy_collapse": copy_collapse,
-                    "entropy_collapse": entropy_collapse,
-                    "is_answer": is_answer,
-                    "kl_to_final_bits": metrics["kl_to_final_bits"],
-                    "answer_rank": metrics["answer_rank"],
-                })
-                
-                print_summary(0, last_pos, last_token_str, last_entropy_bits, last_top_tokens, last_top_probs, is_pure_next_token=True, extra=record_extra)
-
-                # Dual-lens sanity at layer 0 (always if not "off")
-                if RAW_LENS_MODE != "off":
-                    # Append a dual-lens sample using helper
-                    record_dual_lens_sample(
-                        json_data["raw_lens_check"],
-                        layer_out_idx=0,
-                        last_logits_norm=last_logits,
-                        resid_raw_last_vec=resid_raw_L0[0, last_pos, :],
-                        W_U=analysis_W_U,
-                        b_U=analysis_b_U,
-                        force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED),
-                        tokenizer=model.tokenizer,
-                        final_probs=final_probs,
-                        first_ans_id=first_ans_id,
-                        ground_truth=ground_truth,
-                    )
                 
                 # --- free Layer-0 residual to keep host RAM flat ---------------------
                 del resid
@@ -596,85 +624,24 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         # Get top-k indices from raw logits
                         _, top_indices_k = torch.topk(layer_logits, k, largest=True, sorted=True)
                         top_probs_k = full_probs[top_indices_k]
-                        top_tokens_k = [model.tokenizer.decode([idx]) for idx in top_indices_k]
+                        top_tokens_k = [decode_id(idx) for idx in top_indices_k]
                         print_summary(layer + 1, pos, token_str, entropy_bits, top_tokens_k, top_probs_k)
                         # Verbose console output removed to reduce noise - data still captured in files
                     
-                    # FIXED: Also emit pure next-token record (last position only) 
-                    # This avoids deflated entropy from tokens the model has already seen
-                    last_pos = tokens.shape[1] - 1
-                    last_logits = logits_all[last_pos]
-                    last_entropy_bits = bits_entropy_from_logits(last_logits)
-                    last_full_probs   = torch.softmax(last_logits, dim=0)
-                    last_token_str = "⟨NEXT⟩"  # Pure next-token prediction, not the last prompt token
-                    _, last_top_indices = torch.topk(last_logits, TOP_K_RECORD, largest=True, sorted=True)
-                    last_top_probs = last_full_probs[last_top_indices]
-                    last_top_tokens = [model.tokenizer.decode([idx]) for idx in last_top_indices]
-                    # Update rolling window
-                    top1_id = last_top_indices[0].item()
-                    window_ids.append(top1_id)
-                    if len(window_ids) > config.copy_window_k:
-                        window_ids.pop(0)
-                    
-                    # ------------------------------------------------------------------- #
-                    #  1.  Is this layer "copy-collapsed" (prompt echo)?   -> L_copy
-                    #  2.  Does top-1 equal the ground-truth answer token? -> L_semantic
-                    # ------------------------------------------------------------------- #
-                    copy_collapse = detect_copy_collapse_id_subseq(
-                        last_logits,
-                        ctx_ids,
-                        window_ids,
-                        copy_threshold=config.copy_threshold,
-                        copy_margin=config.copy_margin,
+                    # Pure next-token record via helper (post-block layer)
+                    emit_pure_next_token_record(
+                        layer_out_idx=layer + 1,
+                        logits_all=logits_all,
+                        tokens_tensor=tokens,
+                        ctx_ids_list=ctx_ids,
+                        window_ids_list=window_ids,
+                        final_probs_tensor=final_probs,
+                        first_ans_token_id=first_ans_id,
+                        final_dir_vec=final_dir,
+                        collected_records=collected_pure_records,
+                        do_raw_lens_sample=_should_sample(layer + 1),
+                        resid_raw_tensor=resid_raw,
                     )
-                    if copy_collapse and is_pure_whitespace_or_punct(last_top_tokens[0]):
-                        copy_collapse = False
-                    entropy_collapse = last_entropy_bits <= 1.0
-                    is_answer = is_semantic_top1(last_top_tokens[0], "Berlin")
-                    # Additional §1.3 metrics (factored helper)
-                    metrics = compute_next_token_metrics(
-                        last_full_probs, top1_id, final_probs, first_ans_id, topk_cum=5
-                    )
-
-                    # Cosine to final direction (PROJECT_NOTES §1.5)
-                    _curr_norm = torch.norm(last_logits) + 1e-12
-                    cos_to_final = torch.dot((last_logits / _curr_norm), final_dir).item()
-
-                    record_extra = {
-                        "copy_collapse": copy_collapse,
-                        "entropy_collapse": entropy_collapse,
-                        "is_answer": is_answer,
-                        **metrics,
-                        "cos_to_final": cos_to_final,
-                    }
-                    
-                    # Collect for L_copy/L_semantic computation
-                    collected_pure_records.append({
-                        "layer": layer + 1,
-                        "copy_collapse": copy_collapse,
-                        "entropy_collapse": entropy_collapse,
-                        "is_answer": is_answer,
-                        "kl_to_final_bits": metrics["kl_to_final_bits"],
-                        "answer_rank": metrics["answer_rank"],
-                    })
-                    
-                    print_summary(layer + 1, last_pos, last_token_str, last_entropy_bits, last_top_tokens, last_top_probs, is_pure_next_token=True, extra=record_extra)
-
-                    # Dual-lens sanity at selected layers
-                    if (RAW_LENS_MODE != "off") and _should_sample(layer + 1):
-                        record_dual_lens_sample(
-                            json_data["raw_lens_check"],
-                            layer_out_idx=layer + 1,
-                            last_logits_norm=last_logits,
-                            resid_raw_last_vec=resid_raw[0, last_pos, :],
-                            W_U=analysis_W_U,
-                            b_U=analysis_b_U,
-                            force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED),
-                            tokenizer=model.tokenizer,
-                            final_probs=final_probs,
-                            first_ans_id=first_ans_id,
-                            ground_truth=ground_truth,
-                        )
                     
                     # --- free residual for this layer -----------------------------------
                     del resid
@@ -734,7 +701,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             final_record = {
                 "type": "final_prediction",
                 "entropy": final_entropy_bits,
-                "topk": [[model.tokenizer.decode([idx]), prob.item()] for prob, idx in zip(final_top_probs, final_top_indices)]
+                "topk": [[decode_id(idx), prob.item()] for prob, idx in zip(final_top_probs, final_top_indices)]
             }
             json_data["final_prediction"] = final_record
             
@@ -762,25 +729,22 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 test_tokens = model.to_tokens(test_prompt)      # let Accelerate move it
                 
                 test_logits = model(test_tokens)
-                _, test_top_indices = torch.topk(test_logits[0, -1, :], 10, largest=True, sorted=True)
-                test_full_probs = torch.softmax(test_logits[0, -1, :], dim=0)
+                last_slice = test_logits[0, -1, :]
+                _, test_top_indices = torch.topk(last_slice, 10, largest=True, sorted=True)
+                test_full_probs = torch.softmax(last_slice, dim=0)
                 test_top_probs = test_full_probs[test_top_indices]
-                
-                # Calculate entropy for this prompt efficiently (convert to bits)
-                test_log_probs = torch.log_softmax(test_logits[0, -1, :], dim=0).to(torch.float32)
-                test_entropy_nats = -torch.sum(torch.exp(test_log_probs) * test_log_probs)
-                test_entropy_bits = max(test_entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
+                test_entropy_bits = bits_entropy_from_logits(last_slice)
                 # Collect test prompt data
                 probe_record = {
                     "type": "test_prompt",
                     "prompt": test_prompt,
                     "entropy": test_entropy_bits,
-                    "topk": [[model.tokenizer.decode([idx]), prob.item()] for prob, idx in zip(test_top_probs, test_top_indices)]
+                    "topk": [[decode_id(idx), prob.item()] for prob, idx in zip(test_top_probs, test_top_indices)]
                 }
                 json_data["test_prompts"].append(probe_record)
                 
                 # Clean up tensors immediately
-                del test_tokens, test_logits, test_top_indices, test_full_probs, test_top_probs, test_log_probs
+                del test_tokens, test_logits, test_top_indices, test_full_probs, test_top_probs
             
             # Emit temperature exploration records
             # Note: Using consistent prompt for temperature exploration to maintain comparability
@@ -800,17 +764,13 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 _, temp_top_indices = torch.topk(scaled_logits, 15, largest=True, sorted=True)
                 temp_full_probs = torch.softmax(scaled_logits, dim=0)
                 temp_top_probs = temp_full_probs[temp_top_indices]
-                
-                # Calculate entropy at this temperature efficiently (convert to bits)
-                temp_log_probs = torch.log_softmax(scaled_logits, dim=0).to(torch.float32)
-                temp_entropy_nats = -torch.sum(torch.exp(temp_log_probs) * temp_log_probs)
-                temp_entropy_bits = max(temp_entropy_nats.item() / math.log(2), 0.0)  # Prevent negative zero
+                temp_entropy_bits = bits_entropy_from_logits(scaled_logits)
                 # Collect temperature exploration data
                 temp_record = {
                     "type": "temperature_exploration",
                     "temperature": temp,
                     "entropy": temp_entropy_bits,
-                    "topk": [[model.tokenizer.decode([idx]), prob.item()] for prob, idx in zip(temp_top_probs, temp_top_indices)]
+                    "topk": [[decode_id(idx), prob.item()] for prob, idx in zip(temp_top_probs, temp_top_indices)]
                 }
                 json_data["temperature_exploration"].append(temp_record)
             
