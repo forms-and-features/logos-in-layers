@@ -58,6 +58,7 @@ from layers_core.norm_utils import (
 from layers_core.numerics import (
     bits_entropy_from_logits,
     safe_cast_for_unembed,
+    kl_bits,
 )
 from layers_core.metrics import compute_next_token_metrics
 from layers_core.csv_io import write_csv_files
@@ -657,6 +658,23 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         lens_top1_id = int(last_top_indices[0].item())
                         # metrics relative to final head
                         m = compute_next_token_metrics(last_full_probs, lens_top1_id, final_probs, first_ans_id, topk_cum=5)
+                        # Estimate a scalar temperature s that best aligns lens to final
+                        try:
+                            zs = last_logits.float()
+                            # Search s ∈ [0.1, 10] (log-space) for minimal KL(P(z/s)||final)
+                            s_grid = torch.logspace(-1, 1, steps=25, dtype=torch.float32, device=zs.device)
+                            best_s = float('nan')
+                            best_kl = float('inf')
+                            for s in s_grid:
+                                P = torch.softmax(zs / s, dim=0)
+                                kl = float(kl_bits(P, final_probs))
+                                if kl < best_kl:
+                                    best_kl = kl
+                                    best_s = float(s.item())
+                        except Exception:
+                            best_s = None
+                            best_kl = None
+
                         last_layer_consistency = {
                             "kl_to_final_bits": m.get("kl_to_final_bits"),
                             "top1_agree": bool(lens_top1_id == final_top1_id),
@@ -664,6 +682,11 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                             "p_top1_model": float(final_probs[final_top1_id].item()),
                             "p_answer_lens": m.get("p_answer"),
                             "answer_rank_lens": m.get("answer_rank"),
+                            # Temperature probe: best scalar s and KL after rescale
+                            "temp_est": best_s,
+                            "kl_after_temp_bits": best_kl,
+                            # Advisory warning for family-agnostic visibility
+                            "warn_high_last_layer_kl": bool(m.get("kl_to_final_bits") is not None and m.get("kl_to_final_bits") > 0.5),
                         }
                     
                     # --- free residual for this layer -----------------------------------
