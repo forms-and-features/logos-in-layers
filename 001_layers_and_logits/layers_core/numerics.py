@@ -40,5 +40,5 @@ def kl_bits(p: torch.Tensor, q: torch.Tensor, eps: float = 1e-30) -> float:
     q32 = q.to(dtype=torch.float32)
     logp = (p32 + eps).log()
     logq = (q32 + eps).log()
-    kl_nats = torch.sum(p32 * (logp - logq)).item()
+    kl_nats = torch.sum(p32 * (logp - logq)).detach().cpu().item()
     return kl_nats / math.log(2)
