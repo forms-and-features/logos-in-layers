@@ -662,15 +662,16 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         try:
                             zs = last_logits.float()
                             # Search s ∈ [0.1, 10] (log-space) for minimal KL(P(z/s)||final)
-                            s_grid = torch.logspace(-1, 1, steps=25, dtype=torch.float32, device=zs.device)
+                            s_values = torch.logspace(-1, 1, steps=25, dtype=torch.float32).tolist()
                             best_s = float('nan')
                             best_kl = float('inf')
-                            for s in s_grid:
-                                P = torch.softmax(zs / s, dim=0)
+                            for s in s_values:
+                                s_f = float(s)
+                                P = torch.softmax(zs / s_f, dim=0)
                                 kl = float(kl_bits(P, final_probs))
                                 if kl < best_kl:
                                     best_kl = kl
-                                    best_s = float(s.item())
+                                    best_s = s_f
                         except Exception:
                             best_s = None
                             best_kl = None
