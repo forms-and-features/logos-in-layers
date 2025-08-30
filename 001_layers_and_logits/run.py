@@ -222,6 +222,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         
         context_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
         ground_truth = "Berlin"  # For display/comparison
+        # Negative control (PROJECT_NOTES §1.8)
+        context_prompt_ctl = "Give the city name only, plain text. The capital of France is called simply"
+        control_ground_truth = "Paris"
         
         first_block_ln1_type = type(model.blocks[0].ln1).__name__ if hasattr(model, 'blocks') and len(model.blocks) > 0 else None
         final_ln_type = type(model.ln_final).__name__ if hasattr(model, 'ln_final') else None
@@ -325,10 +328,14 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     return True
             return False
 
+        # prompt_id for tagging records in mixed positive/control runs
+        current_prompt_id = "pos"
+
         def print_summary(layer_idx, pos, token_str, entropy_bits, top_tokens, top_probs, is_pure_next_token=False, extra=None):
             # Collect record data for JSON output
             record = {
                 "type": "pure_next_token_record" if is_pure_next_token else "record",
+                "prompt_id": current_prompt_id,
                 "layer": layer_idx,
                 "pos": pos,
                 "token": token_str,
@@ -361,6 +368,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             collected_records: list,
             do_raw_lens_sample: bool,
             resid_raw_tensor: torch.Tensor | None,
+            *,
+            control_ids: tuple[int | None, int | None] | None = None,
         ):
             last_pos = tokens_tensor.shape[1] - 1
             last_logits = logits_all[last_pos]
@@ -402,12 +411,22 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             _curr_norm = torch.norm(last_logits) + 1e-12
             cos_to_final = torch.dot((last_logits / _curr_norm), final_dir_vec).item()
 
+            # Control margin (PROJECT_NOTES §1.8): only meaningful for control prompt rows
+            control_margin = None
+            if control_ids is not None and all(x is not None for x in control_ids):
+                paris_id, berlin_id = control_ids  # type: ignore
+                try:
+                    control_margin = float(last_full_probs[int(paris_id)]) - float(last_full_probs[int(berlin_id)])
+                except Exception:
+                    control_margin = None
+
             record_extra = {
                 "copy_collapse": copy_collapse,
                 "entropy_collapse": entropy_collapse,
                 "is_answer": is_answer,
                 **metrics,
                 "cos_to_final": cos_to_final,
+                "control_margin": control_margin,
             }
 
             # Collect for L_copy/L_semantic computation
@@ -486,6 +505,34 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         # Provide ctx ids for copy detector and first answer id for metrics
         ctx_ids = gold_info.get("ctx_ids", [])
         first_ans_id = gold_info.get("first_id", None)
+
+        # Control gold alignment (Paris)
+        gold_info_ctl = compute_gold_answer_info(getattr(model, 'tokenizer', None), context_prompt_ctl, control_ground_truth, pieces_k=4)
+        if gold_info_ctl.get("status") != "ok":
+            try:
+                c_ctx = model.tokenizer(context_prompt_ctl, add_special_tokens=False)["input_ids"]
+                c_ws = model.tokenizer(context_prompt_ctl + " " + control_ground_truth, add_special_tokens=False)["input_ids"]
+                c_ns = model.tokenizer(context_prompt_ctl + control_ground_truth, add_special_tokens=False)["input_ids"]
+                gold_info_ctl = compute_gold_answer_info_from_sequences(
+                    c_ctx, c_ws, c_ns,
+                    pieces_k=4,
+                    convert_ids_to_tokens=getattr(model.tokenizer, 'convert_ids_to_tokens', None),
+                    decode_id=(lambda i: model.tokenizer.decode([i])),
+                    answer_str=control_ground_truth,
+                )
+            except Exception:
+                gold_info_ctl = {
+                    "string": control_ground_truth,
+                    "status": "unresolved",
+                    "variant": "unknown",
+                    "first_id": None,
+                    "pieces": [],
+                    "answer_ids": [],
+                    "ctx_ids": [],
+                    "ctx_len": 0,
+                }
+        ctx_ids_ctl = gold_info_ctl.get("ctx_ids", [])
+        first_ans_id_ctl = gold_info_ctl.get("first_id", None)
         # Rolling window of the last k top-1 IDs
         window_ids: list[int] = []
         
@@ -917,7 +964,119 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             del temp_tokens, base_logits
         
         print("=== END OF INSPECTING ==============\n")
-        
+
+        # ---------------- Control pass (PROJECT_NOTES §1.8) --------------------
+        # Run a separate forward pass on the control prompt (France → Paris)
+        current_prompt_id = "ctl"
+        with torch.no_grad():
+            residual_cache = {}
+            cache_hook = build_cache_hook(residual_cache)
+            hooks, _ = attach_residual_hooks(model, cache_hook)
+            try:
+                tokens_ctl = model.to_tokens(context_prompt_ctl)
+                logits_ctl = model(tokens_ctl)
+
+                final_logits_ctl = logits_ctl[0, -1, :].float()
+                final_probs_ctl = torch.softmax(final_logits_ctl, dim=0)
+                _final_norm_ctl = torch.norm(final_logits_ctl) + 1e-12
+                final_dir_ctl = (final_logits_ctl / _final_norm_ctl)
+
+                # Layer 0 (embedding-only)
+                resid0 = residual_cache['hook_embed']
+                if 'hook_pos_embed' in residual_cache:
+                    resid0 = resid0 + residual_cache['hook_pos_embed']
+                resid = resid0
+                resid_raw_tensor = resid.detach().clone() if RAW_LENS_MODE != "off" else None
+                if USE_NORM_LENS:
+                    norm_module = get_correct_norm_module(model, 0, probe_after_block=False)
+                    resid = apply_norm_or_skip(resid, norm_module)
+                casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
+                layer_logits = (casted @ analysis_W_U)
+                if analysis_b_U is not None:
+                    layer_logits = layer_logits + analysis_b_U
+                layer_logits = layer_logits.float()
+                emit_pure_next_token_record(
+                    0,
+                    layer_logits,
+                    tokens_ctl,
+                    ctx_ids_ctl,
+                    window_ids,
+                    final_probs_ctl,
+                    first_ans_id_ctl,
+                    final_dir_ctl,
+                    collected_records=[],
+                    do_raw_lens_sample=False,
+                    resid_raw_tensor=resid_raw_tensor,
+                    control_ids=(first_ans_id_ctl, first_ans_id),
+                )
+
+                # Each block's post-residual layers
+                n_layers = model.cfg.n_layers
+                for layer in range(n_layers):
+                    resid = residual_cache[f'blocks.{layer}.hook_resid_post']
+                    resid_raw_tensor = resid.detach().clone() if RAW_LENS_MODE != "off" else None
+                    if USE_NORM_LENS:
+                        norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
+                        resid = apply_norm_or_skip(resid, norm_module)
+                    casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
+                    layer_logits = (casted @ analysis_W_U)
+                    if analysis_b_U is not None:
+                        layer_logits = layer_logits + analysis_b_U
+                    layer_logits = layer_logits.float()
+                    emit_pure_next_token_record(
+                        layer + 1,
+                        layer_logits,
+                        tokens_ctl,
+                        ctx_ids_ctl,
+                        window_ids,
+                        final_probs_ctl,
+                        first_ans_id_ctl,
+                        final_dir_ctl,
+                        collected_records=[],
+                        do_raw_lens_sample=False,
+                        resid_raw_tensor=resid_raw_tensor,
+                        control_ids=(first_ans_id_ctl, first_ans_id),
+                    )
+            finally:
+                detach_hooks(hooks)
+                residual_cache.clear()
+                hooks.clear()
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+        # Compute and persist control prompt info and summary
+        first_pos = None
+        max_margin = None
+        for rec in json_data.get("pure_next_token_records", []):
+            if rec.get("prompt_id") != "ctl":
+                continue
+            cm = rec.get("control_margin")
+            if cm is None:
+                continue
+            if max_margin is None or cm > max_margin:
+                max_margin = cm
+            if cm > 0 and first_pos is None:
+                first_pos = rec.get("layer")
+        json_data["control_prompt"] = {
+            "context_prompt": context_prompt_ctl,
+            "gold_answer": {
+                "string": gold_info_ctl.get("string"),
+                "pieces": gold_info_ctl.get("pieces", []),
+                "first_id": gold_info_ctl.get("first_id"),
+                "answer_ids": gold_info_ctl.get("answer_ids", []),
+                "variant": gold_info_ctl.get("variant", "unknown"),
+            },
+            "gold_alignment": "ok" if gold_info_ctl.get("status") == "ok" else "unresolved",
+        }
+        json_data["control_summary"] = {
+            "first_control_margin_pos": first_pos,
+            "max_control_margin": max_margin,
+        }
+
+        # Restore prompt_id for any subsequent records
+        current_prompt_id = "pos"
+
         # Collect model stats data (architecture already detected above)
         stats_record = {
             "type": "model_stats",

@@ -32,9 +32,10 @@ def test_csv_writers_headers_and_rows():
         with open(records_path, newline='', encoding='utf-8') as f:
             rows = list(csv.reader(f))
         header = rows[0]
-        expected_len = 4 + 2 * top_k + 1
+        expected_len = 1 + 4 + 2 * top_k + 1  # prompt_id + (layer,pos,token,entropy) + topk + rest
         assert len(header) == expected_len
-        assert header[:4] == ["layer", "pos", "token", "entropy"]
+        assert header[0] == "prompt_id"
+        assert header[1:5] == ["layer", "pos", "token", "entropy"]
         assert header[-1] == "rest_mass"
         for r in rows[1:]:
             assert len(r) == expected_len
@@ -44,10 +45,10 @@ def test_csv_writers_headers_and_rows():
         with open(pure_path, newline='', encoding='utf-8') as f:
             rows = list(csv.reader(f))
         header = rows[0]
-        # Pure next-token CSV now includes §1.3 metrics plus §1.5 cosine column
-        expected_len = 4 + 2 * top_k + 1 + 3 + 5 + 1
+        # Pure next-token CSV now includes §1.3 metrics plus §1.5 cosine column and §1.8 control_margin
+        expected_len = (1 + 4) + 2 * top_k + 1 + 3 + 5 + 1 + 1  # prompt_id + base + topk + rest + flags + metrics + cos + control_margin
         assert len(header) == expected_len
-        assert header[-10:] == [
+        assert header[-11:] == [
             "rest_mass",
             "copy_collapse",
             "entropy_collapse",
@@ -58,6 +59,7 @@ def test_csv_writers_headers_and_rows():
             "kl_to_final_bits",
             "answer_rank",
             "cos_to_final",
+            "control_margin",
         ]
         # Validate row shapes and rest_mass range
         rest_idx = header.index("rest_mass")

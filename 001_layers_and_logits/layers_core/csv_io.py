@@ -21,14 +21,14 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
             escapechar="\\",
             lineterminator="\n",
         )
-        header = ["layer", "pos", "token", "entropy"]
+        header = ["prompt_id", "layer", "pos", "token", "entropy"]
         for i in range(1, top_k_verbose + 1):
             header.extend([f"top{i}", f"prob{i}"])
         header.append("rest_mass")
         writer.writerow(header)
 
         for rec in records:
-            row = [rec.get("layer"), rec.get("pos"), rec.get("token"), rec.get("entropy")]
+            row = [rec.get("prompt_id", ""), rec.get("layer"), rec.get("pos"), rec.get("token"), rec.get("entropy")]
             topk_list = rec.get("topk", [])
             topk_prob_sum = 0.0
             for j in range(top_k_verbose):
@@ -52,7 +52,7 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
             escapechar="\\",
             lineterminator="\n",
         )
-        header = ["layer", "pos", "token", "entropy"]
+        header = ["prompt_id", "layer", "pos", "token", "entropy"]
         for i in range(1, top_k_verbose + 1):
             header.extend([f"top{i}", f"prob{i}"])
         # Extended schema per PROJECT_NOTES §1.3
@@ -68,11 +68,13 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
             "answer_rank",
             # Representation-drift cosine (PROJECT_NOTES §1.5)
             "cos_to_final",
+            # Negative control margin (PROJECT_NOTES §1.8)
+            "control_margin",
         ])
         writer.writerow(header)
 
         for rec in pure_next_token_records:
-            row = [rec.get("layer"), rec.get("pos"), rec.get("token"), rec.get("entropy")]
+            row = [rec.get("prompt_id", ""), rec.get("layer"), rec.get("pos"), rec.get("token"), rec.get("entropy")]
             topk_list = rec.get("topk", [])
             topk_prob_sum = 0.0
             for j in range(top_k_verbose):
@@ -97,5 +99,6 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
                 _nz(rec.get("kl_to_final_bits")),
                 _nz(rec.get("answer_rank")),
                 _nz(rec.get("cos_to_final")),
+                _nz(rec.get("control_margin")),
             ])
             writer.writerow(row)
