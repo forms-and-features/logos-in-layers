@@ -18,8 +18,7 @@ Also read `diagnostics.last_layer_consistency` (last‑layer head calibration): 
 - CSV  - two csv files with detailed layer-level results of the probe of the model (second part of results):
 001_layers_and_logits/run-latest/output-Mistral-7B-v0.1-records.csv
 001_layers_and_logits/run-latest/output-Mistral-7B-v0.1-pure-next-token.csv
-Each CSV now includes a `rest_mass` column (probability not covered by the listed top-k tokens); the pure-next-token CSV also adds boolean flags `copy_collapse`, `entropy_collapse`, and `is_answer` produced by the script.
-The pure-next-token CSV further includes per-layer probability and calibration fields: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, and `kl_to_final_bits` (bits), and `cos_to_final` (cosine similarity to the final logits direction; PROJECT_NOTES §1.5).
+Each CSV now includes a leading `prompt_id` column (`pos` for Germany→Berlin; `ctl` for France→Paris) and a `rest_mass` column (probability not covered by the listed top-k tokens). The pure-next-token CSV adds boolean flags `copy_collapse`, `entropy_collapse`, and `is_answer` produced by the script, as well as per-layer probability/calibration fields: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, `kl_to_final_bits` (bits), `cos_to_final` (cosine similarity to the final logits direction; PROJECT_NOTES §1.5), and `control_margin = p(Paris) − p(Berlin)` for control rows.
 
 - Parameters (copy-collapse): copy_threshold = 0.95, copy_margin = 0.10
 

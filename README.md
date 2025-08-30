@@ -62,8 +62,11 @@ This creates a fresh `run-latest/` (rotating any previous one to `run-YYYYMMDD-H
 - `output-<model>.json`: compact metadata (diagnostics, final prediction, model stats)
   - Includes `gold_answer` with ID-level alignment details: `{ string, pieces, first_id, answer_ids, variant }`
   - Diagnostics include `gold_alignment` (ok/unresolved); `is_answer` and `p_answer/answer_rank` are computed using `first_id`
+  - Negative control: includes `control_prompt` (context, gold alignment) and `control_summary` `{ first_control_margin_pos, max_control_margin }`
 - `output-<model>-records.csv`: per-layer/per-position top‑k with rest_mass
 - `output-<model>-pure-next-token.csv`: per-layer next-token top‑k with collapse flags
+  - Both CSVs include a `prompt_id` column (`pos` for Germany→Berlin; `ctl` for France→Paris)
+  - Pure next-token CSV adds `control_margin = p(Paris) − p(Berlin)` for control rows
 
 Run a single model to a custom directory:
 

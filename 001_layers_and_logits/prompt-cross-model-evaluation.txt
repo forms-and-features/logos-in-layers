@@ -21,8 +21,7 @@ Note: each JSON is a compact summary; the bulky per-token records are stored onl
 Diagnostics now also include last-layer head-calibration fields under `diagnostics.last_layer_consistency`:
 `{ kl_to_final_bits, top1_agree, p_top1_lens, p_top1_model, p_answer_lens, answer_rank_lens, temp_est, kl_after_temp_bits, cfg_transform, kl_after_transform_bits, warn_high_last_layer_kl }`.
 
-Each JSON also includes a `gold_answer` block for ID‑level alignment: `{ string, pieces, first_id, answer_ids, variant }`,
-and `diagnostics.gold_alignment` (ok/unresolved). Treat `is_answer`/`p_answer`/`answer_rank` as computed against `gold_answer.first_id`.
+Each JSON also includes a `gold_answer` block for ID‑level alignment: `{ string, pieces, first_id, answer_ids, variant }`, and `diagnostics.gold_alignment` (ok/unresolved). Treat `is_answer`/`p_answer`/`answer_rank` as computed against `gold_answer.first_id`. JSON additionally includes the negative-control fields: `control_prompt` (context, control gold alignment) and `control_summary` `{ first_control_margin_pos, max_control_margin }`.
 
 - CSV - layer-level results of the probe (part of the results of each probe), one per model:
 001_layers_and_logits/run-latest/output-gemma-2-9b-records.csv

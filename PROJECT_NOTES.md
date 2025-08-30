@@ -304,7 +304,7 @@ How.
 - Semantics: `is_answer` prefers ID/rank (`answer_rank == 1`), with string fallback only if rank is unavailable.
 - Tests: `tests/test_gold_alignment.py` covers with-space preference, no-space fallback, unresolved path, and sequence-based helper.
 
-### 1.8. Negative‑control prompt
+### [x] 1.8. Negative‑control prompt
 
 Why. If, in the France control, the Berlin token outranks Paris, the probe is leaking lexical co‑occurrence. A margin makes leakage quantitative and comparable.
 
@@ -318,6 +318,12 @@ How.
 1. `PROMPTS = [positive_prompt, control_prompt]`; add `prompt_id ∈ {pos, ctl}` to CSV/JSON.
 2. For `prompt_id == ctl`, compute the two probabilities and write `control_margin` per layer.
 3. After the sweep, store the two summary indices in JSON meta and annotate late/null cases as possible leakage.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+- Control pass added (France → Paris) with ID‑level gold alignment; records are tagged with `prompt_id`.
+- Pure next‑token CSV: new `control_margin = p(Paris) − p(Berlin)` column for control rows; empty for positive rows.
+- Both CSVs now include a leading `prompt_id` column.
+- JSON persists `control_prompt` (context, `gold_answer`, `gold_alignment`) and `control_summary` with `first_control_margin_pos` and `max_control_margin`.
 
 ### 1.9. Ablate stylistic filler ("simply")
 
