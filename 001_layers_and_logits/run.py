@@ -222,6 +222,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         
         context_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
         ground_truth = "Berlin"  # For display/comparison
+        # Stylistic filler ablation (PROJECT_NOTES §1.9): drop the adverb
+        context_prompt_nf = "Give the city name only, plain text. The capital of Germany is called"
         # Negative control (PROJECT_NOTES §1.8)
         context_prompt_ctl = "Give the city name only, plain text. The capital of France is called simply"
         control_ground_truth = "Paris"
@@ -328,14 +330,16 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     return True
             return False
 
-        # prompt_id for tagging records in mixed positive/control runs
+        # prompt_id and prompt_variant for tagging records across passes
         current_prompt_id = "pos"
+        current_prompt_variant = "orig"
 
         def print_summary(layer_idx, pos, token_str, entropy_bits, top_tokens, top_probs, is_pure_next_token=False, extra=None):
             # Collect record data for JSON output
             record = {
                 "type": "pure_next_token_record" if is_pure_next_token else "record",
                 "prompt_id": current_prompt_id,
+                "prompt_variant": current_prompt_variant,
                 "layer": layer_idx,
                 "pos": pos,
                 "token": token_str,
@@ -843,6 +847,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 )
                 # Record gold-alignment status (PROJECT_NOTES §1.7)
                 diag["gold_alignment"] = "ok" if gold_info.get("status") == "ok" else "unresolved"
+                # Capture orig variant summary fields for ablation
+                L_copy_orig = diag.get("L_copy")
+                L_sem_orig = diag.get("L_semantic")
                 json_data["diagnostics"] = diag
                 if last_layer_consistency is not None:
                     json_data["diagnostics"]["last_layer_consistency"] = last_layer_consistency
@@ -965,9 +972,138 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         
         print("=== END OF INSPECTING ==============\n")
 
+        # ---------------- Ablation pass: no-filler (PROJECT_NOTES §1.9) --------
+        # Run a separate forward pass on the positive prompt without the stylistic filler
+        current_prompt_id = "pos"
+        current_prompt_variant = "no_filler"
+        # Gold alignment for the ablated variant
+        gold_info_nf = compute_gold_answer_info(getattr(model, 'tokenizer', None), context_prompt_nf, ground_truth, pieces_k=4)
+        if gold_info_nf.get("status") != "ok":
+            try:
+                n_ctx = model.tokenizer(context_prompt_nf, add_special_tokens=False)["input_ids"]
+                n_ws = model.tokenizer(context_prompt_nf + " " + ground_truth, add_special_tokens=False)["input_ids"]
+                n_ns = model.tokenizer(context_prompt_nf + ground_truth, add_special_tokens=False)["input_ids"]
+                gold_info_nf = compute_gold_answer_info_from_sequences(
+                    n_ctx, n_ws, n_ns,
+                    pieces_k=4,
+                    convert_ids_to_tokens=getattr(model.tokenizer, 'convert_ids_to_tokens', None),
+                    decode_id=(lambda i: model.tokenizer.decode([i])),
+                    answer_str=ground_truth,
+                )
+            except Exception:
+                gold_info_nf = {
+                    "string": ground_truth,
+                    "status": "unresolved",
+                    "variant": "unknown",
+                    "first_id": None,
+                    "pieces": [],
+                    "answer_ids": [],
+                    "ctx_ids": [],
+                    "ctx_len": 0,
+                }
+        ctx_ids_nf = gold_info_nf.get("ctx_ids", [])
+        first_ans_id_nf = gold_info_nf.get("first_id", None)
+
+        # Per-variant rolling window and record collection
+        window_ids_nf: list[int] = []
+        collected_pure_records_nf = []
+
+        with torch.no_grad():
+            residual_cache = {}
+            cache_hook = build_cache_hook(residual_cache)
+            hooks, _ = attach_residual_hooks(model, cache_hook)
+            try:
+                tokens_nf = model.to_tokens(context_prompt_nf)
+                logits_nf = model(tokens_nf)
+                final_logits_nf = logits_nf[0, -1, :].float()
+                final_probs_nf = torch.softmax(final_logits_nf, dim=0)
+                _final_norm_nf = torch.norm(final_logits_nf) + 1e-12
+                final_dir_nf = (final_logits_nf / _final_norm_nf)
+
+                # Layer 0
+                resid0 = residual_cache['hook_embed']
+                if 'hook_pos_embed' in residual_cache:
+                    resid0 = resid0 + residual_cache['hook_pos_embed']
+                resid = resid0
+                resid_raw_tensor = resid.detach().clone() if RAW_LENS_MODE != "off" else None
+                if USE_NORM_LENS:
+                    norm_module = get_correct_norm_module(model, 0, probe_after_block=False)
+                    resid = apply_norm_or_skip(resid, norm_module)
+                casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
+                layer_logits = (casted @ analysis_W_U)
+                if analysis_b_U is not None:
+                    layer_logits = layer_logits + analysis_b_U
+                layer_logits = layer_logits.float()
+                emit_pure_next_token_record(
+                    0,
+                    layer_logits,
+                    tokens_nf,
+                    ctx_ids_nf,
+                    window_ids_nf,
+                    final_probs_nf,
+                    first_ans_id_nf,
+                    final_dir_nf,
+                    collected_records=collected_pure_records_nf,
+                    do_raw_lens_sample=False,
+                    resid_raw_tensor=resid_raw_tensor,
+                )
+
+                # Post-block layers
+                n_layers = model.cfg.n_layers
+                for layer in range(n_layers):
+                    resid = residual_cache[f'blocks.{layer}.hook_resid_post']
+                    resid_raw_tensor = resid.detach().clone() if RAW_LENS_MODE != "off" else None
+                    if USE_NORM_LENS:
+                        norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
+                        resid = apply_norm_or_skip(resid, norm_module)
+                    casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
+                    layer_logits = (casted @ analysis_W_U)
+                    if analysis_b_U is not None:
+                        layer_logits = layer_logits + analysis_b_U
+                    layer_logits = layer_logits.float()
+                    emit_pure_next_token_record(
+                        layer + 1,
+                        layer_logits,
+                        tokens_nf,
+                        ctx_ids_nf,
+                        window_ids_nf,
+                        final_probs_nf,
+                        first_ans_id_nf,
+                        final_dir_nf,
+                        collected_records=collected_pure_records_nf,
+                        do_raw_lens_sample=False,
+                        resid_raw_tensor=resid_raw_tensor,
+                    )
+
+                # Summarize ablation variant
+                diag_nf = summarize_pure_records(
+                    collected_pure_records_nf,
+                    copy_threshold=config.copy_threshold,
+                    copy_window_k=getattr(config, "copy_window_k", 1),
+                    copy_match_level="id_subsequence",
+                )
+                L_copy_nf = diag_nf.get("L_copy")
+                L_sem_nf = diag_nf.get("L_semantic")
+                json_data["ablation_summary"] = {
+                    "L_copy_orig": L_copy_orig,
+                    "L_sem_orig": L_sem_orig,
+                    "L_copy_nf": L_copy_nf,
+                    "L_sem_nf": L_sem_nf,
+                    "delta_L_copy": (None if (L_copy_orig is None or L_copy_nf is None) else (L_copy_nf - L_copy_orig)),
+                    "delta_L_sem": (None if (L_sem_orig is None or L_sem_nf is None) else (L_sem_nf - L_sem_orig)),
+                }
+            finally:
+                detach_hooks(hooks)
+                residual_cache.clear()
+                hooks.clear()
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
         # ---------------- Control pass (PROJECT_NOTES §1.8) --------------------
         # Run a separate forward pass on the control prompt (France → Paris)
         current_prompt_id = "ctl"
+        current_prompt_variant = "orig"
         with torch.no_grad():
             residual_cache = {}
             cache_hook = build_cache_hook(residual_cache)

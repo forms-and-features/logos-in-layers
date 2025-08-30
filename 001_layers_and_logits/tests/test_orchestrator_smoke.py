@@ -118,4 +118,4 @@ def test_orchestrator_smoke_writes_outputs():
         assert os.path.exists(recs)
         assert os.path.exists(pure)
         assert 'model_stats' in data and 'diagnostics' in data and 'final_prediction' in data
-
+        assert 'ablation_summary' in data

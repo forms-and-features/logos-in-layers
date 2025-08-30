@@ -32,10 +32,11 @@ def test_csv_writers_headers_and_rows():
         with open(records_path, newline='', encoding='utf-8') as f:
             rows = list(csv.reader(f))
         header = rows[0]
-        expected_len = 1 + 4 + 2 * top_k + 1  # prompt_id + (layer,pos,token,entropy) + topk + rest
+        expected_len = 2 + 4 + 2 * top_k + 1  # prompt_id + prompt_variant + (layer,pos,token,entropy) + topk + rest
         assert len(header) == expected_len
         assert header[0] == "prompt_id"
-        assert header[1:5] == ["layer", "pos", "token", "entropy"]
+        assert header[1] == "prompt_variant"
+        assert header[2:6] == ["layer", "pos", "token", "entropy"]
         assert header[-1] == "rest_mass"
         for r in rows[1:]:
             assert len(r) == expected_len
@@ -45,8 +46,8 @@ def test_csv_writers_headers_and_rows():
         with open(pure_path, newline='', encoding='utf-8') as f:
             rows = list(csv.reader(f))
         header = rows[0]
-        # Pure next-token CSV now includes §1.3 metrics plus §1.5 cosine column and §1.8 control_margin
-        expected_len = (1 + 4) + 2 * top_k + 1 + 3 + 5 + 1 + 1  # prompt_id + base + topk + rest + flags + metrics + cos + control_margin
+        # Pure next-token CSV now includes §1.3 metrics plus §1.5 cosine and §1.8 control_margin and prompt_variant
+        expected_len = (2 + 4) + 2 * top_k + 1 + 3 + 5 + 1 + 1  # prompt_id + prompt_variant + base + topk + rest + flags + metrics + cos + control_margin
         assert len(header) == expected_len
         assert header[-11:] == [
             "rest_mass",
