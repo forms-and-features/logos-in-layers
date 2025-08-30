@@ -344,17 +344,49 @@ How.
   `{ L_copy_orig, L_sem_orig, L_copy_nf, L_sem_nf, delta_L_copy, delta_L_sem }`.
 - Control rows are not ablated; they are tagged as `prompt_id=ctl, prompt_variant=orig`.
 
-### 1.10. *(Optional)* Logit Prism shared decoder
+### 1.10. Logit Prism shared decoder
 
-Why. A single whitening + rotation matrix (`W_prism`) that works for all layers makes cross‑layer geometry directly comparable and reduces probe freedom ([neuralblog.github.io][3]).
+Why. A single whitening + rotation matrix (`W_prism`) that works for all layers makes cross‑layer geometry directly comparable and reduces probe freedom. A shared decoder is a strong baseline/control against “lens‑induced early semantics”, and a cheap preconditioning step for Tuned Lens.
 
-What. Fit `W_prism` on a slice of hidden states (e.g., 100k tokens, every other layer), save to disk, and expose `--use-logit-prism` which bypasses per‑layer lenses.
+Benefits.
+- Reduced probe freedom: one decoder for all layers (vs per‑layer heads) minimizes overfitting to layer idiosyncrasies.
+- Cross‑layer comparability: statements like “rotation → alignment, then amplification” are cleaner when the basis is fixed.
+- Better calibration than raw logit‑lens with low complexity; KL/rank milestones tend to be more stable early.
+- Synergy with Tuned Lens: Prism can initialize or regularize TL heads and serve as a regression guardrail.
 
-How.
+What. Fit a single linear map that (i) whitens pooled residuals, then (ii) applies an orthogonal rotation into the model’s unembedding basis (or a low‑rank subspace of it). At run time, we decode every layer with both lenses: keep the norm‑lens sweep as primary, and in the same run also decode a Prism sweep from the cached residuals (no second forward).
 
-1. Sample hidden states across depth; compute `W_prism` that whitens and rotates into the unembed basis.
-2. Replace per‑layer decode with `logits = (W_prism @ resid).softmax(-1)` when enabled.
-3. Persist prism provenance (version/sha/data) in JSON.
+How (minimal, reproducible).
+1) Data sampling (per model):
+   - Collect residual snapshots at ~3 depths (≈25/50/75%) over ~100k tokens (batched). Store only summary stats if memory is tight.
+   - Use fp32 for statistics; seed from the global SEED (316) for determinism.
+
+2) Fit procedure:
+   - Whitening: compute per‑feature mean/variance (or full covariance for true whitening); transform pooled residuals to zero‑mean, unit variance.
+   - Rotation/alignment: solve an orthogonal Procrustes from the whitened residual subspace to the unembed subspace (optionally top‑k SVD of `W_U` for k≲d_model). Alternative: ridge to logits with an orthogonality constraint.
+   - Output: `W_prism` (shape d_model×d_vocab or d_model×k then project with `W_U_k`), plus means/vars if whitening is applied on‑the‑fly.
+
+3) Validation (held‑out prompt):
+   - Report `prism_metrics`: KL(P_prism || P_final) in bits, top‑1 agreement, answer_rank milestones at 25/50/75% depths.
+   - Compare to raw norm‑lens and note any early “norm‑only semantics”; Prism should be closer to final than raw in early/mid layers if calibration improves.
+
+4) Integration in `run.py` (always‑on dual decode):
+   - Primary: run norm‑lens sweep as today (write canonical CSVs).
+   - Sidecar: after the sweep, reuse cached residuals to compute Prism logits for all layers and write sidecar CSVs: `*-records-prism.csv`, `*-pure-next-token-prism.csv` (schemas identical to primary CSVs). No forward duplication.
+   - Numerics: compute whitening in fp32; cast back for matmul as needed; seeds/devices unchanged.
+   - Provenance: in JSON, persist `prism_provenance` (artifact paths, version/sha, sample_size, depths, whitening kind, rank k, seed) and `prism_metrics` (KL bits, top‑1 agree by depth; optional Prism L_copy/L_sem summary). Primary CSVs remain norm‑lens; Prism lives in sidecars.
+
+5) Storage & layout:
+   - Save per‑model artifacts under `001_layers_and_logits/prisms/<clean_model_name>/`:
+     - `W_prism.pt` (tensor), `whiten.pt` (means/vars or Cholesky), `provenance.json`.
+   - Mirror a short summary into each run’s JSON for auditability. If artifacts are missing, optionally perform a “quick fit” from current run cache (tag `fit_mode=quick`).
+
+Lift (engineering).
+- Moderate: an offline fit (few hundred MB of activations or aggregated stats), simple SVD/Procrustes, a guarded decode path, and a couple of unit tests. Runtime impact is minimal (one extra matmul per layer).
+
+Trade‑offs / scope.
+- Prism is not a tuned lens; it won’t perfectly match the final head. Its value is robustness and comparability, not exact replication. Keep CSV unchanged and treat Prism as a diagnostic/baseline mode.
+- When TL is added (see §1.11), initialize TL heads from Prism and/or add a “shared‑head” ablation to emulate Prism for QA. Keep Prism available to catch lens‑induced regressions.
 
 ### 1.11. Integrate a Tuned Lens
 
