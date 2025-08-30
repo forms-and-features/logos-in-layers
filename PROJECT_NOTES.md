@@ -512,6 +512,26 @@ We run a first wave of low‑overhead variations that reuse the logit‑lens bas
 
 ---
 
+### 2.4. Rank‑centric prompt battery (100–1,000 country→capital items)
+
+**Why.** Single‑prompt results can overfit tokenizer/stylistic quirks. A larger, rank‑centric battery provides robust distributions of semantic‑collapse depths without relying on lens‑calibrated probabilities, and is cheap to run on the existing pipeline.
+
+**What.** Expand to a 100–1,000 item country→capital set using the same brevity instruction. Reuse ID‑level gold alignment (§1.7). For each model, report distributions of:
+
+* Normalised collapse depth `L_sem / n_layers`
+* `first_rank_le_{10,5,1}` (layer indices)
+
+Prefer rank/KL thresholds for summary; avoid absolute probability comparisons across models.
+
+**How.**
+
+1. Maintain a simple CSV/YAML prompt list (`prompts/country_capital.csv`) with columns: `country`, `capital`, `prompt_text` (optional override). Ensure single‑token answers where feasible; record exceptions.
+2. For each prompt, compute `gold_answer.first_id` via the model’s tokenizer (§1.7) and run the standard sweep (positive + control; ablation optional).
+3. Aggregate per‑model summaries: histograms of `L_sem / n_layers` and counts of `first_rank_le_{10,5,1}`. Persist a `battery_summary.json` per model with `run_id`, `code_commit_sha`, and sample sizes.
+4. In cross‑model write‑ups, compare distributions qualitatively (within‑family when in doubt) and emphasise rank milestones.
+
+---
+
 ### Closing note on epistemic modesty
 
 These variations are diagnostic, not decisive. Their job is to show which internal patterns ride above surface token variation and which do not. If the patterns hold, austere nominalism loses more credibility and we have a cleaner target set for the higher‑lift causal, multimodal, and synthetic‑language probes that might separate metalinguistic nominalism from realism in later stages.
@@ -563,6 +583,8 @@ These tools move us beyond descriptive logit‑lens curves. They intervene direc
    * `--patching`
    * `--patching-mode {full,attn,mlp,all}` (default `all`)
    * `--corrupted-answer "Paris"`
+
+**Pilot.** Start with a cleanly calibrated base model (e.g., Mistral‑Small‑24B or Llama‑3‑70B, where final‑row KL≈0). Report `causal_L_sem`, `causal_L_sem_attn`, and `causal_L_sem_mlp` heat‑maps around `L_sem`, and include per‑layer Δ log‑prob traces (full/attn/MLP) to separate retrieval vs construction dynamics.
 
 ---
 
