@@ -37,6 +37,12 @@ The brevity instruction is intentionally preserved to
 (a) ensure single-token answers across all models, and
 (b) expose the depth gap Δ between copy/filler collapse and semantic collapse.
 
+Cautions
+- Do not treat `rest_mass` as a lens-fidelity metric; it is top‑k coverage only. Diagnose fidelity/calibration via `diagnostics.last_layer_consistency` (final `kl_to_final_bits` ≈ 0 for well‑aligned heads) and `raw_lens_check.summary` (`lens_artifact_risk`, `max_kl_norm_vs_raw_bits`).
+- If `raw_lens_check.summary.lens_artifact_risk` is `high` or `first_norm_only_semantic_layer` is present, treat any pre‑final “early semantics” cautiously and prefer rank milestones (`first_rank_le_{10,5,1}`) over absolute probabilities; report the risk tier and `max_kl_norm_vs_raw_bits`.
+- Cosine is a within‑model trajectory only; if citing thresholds (e.g., cos_to_final ≥ 0.2/0.4/0.6), include the layer indices from the pure CSV, and avoid cross‑family comparisons of absolute cosine values.
+- When “top‑1” does not refer to the answer (pre‑semantic layers), label it as generic top‑1 (not `p_answer`). Use `p_answer`/`answer_rank` for semantic claims and always include the layer index when citing milestones (KL, cosine, rank, probabilities).
+
 1. Overview  
 2 – 3 sentences: model name, size, run date, summary of what the probe captures.
 
