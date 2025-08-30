@@ -276,7 +276,7 @@ How.
 
 Note on scope. Only the final row is “aligned” to the model’s head. All earlier layers remain decoded with the standard normalized lens to preserve comparability of depth‑wise metrics (entropy, ranks, KL‑to‑final, cosine).
 
-### 1.7. Gold‑token alignment (leading‑space, multi‑piece)
+### [x] 1.7. Gold‑token alignment (leading‑space, multi‑piece)
 
 Why. Tokenization differences (leading spaces, multi‑piece tokens) can create apparent mismatches if we compare strings instead of IDs. Making the gold tokenization explicit prevents such drift.
 
@@ -297,6 +297,12 @@ How.
    ```json
    "gold_answer": { "string": "Berlin", "pieces": pieces, "first_id": first_id }
    ```
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+- Central helper: `layers_core/gold.py` computes `first_id`, `pieces`, and selects with/without leading space.
+- Runner integration: `run.py` persists `json.gold_answer = {string, pieces, first_id, answer_ids, variant}` and sets `diagnostics.gold_alignment`.
+- Semantics: `is_answer` prefers ID/rank (`answer_rank == 1`), with string fallback only if rank is unavailable.
+- Tests: `tests/test_gold_alignment.py` covers with-space preference, no-space fallback, unresolved path, and sequence-based helper.
 
 ### 1.8. Negative‑control prompt
 

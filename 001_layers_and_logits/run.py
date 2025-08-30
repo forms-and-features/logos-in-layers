@@ -83,6 +83,7 @@ from layers_core.raw_lens import (
     summarize_raw_lens_check,
 )
 from layers_core.summaries import summarize_pure_records
+from layers_core.gold import compute_gold_answer_info, compute_gold_answer_info_from_sequences
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -387,11 +388,15 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             if copy_collapse and is_pure_whitespace_or_punct(last_top_tokens[0]):
                 copy_collapse = False
             entropy_collapse = last_entropy_bits <= 1.0
-            is_answer = is_semantic_top1(last_top_tokens[0], "Berlin")
+            # Defer final is_answer decision until rank is known; keep string fallback
+            is_answer_fallback = is_semantic_top1(last_top_tokens[0], ground_truth)
 
             metrics = compute_next_token_metrics(
                 last_full_probs, top1_id, final_probs_tensor, first_ans_token_id, topk_cum=5
             )
+
+            # Prefer rank-based ID check when available; fallback to string match
+            is_answer = (metrics.get("answer_rank") == 1) if metrics.get("answer_rank") is not None else is_answer_fallback
 
             # Cosine to final direction (PROJECT_NOTES §1.5)
             _curr_norm = torch.norm(last_logits) + 1e-12
@@ -436,25 +441,51 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         # Tokenize the context prompt (without "Answer:" to avoid teacher-forcing)
         tokens = model.to_tokens(context_prompt)      # let Accelerate move it
 
-        # Prepare prompt token IDs (ordered) for sub-word-aware copy detection
-        # Prefer HF-style tokenizer; fall back to model.to_tokens for mock/test models
-        try:
-            ctx_ids = model.tokenizer(context_prompt, add_special_tokens=False)["input_ids"]
-        except Exception:
+        # Gold-token alignment (PROJECT_NOTES §1.7): prefer tokenizer path
+        gold_info = compute_gold_answer_info(getattr(model, 'tokenizer', None), context_prompt, ground_truth, pieces_k=4)
+
+        if gold_info.get("status") != "ok":
+            # Fallback: construct sequences explicitly
             try:
-                ctx_ids = model.to_tokens(context_prompt)[0].tolist()
+                ctx_ids_try = model.tokenizer(context_prompt, add_special_tokens=False)["input_ids"]
+                ctx_ans_ws_try = model.tokenizer(context_prompt + " " + ground_truth, add_special_tokens=False)["input_ids"]
+                ctx_ans_ns_try = model.tokenizer(context_prompt + ground_truth, add_special_tokens=False)["input_ids"]
+                convert = getattr(model.tokenizer, 'convert_ids_to_tokens', None)
+                gold_info = compute_gold_answer_info_from_sequences(
+                    ctx_ids_try, ctx_ans_ws_try, ctx_ans_ns_try,
+                    pieces_k=4,
+                    convert_ids_to_tokens=convert,
+                    decode_id=(lambda i: model.tokenizer.decode([i])),
+                    answer_str=ground_truth,
+                )
             except Exception:
-                ctx_ids = []
-        # Gold answer first-token id (ID-level matching; see PROJECT_NOTES §1.3)
-        try:
-            ans_ids_full = model.tokenizer(context_prompt + " " + ground_truth, add_special_tokens=False)["input_ids"]
-            first_ans_id = ans_ids_full[len(ctx_ids)] if len(ans_ids_full) > len(ctx_ids) else None
-        except Exception:
-            try:
-                ans_tokens = model.to_tokens(context_prompt + " " + ground_truth)[0].tolist()
-                first_ans_id = ans_tokens[len(ctx_ids)] if len(ans_tokens) > len(ctx_ids) else None
-            except Exception:
-                first_ans_id = None
+                try:
+                    ctx_ids_try = model.to_tokens(context_prompt)[0].tolist()
+                    ctx_ans_ws_try = model.to_tokens(context_prompt + " " + ground_truth)[0].tolist()
+                    ctx_ans_ns_try = model.to_tokens(context_prompt + ground_truth)[0].tolist()
+                    dec = (lambda i: model.tokenizer.decode([i])) if hasattr(model, 'tokenizer') else None
+                    gold_info = compute_gold_answer_info_from_sequences(
+                        ctx_ids_try, ctx_ans_ws_try, ctx_ans_ns_try,
+                        pieces_k=4,
+                        convert_ids_to_tokens=getattr(getattr(model, 'tokenizer', None), 'convert_ids_to_tokens', None),
+                        decode_id=dec,
+                        answer_str=ground_truth,
+                    )
+                except Exception:
+                    gold_info = {
+                        "string": ground_truth,
+                        "status": "unresolved",
+                        "variant": "unknown",
+                        "first_id": None,
+                        "pieces": [],
+                        "answer_ids": [],
+                        "ctx_ids": [],
+                        "ctx_len": 0,
+                    }
+
+        # Provide ctx ids for copy detector and first answer id for metrics
+        ctx_ids = gold_info.get("ctx_ids", [])
+        first_ans_id = gold_info.get("first_id", None)
         # Rolling window of the last k top-1 IDs
         window_ids: list[int] = []
         
@@ -763,6 +794,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         copy_match_level="id_subsequence",
                     )
                 )
+                # Record gold-alignment status (PROJECT_NOTES §1.7)
+                diag["gold_alignment"] = "ok" if gold_info.get("status") == "ok" else "unresolved"
                 json_data["diagnostics"] = diag
                 if last_layer_consistency is not None:
                     json_data["diagnostics"]["last_layer_consistency"] = last_layer_consistency
@@ -896,6 +929,15 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             "architecture": detected_architecture or 'unknown'
         }
         json_data["model_stats"] = stats_record
+
+        # Persist gold-answer transparency (PROJECT_NOTES §1.7)
+        json_data["gold_answer"] = {
+            "string": gold_info.get("string"),
+            "pieces": gold_info.get("pieces", []),
+            "first_id": gold_info.get("first_id"),
+            "answer_ids": gold_info.get("answer_ids", []),
+            "variant": gold_info.get("variant", "unknown"),
+        }
         
         # Clean up model to free memory (though process will end anyway)
         del model
