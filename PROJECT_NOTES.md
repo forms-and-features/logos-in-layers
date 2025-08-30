@@ -325,7 +325,7 @@ How.
 - Both CSVs now include a leading `prompt_id` column.
 - JSON persists `control_prompt` (context, `gold_answer`, `gold_alignment`) and `control_summary` with `first_control_margin_pos` and `max_control_margin`.
 
-### 1.9. Ablate stylistic filler ("simply")
+### [x] 1.9. Ablate stylistic filler ("simply")
 
 Why. Gemma’s early copy‑collapse may be triggered by instruction‑style cues, not semantics. Removing “simply” tests that hypothesis.
 
@@ -336,6 +336,13 @@ How.
 1. Duplicate prompt; drop the adverb.
 2. Record both runs with `prompt_variant` metadata.
 3. Plot `Δ-collapse` for the two variants; a large shift confirms the stylistic‑cue explanation.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+- Added a no‑filler positive pass (`context_prompt_nf = "… is called"`) alongside the original prompt.
+- Both CSVs now include a leading `prompt_variant` column (`orig` | `no_filler`); `prompt_id` remains `pos` for both variants.
+- JSON includes `ablation_summary` with collapse indices and deltas:
+  `{ L_copy_orig, L_sem_orig, L_copy_nf, L_sem_nf, delta_L_copy, delta_L_sem }`.
+- Control rows are not ablated; they are tagged as `prompt_id=ctl, prompt_variant=orig`.
 
 ### 1.10. *(Optional)* Logit Prism shared decoder
 

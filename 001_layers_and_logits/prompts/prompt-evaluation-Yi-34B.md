@@ -14,11 +14,13 @@ Use the `gold_answer` block for ID‑level alignment: `{ string, pieces, first_i
 The `is_answer` flag and `p_answer`/`answer_rank` are computed using `first_id` (robust to leading‑space/multi‑piece tokenization).
 Also read `diagnostics.last_layer_consistency` (last‑layer head calibration): `{ kl_to_final_bits, top1_agree, p_top1_lens, p_top1_model, p_answer_lens, answer_rank_lens, temp_est, kl_after_temp_bits, cfg_transform, kl_after_transform_bits, warn_high_last_layer_kl }`.
 
+Ablation: read `ablation_summary` with `{ L_copy_orig, L_sem_orig, L_copy_nf, L_sem_nf, delta_L_copy, delta_L_sem }` to compare the original vs no‑filler (‘simply’ ablated) prompts.
+
 
 - CSV  - two csv files with detailed layer-level results of the probe of the model (second part of results):
 001_layers_and_logits/run-latest/output-Yi-34B-records.csv
 001_layers_and_logits/run-latest/output-Yi-34B-pure-next-token.csv
-Each CSV now includes a leading `prompt_id` column (`pos` for Germany→Berlin; `ctl` for France→Paris) and a `rest_mass` column (probability not covered by the listed top-k tokens). The pure-next-token CSV adds boolean flags `copy_collapse`, `entropy_collapse`, and `is_answer` produced by the script, as well as per-layer probability/calibration fields: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, `kl_to_final_bits` (bits), `cos_to_final` (cosine similarity to the final logits direction; PROJECT_NOTES §1.5), and `control_margin = p(Paris) − p(Berlin)` for control rows.
+Each CSV now includes leading `prompt_id` (`pos` for Germany→Berlin; `ctl` for France→Paris) and `prompt_variant` (`orig`/`no_filler`) columns, and a `rest_mass` column (probability not covered by the listed top-k tokens). The pure-next-token CSV adds boolean flags `copy_collapse`, `entropy_collapse`, and `is_answer` produced by the script, as well as per-layer probability/calibration fields: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, `kl_to_final_bits` (bits), `cos_to_final` (cosine similarity to the final logits direction; PROJECT_NOTES §1.5), and `control_margin = p(Paris) − p(Berlin)` for control rows.
 
 - Parameters (copy-collapse): copy_threshold = 0.95, copy_margin = 0.10
 

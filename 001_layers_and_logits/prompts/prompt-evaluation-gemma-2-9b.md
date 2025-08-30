@@ -44,7 +44,7 @@ The brevity instruction is intentionally preserved to
 One paragraph: do JSON and CSV confirm that positional encodings and the intended norm lens are applied? Quote ≤ 2 console lines with line numbers.
 Verify context_prompt ends with “called simply” (no trailing space).
 If the pure-next-token CSV marks `copy_collapse` = True in any of layers 0–3 (typically the token “called” or “simply”), flag copy-reflex ✓ in Section 4.
-Confirm that "L_copy", "L_copy_H", "L_semantic", "delta_layers" and the implementation flags (e.g. "use_norm_lens", "unembed_dtype") are present in diagnostics. The copy rule is ID-level contiguous subsequence (k=1) with threshold τ=0.95 and margin δ=0.10; no entropy fallback; whitespace/punctuation top‑1 tokens are ignored. Cite `copy_thresh`, `copy_window_k`, `copy_match_level` from diagnostics. Gold‑token alignment: see `gold_answer` in JSON; alignment is ID‑based. Confirm `diagnostics.gold_alignment` is `ok`. If `unresolved`, note fallback to string matching and prefer rank‑based statements. Negative control: confirm `control_prompt` and `control_summary` are present in JSON.
+Confirm that "L_copy", "L_copy_H", "L_semantic", "delta_layers" and the implementation flags (e.g. "use_norm_lens", "unembed_dtype") are present in diagnostics. The copy rule is ID-level contiguous subsequence (k=1) with threshold τ=0.95 and margin δ=0.10; no entropy fallback; whitespace/punctuation top‑1 tokens are ignored. Cite `copy_thresh`, `copy_window_k`, `copy_match_level` from diagnostics. Gold‑token alignment: see `gold_answer` in JSON; alignment is ID‑based. Confirm `diagnostics.gold_alignment` is `ok`. If `unresolved`, note fallback to string matching and prefer rank‑based statements. Negative control: confirm `control_prompt` and `control_summary` are present in JSON. Ablation: confirm `ablation_summary` exists and that positive rows appear under both `prompt_variant = orig` and `no_filler`. For the main table, filter to `prompt_id = pos`, `prompt_variant = orig`.
 Report summary indices from diagnostics: `first_kl_below_0.5`, `first_kl_below_1.0`, `first_rank_le_1`, `first_rank_le_5`, `first_rank_le_10`. Confirm units for KL/entropy are bits. Last‑layer head calibration: verify CSV final `kl_to_final_bits` ≈ 0 and that `diagnostics.last_layer_consistency` exists. If not ≈ 0, quote `top1_agree`, `p_top1_lens` vs `p_top1_model`, `temp_est` and `kl_after_temp_bits`. If `warn_high_last_layer_kl` is true, flag final‑head calibration and prefer rank‑based statements over absolute probabilities. Note: this behaviour is expected for the Gemma family; be vigilant if the same signature appears in other families.
 Copy-collapse flag check: first row with `copy_collapse = True`  
   layer = … , token_id₁ = … , p₁ = … , token_id₂ = … , p₂ = …  
@@ -57,6 +57,13 @@ Lens sanity (JSON `raw_lens_check`): note `mode` (sample/full) and summarize `su
 A table, one row per each layer: “L 0 – entropy  X bits, top‑1 ‘token’” - you will read each row in the CSV for this, this is important, you must review each layer for a fully informed evaluation.
 Bold semantic layer (L_semantic) – first layer where `is_answer = True` (ID‑level gold token). For reference, `gold_answer.string` is “Berlin”.
 Use only the pure-next-token CSV (it already contains entropy in bits plus the collapse flags).  The `rest_mass` column is provided for KL/entropy sanity-checks.
+Build the table from positive rows only: `prompt_id = pos`, `prompt_variant = orig`.
+
+Ablation (no‑filler). From JSON `ablation_summary`, report:
+- `L_copy_orig = …`, `L_sem_orig = …`
+- `L_copy_nf = …`, `L_sem_nf = …`
+- `ΔL_copy = L_copy_nf − L_copy_orig`, `ΔL_sem = L_sem_nf − L_sem_orig`
+Interpretation: a large positive `ΔL_sem` (e.g., ≥ ~10% of `n_layers`) suggests stylistic‑cue sensitivity. If any value is null, note the limitation and rely on rank milestones.
 
 Add beneath the table:
 ΔH (bits) = entropy(L_copy) − entropy(L_semantic) = …
@@ -85,6 +92,7 @@ but do not use it for the table or for bolding the collapse layer.
 - Lens sanity: Quote the JSON `raw_lens_check.summary` and, if helpful, one sampled `raw_lens_check.samples` row. If `lens_artifact_risk` is `high` or `first_norm_only_semantic_layer` is present, explicitly caution that early semantics may be lens‑induced; prefer rank‑based statements and within‑model comparisons.
 - Temperature robustness: “At T = 0.1, Berlin rank 1 (p = …); at T = 2.0, Berlin rank … (p = …). Entropy rises from … bits to … bits.”
 - Important-word trajectory — “Berlin first enters any top-5 at layer …, stabilises by layer …. Germany remains in top-5 through layer …. capital drops out after layer ….”
+- Stylistic ablation: summarize whether removing “simply” delays or advances semantics (`ΔL_sem`) or copy (`ΔL_copy`); if large, attribute likely guidance‑style anchoring rather than semantics.
 - To support the claims, add a short inline quote + line number, e.g. > “… (‘Berlin’, 0.92)” [L541].
 - Checklist (✓/✗/n.a.) at end of section:
     - RMS lens?  

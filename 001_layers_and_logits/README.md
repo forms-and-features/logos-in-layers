@@ -35,8 +35,9 @@ Run creates or rotates `run-latest/` (previous → `run-YYYYMMDD-HHMM/`). For ea
   - Gold-token alignment block `gold_answer`: `{ string, pieces, first_id, answer_ids, variant }`
   - `diagnostics.gold_alignment` status (`ok`/`unresolved`); `is_answer` and `p_answer/answer_rank` are based on `gold_answer.first_id`
   - Negative control: `control_prompt` (context, control gold alignment) and `control_summary` `{ first_control_margin_pos, max_control_margin }`
-- `output-<model>-records.csv` — per-layer/per-position top‑k with `rest_mass` (now includes leading `prompt_id`)
-- `output-<model>-pure-next-token.csv` — per-layer pure next‑token top‑k with flags and metrics: `copy_collapse`, `entropy_collapse`, `is_answer`, `p_top1`, `p_top5`, `p_answer`, `kl_to_final_bits`, `answer_rank`, `cos_to_final` (PROJECT_NOTES §1.5), and `control_margin` for control rows; both CSVs include a leading `prompt_id` column (`pos` or `ctl`).
+  - Stylistic ablation (PROJECT_NOTES §1.9): `ablation_summary` `{ L_copy_orig, L_sem_orig, L_copy_nf, L_sem_nf, delta_L_copy, delta_L_sem }`
+- `output-<model>-records.csv` — per-layer/per-position top‑k with `rest_mass` (now includes leading `prompt_id` and `prompt_variant`)
+- `output-<model>-pure-next-token.csv` — per-layer pure next‑token top‑k with flags and metrics: `copy_collapse`, `entropy_collapse`, `is_answer`, `p_top1`, `p_top5`, `p_answer`, `kl_to_final_bits`, `answer_rank`, `cos_to_final` (PROJECT_NOTES §1.5), and `control_margin` for control rows; both CSVs include leading `prompt_id` and `prompt_variant` columns (`pos`/`ctl`; `orig`/`no_filler`).
 
 ## Scripts
 
