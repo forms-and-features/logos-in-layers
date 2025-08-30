@@ -60,6 +60,8 @@ python run.py
 This creates a fresh `run-latest/` (rotating any previous one to `run-YYYYMMDD-HHMM/`) and writes:
 
 - `output-<model>.json`: compact metadata (diagnostics, final prediction, model stats)
+  - Includes `gold_answer` with ID-level alignment details: `{ string, pieces, first_id, answer_ids, variant }`
+  - Diagnostics include `gold_alignment` (ok/unresolved); `is_answer` and `p_answer/answer_rank` are computed using `first_id`
 - `output-<model>-records.csv`: per-layer/per-position top‑k with rest_mass
 - `output-<model>-pure-next-token.csv`: per-layer next-token top‑k with collapse flags
 

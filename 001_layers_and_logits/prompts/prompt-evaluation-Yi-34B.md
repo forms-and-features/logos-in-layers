@@ -9,6 +9,9 @@ INPUTS
 - JSON  – one json file with structured results of the probe of the model (first part of results):
 001_layers_and_logits/run-latest/output-Yi-34B.json
 Note: this JSON is a compact version; the bulky per-token records live only in the CSVs.
+
+Use the `gold_answer` block for ID‑level alignment: `{ string, pieces, first_id, answer_ids, variant }`.
+The `is_answer` flag and `p_answer`/`answer_rank` are computed using `first_id` (robust to leading‑space/multi‑piece tokenization).
 Also read `diagnostics.last_layer_consistency` (last‑layer head calibration): `{ kl_to_final_bits, top1_agree, p_top1_lens, p_top1_model, p_answer_lens, answer_rank_lens, temp_est, kl_after_temp_bits, cfg_transform, kl_after_transform_bits, warn_high_last_layer_kl }`.
 
 
@@ -42,7 +45,7 @@ The brevity instruction is intentionally preserved to
 One paragraph: do JSON and CSV confirm that positional encodings and the intended norm lens are applied? Quote ≤ 2 console lines with line numbers.
 Verify context_prompt ends with “called simply” (no trailing space).
 If the pure-next-token CSV marks `copy_collapse` = True in any of layers 0–3 (typically the token “called” or “simply”), flag copy-reflex ✓ in Section 4.
-Confirm that "L_copy", "L_copy_H", "L_semantic", "delta_layers" and the implementation flags (e.g. "use_norm_lens", "unembed_dtype") are present in diagnostics. The copy rule is ID-level contiguous subsequence (k=1) with threshold τ=0.95 and margin δ=0.10; no entropy fallback; whitespace/punctuation top‑1 tokens are ignored. Cite `copy_thresh`, `copy_window_k`, `copy_match_level` from diagnostics.
+Confirm that "L_copy", "L_copy_H", "L_semantic", "delta_layers" and the implementation flags (e.g. "use_norm_lens", "unembed_dtype") are present in diagnostics. The copy rule is ID-level contiguous subsequence (k=1) with threshold τ=0.95 and margin δ=0.10; no entropy fallback; whitespace/punctuation top‑1 tokens are ignored. Cite `copy_thresh`, `copy_window_k`, `copy_match_level` from diagnostics. Gold‑token alignment: see `gold_answer` in JSON; alignment is ID‑based. Confirm `diagnostics.gold_alignment` is `ok`. If `unresolved`, note fallback to string matching and prefer rank‑based statements.
 Report summary indices from diagnostics: `first_kl_below_0.5`, `first_kl_below_1.0`, `first_rank_le_1`, `first_rank_le_5`, `first_rank_le_10`. Confirm units for KL/entropy are bits. Last‑layer head calibration: verify CSV final `kl_to_final_bits` ≈ 0 and that `diagnostics.last_layer_consistency` exists. If not ≈ 0, quote `top1_agree`, `p_top1_lens` vs `p_top1_model`, `temp_est` and `kl_after_temp_bits`. If `warn_high_last_layer_kl` is true, flag final‑head calibration and prefer rank‑based statements over absolute probabilities. Note: this behaviour is expected for the Gemma family; be vigilant if the same signature appears in other families.
 Copy-collapse flag check: first row with `copy_collapse = True`  
   layer = … , token_id₁ = … , p₁ = … , token_id₂ = … , p₂ = …  
@@ -53,7 +56,7 @@ Lens sanity (JSON `raw_lens_check`): note `mode` (sample/full) and summarize `su
 
 3. Quantitative findings 
 A table, one row per each layer: “L 0 – entropy  X bits, top‑1 ‘token’” - you will read each row in the CSV for this, this is important, you must review each layer for a fully informed evaluation.
-Bold semantic layer (L_semantic) – first layer whose top-1 = “Berlin”.
+Bold semantic layer (L_semantic) – first layer where `is_answer = True` (ID‑level gold token). For reference, `gold_answer.string` is “Berlin”.
 Use only the pure-next-token CSV (it already contains entropy in bits plus the collapse flags).  The `rest_mass` column is provided for KL/entropy sanity-checks.
 
 Add beneath the table:
