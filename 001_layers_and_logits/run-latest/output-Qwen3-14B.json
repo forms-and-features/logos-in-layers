@@ -8,7 +8,7 @@
     {
       "type": "test_prompt",
       "prompt": "Berlin is the capital of",
-      "entropy": 1.6914428358949902,
+      "entropy": 1.691442847251892,
       "topk": [
         [
           " Germany",
@@ -55,7 +55,7 @@
     {
       "type": "test_prompt",
       "prompt": "Germany's capital city is called simply",
-      "entropy": 0.9270147792966055,
+      "entropy": 0.9270147681236267,
       "topk": [
         [
           " Berlin",
@@ -102,7 +102,7 @@
     {
       "type": "test_prompt",
       "prompt": "The capital city of Germany is named simply",
-      "entropy": 2.5500362953463123,
+      "entropy": 2.5500361919403076,
       "topk": [
         [
           " Berlin",
@@ -149,7 +149,7 @@
     {
       "type": "test_prompt",
       "prompt": "Germany has its capital at the city called simply",
-      "entropy": 1.392204546231311,
+      "entropy": 1.3922045230865479,
       "topk": [
         [
           " Berlin",
@@ -196,7 +196,7 @@
     {
       "type": "test_prompt",
       "prompt": "In Germany the capital city is simply",
-      "entropy": 1.2882121406993983,
+      "entropy": 1.2882121801376343,
       "topk": [
         [
           " called",
@@ -243,7 +243,7 @@
     {
       "type": "test_prompt",
       "prompt": "Germany's capital city is called",
-      "entropy": 2.1421868340791486,
+      "entropy": 2.1421868801116943,
       "topk": [
         [
           " Berlin",
@@ -290,7 +290,7 @@
     {
       "type": "test_prompt",
       "prompt": "The capital city of Germany is named",
-      "entropy": 0.7707374121279377,
+      "entropy": 0.7707374095916748,
       "topk": [
         [
           " after",
@@ -337,7 +337,7 @@
     {
       "type": "test_prompt",
       "prompt": "Germany has its capital at",
-      "entropy": 1.0869133271705151,
+      "entropy": 1.0869133472442627,
       "topk": [
         [
           " Berlin",
@@ -384,7 +384,7 @@
     {
       "type": "test_prompt",
       "prompt": "In Germany the capital city is known as",
-      "entropy": 1.912658960220295,
+      "entropy": 1.912658929824829,
       "topk": [
         [
           " Berlin",
@@ -431,7 +431,7 @@
     {
       "type": "test_prompt",
       "prompt": "Give the country name only, plain text. Berlin is the capital of",
-      "entropy": 1.6052882989279171,
+      "entropy": 1.6052882671356201,
       "topk": [
         [
           " which",
@@ -478,7 +478,7 @@
     {
       "type": "test_prompt",
       "prompt": "Give the city name only, plain text. Germany's capital city is called",
-      "entropy": 3.384409094111323,
+      "entropy": 3.384409189224243,
       "topk": [
         [
           " what",
@@ -525,7 +525,7 @@
     {
       "type": "test_prompt",
       "prompt": "Give the city name only, plain text. The capital city of Germany is named simply",
-      "entropy": 2.237928543918569,
+      "entropy": 2.237928628921509,
       "topk": [
         [
           " after",
@@ -572,7 +572,7 @@
     {
       "type": "test_prompt",
       "prompt": "Give the city name only, plain text. Germany has its capital at",
-      "entropy": 3.189545183447123,
+      "entropy": 3.189545154571533,
       "topk": [
         [
           " this",
@@ -619,7 +619,7 @@
     {
       "type": "test_prompt",
       "prompt": "Give the city name only, plain text. In Germany, the capital city is known as",
-      "entropy": 4.102467274375403,
+      "entropy": 4.102467060089111,
       "topk": [
         [
           " what",
@@ -668,7 +668,7 @@
     {
       "type": "temperature_exploration",
       "temperature": 0.1,
-      "entropy": 0.17295146138186587,
+      "entropy": 0.17295145988464355,
       "topk": [
         [
           " Berlin",
@@ -735,7 +735,7 @@
     {
       "type": "temperature_exploration",
       "temperature": 2.0,
-      "entropy": 13.160889805604016,
+      "entropy": 13.160889625549316,
       "topk": [
         [
           " Berlin",
@@ -816,14 +816,43 @@
     "layer0_position_info": "token_only_rotary_model",
     "context_prompt": "Give the city name only, plain text. The capital of Germany is called simply",
     "target_prediction": "first unseen token (likely 'Berlin')",
-    "L_copy": 32,
+    "L_copy": null,
     "L_copy_H": 32,
     "L_semantic": 36,
-    "delta_layers": 4
+    "delta_layers": null,
+    "copy_thresh": 0.95,
+    "copy_window_k": 1,
+    "copy_match_level": "id_subsequence",
+    "first_kl_below_0.5": 40,
+    "first_kl_below_1.0": 40,
+    "first_rank_le_1": 36,
+    "first_rank_le_5": 33,
+    "first_rank_le_10": 32,
+    "gold_alignment": "ok",
+    "last_layer_consistency": {
+      "kl_to_final_bits": 0.0,
+      "top1_agree": true,
+      "p_top1_lens": 0.34514033794403076,
+      "p_top1_model": 0.34514033794403076,
+      "p_answer_lens": 0.34514033794403076,
+      "answer_rank_lens": 1,
+      "temp_est": 1.0,
+      "kl_after_temp_bits": 0.0,
+      "cfg_transform": {
+        "scale": null,
+        "softcap": null
+      },
+      "kl_after_transform_bits": {
+        "scale": null,
+        "softcap": null,
+        "scale_then_softcap": null
+      },
+      "warn_high_last_layer_kl": false
+    }
   },
   "final_prediction": {
     "type": "final_prediction",
-    "entropy": 3.5835202883212314,
+    "entropy": 3.5835201740264893,
     "topk": [
       [
         " Berlin",
@@ -915,5 +944,105 @@
     "d_vocab": 151936,
     "n_ctx": 2048,
     "architecture": "pre_norm"
+  },
+  "raw_lens_check": {
+    "mode": "sample",
+    "samples": [
+      {
+        "layer": 0,
+        "kl_norm_vs_raw_bits": 0.0002480824545924892,
+        "top1_agree": true,
+        "p_top1_norm": 7.23783432476921e-06,
+        "p_top1_raw": 7.949301107146312e-06,
+        "p_answer_norm": 6.534005478897598e-06,
+        "p_answer_raw": 6.533718078571837e-06,
+        "answer_rank_norm": 100736,
+        "answer_rank_raw": 88475,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 11,
+        "kl_norm_vs_raw_bits": 1.5585735113873067,
+        "top1_agree": false,
+        "p_top1_norm": 3.352798375999555e-05,
+        "p_top1_raw": 0.088422991335392,
+        "p_answer_norm": 5.900156793359201e-06,
+        "p_answer_raw": 1.076281023415504e-06,
+        "answer_rank_norm": 88191,
+        "answer_rank_raw": 90758,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 21,
+        "kl_norm_vs_raw_bits": 4.470305487867287,
+        "top1_agree": false,
+        "p_top1_norm": 0.0001808197848731652,
+        "p_top1_raw": 0.3556567132472992,
+        "p_answer_norm": 5.636031801259378e-06,
+        "p_answer_raw": 1.336916426453172e-07,
+        "answer_rank_norm": 77215,
+        "answer_rank_raw": 70136,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 31,
+        "kl_norm_vs_raw_bits": 17.673506809201875,
+        "top1_agree": false,
+        "p_top1_norm": 0.5196493268013,
+        "p_top1_raw": 0.6817842721939087,
+        "p_answer_norm": 2.6226622139802203e-05,
+        "p_answer_raw": 2.8321214731036326e-12,
+        "answer_rank_norm": 1054,
+        "answer_rank_raw": 114,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      }
+    ],
+    "summary": {
+      "first_norm_only_semantic_layer": null,
+      "max_kl_norm_vs_raw_bits": 17.673506809201875,
+      "lens_artifact_risk": "high"
+    }
+  },
+  "ablation_summary": {
+    "L_copy_orig": null,
+    "L_sem_orig": 36,
+    "L_copy_nf": null,
+    "L_sem_nf": 36,
+    "delta_L_copy": null,
+    "delta_L_sem": 0
+  },
+  "control_prompt": {
+    "context_prompt": "Give the city name only, plain text. The capital of France is called simply",
+    "gold_answer": {
+      "string": "Paris",
+      "pieces": [
+        "ĠParis"
+      ],
+      "first_id": 12095,
+      "answer_ids": [
+        12095
+      ],
+      "variant": "with_space"
+    },
+    "gold_alignment": "ok"
+  },
+  "control_summary": {
+    "first_control_margin_pos": 0,
+    "max_control_margin": 0.9741542933185612
+  },
+  "gold_answer": {
+    "string": "Berlin",
+    "pieces": [
+      "ĠBerlin"
+    ],
+    "first_id": 19846,
+    "answer_ids": [
+      19846
+    ],
+    "variant": "with_space"
   }
 }
