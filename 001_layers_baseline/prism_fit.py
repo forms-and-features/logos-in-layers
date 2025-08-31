@@ -26,7 +26,7 @@ import torch
 
 from transformer_lens import HookedTransformer
 
-from layers_core.device_policy import select_best_device, choose_dtype
+from layers_core.device_policy import select_best_device, choose_dtype, resolve_param_count
 from layers_core.hooks import attach_residual_hooks, detach_hooks, build_cache_hook
 from layers_core.prism import (
     RunningMoments,
@@ -230,8 +230,9 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Fit Logit Prism artifacts (shared decoder) for baseline models")
     p.add_argument("model_id", nargs="?", help="Optional single MODEL_ID to fit; default fits all baseline models")
     p.add_argument("--device", default="auto", choices=["auto", "cuda", "mps", "cpu"], help="Compute device (default auto)")
-    p.add_argument("--tokens", type=int, default=200_000, help="Total sample budget (number of residual vectors)")
-    p.add_argument("--reservoir", type=int, default=50_000, help="Reservoir sample cap for basis (rows)")
+    # If omitted, tokens/reservoir are chosen automatically based on model size (quality settings)
+    p.add_argument("--tokens", type=int, default=None, help="Total sample budget (number of residual vectors). Default: auto by model size")
+    p.add_argument("--reservoir", type=int, default=None, help="Reservoir sample cap for basis (rows). Default: auto by model size")
     p.add_argument("--k", type=int, default=None, help="Rank k for subspace alignment (default min(512, d_model))")
     p.add_argument("--prism-dir", default="prisms", help="Artifacts root (relative to this script dir)")
     p.add_argument("--prompts-file", type=str, default=None, help="Optional path to a prompts file (one prompt per line)")
@@ -242,6 +243,17 @@ def main():
     args = parse_args()
     script_dir = Path(__file__).parent
     prism_root = script_dir / args.prism_dir
+
+    def _recommend_settings(model_id: str) -> Tuple[int, int]:
+        """Return (tokens, reservoir) quality defaults based on model size."""
+        params = resolve_param_count(model_id) or 0.0
+        # Buckets: ≤14B, 15–34B, ≥70B
+        if params <= 14.0e9:
+            return 100_000, 20_000
+        if params <= 34.0e9:
+            return 130_000, 25_000
+        # 70B+ class
+        return 160_000, 30_000
 
     def run_for(model_id: str) -> Tuple[bool, Optional[str]]:
         # Device selection
@@ -254,6 +266,15 @@ def main():
         else:
             dev = args.device
             dtype = choose_dtype(dev, model_id)
+        # Choose tokens/reservoir (auto by size, unless explicitly provided)
+        if args.tokens is None or args.reservoir is None:
+            rec_tokens, rec_res = _recommend_settings(model_id)
+            tokens_budget = int(args.tokens) if args.tokens is not None else rec_tokens
+            reservoir_cap = int(args.reservoir) if args.reservoir is not None else rec_res
+        else:
+            tokens_budget = int(args.tokens)
+            reservoir_cap = int(args.reservoir)
+        print(f"Prism settings for {model_id}: tokens={tokens_budget} reservoir={reservoir_cap} (k={args.k or 'auto'})")
         # Prompts iterator
         if args.prompts_file:
             prompts_iter = _iter_prompts_from_file(Path(args.prompts_file))
@@ -263,8 +284,8 @@ def main():
             model_id,
             device=dev,
             dtype=dtype,
-            tokens_budget=int(args.tokens),
-            reservoir_cap=int(args.reservoir),
+            tokens_budget=tokens_budget,
+            reservoir_cap=reservoir_cap,
             rank_k=(int(args.k) if args.k is not None else None),
             prism_root=prism_root,
             prompts_iter=prompts_iter,
@@ -287,4 +308,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
