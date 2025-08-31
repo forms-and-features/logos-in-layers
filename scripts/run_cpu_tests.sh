@@ -30,24 +30,24 @@ then
   exit 1
 fi
 
-${PY} 001_layers_and_logits/tests/test_norm_utils.py
-${PY} 001_layers_and_logits/tests/test_numerics.py
-${PY} 001_layers_and_logits/tests/test_csv_io.py
-${PY} 001_layers_and_logits/tests/test_collapse_rules.py
-${PY} 001_layers_and_logits/tests/test_device_policy.py
-${PY} 001_layers_and_logits/tests/test_hooks.py
-${PY} 001_layers_and_logits/tests/test_run_dir.py
-${PY} 001_layers_and_logits/tests/test_rank_metrics.py
-${PY} 001_layers_and_logits/tests/test_kl_metrics.py
-${PY} 001_layers_and_logits/tests/test_summaries.py
-${PY} 001_layers_and_logits/tests/test_raw_lens.py
+${PY} 001_layers_baseline/tests/test_norm_utils.py
+${PY} 001_layers_baseline/tests/test_numerics.py
+${PY} 001_layers_baseline/tests/test_csv_io.py
+${PY} 001_layers_baseline/tests/test_collapse_rules.py
+${PY} 001_layers_baseline/tests/test_device_policy.py
+${PY} 001_layers_baseline/tests/test_hooks.py
+${PY} 001_layers_baseline/tests/test_run_dir.py
+${PY} 001_layers_baseline/tests/test_rank_metrics.py
+${PY} 001_layers_baseline/tests/test_kl_metrics.py
+${PY} 001_layers_baseline/tests/test_summaries.py
+${PY} 001_layers_baseline/tests/test_raw_lens.py
 
 (
-  cd 001_layers_and_logits/tests
+  cd 001_layers_baseline/tests
   "$PY" test_refactored_self_test.py
 )
 
 # Normalization test prints status; still CPU-only
-${PY} 001_layers_and_logits/tests/test_normalization.py
+${PY} 001_layers_baseline/tests/test_normalization.py
 
 echo "All CPU-only tests completed."

@@ -377,7 +377,7 @@ How (minimal, reproducible).
    - Provenance: in JSON, persist `prism_provenance` (artifact paths, version/sha, sample_size, depths, whitening kind, rank k, seed) and `prism_metrics` (KL bits, top‑1 agree by depth; optional Prism L_copy/L_sem summary). Primary CSVs remain norm‑lens; Prism lives in sidecars.
 
 5) Storage & layout:
-   - Save per‑model artifacts under `001_layers_and_logits/prisms/<clean_model_name>/`:
+   - Save per‑model artifacts under `001_layers_baseline/prisms/<clean_model_name>/`:
      - `W_prism.pt` (tensor), `whiten.pt` (means/vars or Cholesky), `provenance.json`.
    - Mirror a short summary into each run’s JSON for auditability. If artifacts are missing, optionally perform a “quick fit” from current run cache (tag `fit_mode=quick`).
 

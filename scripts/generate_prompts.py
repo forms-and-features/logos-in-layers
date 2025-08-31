@@ -1,19 +1,19 @@
 import re
 from pathlib import Path
 
-TEMPLATE_PATH = Path("001_layers_and_logits/prompt-single-model-evaluation.txt")
-RUN_LATEST_DIR = Path("001_layers_and_logits/run-latest")
-OUTPUT_DIR = Path("001_layers_and_logits/prompts")
+TEMPLATE_PATH = Path("001_layers_baseline/prompt-single-model-evaluation.txt")
+RUN_LATEST_DIR = Path("001_layers_baseline/run-latest")
+OUTPUT_DIR = Path("001_layers_baseline/prompts")
 
 
 def load_template() -> str:
     text = TEMPLATE_PATH.read_text(encoding="utf-8")
     # Ensure the SCRIPT path is present just after its label.
     script_marker = "- SCRIPT – source code of the probe's script (for context):"
-    if script_marker in text and "001_layers_and_logits/run.py" not in text:
+    if script_marker in text and "001_layers_baseline/run.py" not in text:
         text = text.replace(
             script_marker + " \n",
-            script_marker + " \n001_layers_and_logits/run.py\n",
+            script_marker + " \n001_layers_baseline/run.py\n",
         )
     return text
 
@@ -36,7 +36,7 @@ def build_prompt(template: str, model_id: str) -> str:
     anchor = "\n- Your own research knowledge.\n"
     insertion = (
         f"\n- Your own research knowledge.\n\n"
-        f"- EVAL output file: 001_layers_and_logits/run-latest/evaluation-{model_id}.md\n"
+        f"- EVAL output file: 001_layers_baseline/run-latest/evaluation-{model_id}.md\n"
     )
     if anchor in content and f"evaluation-{model_id}.md" not in content:
         content = content.replace(anchor, insertion)

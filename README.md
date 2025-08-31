@@ -4,7 +4,7 @@ An experiment in LLM interpretability to provide empirical evidence for nominali
 
 ## Overview
 
-The first experimental suite (001_layers_and_logits/) introduces a lightweight logit-lens that tracks per-layer token-entropy in ten open-weight models.
+The first experimental suite (001_layers_baseline/) introduces a lightweight logit-lens that tracks per-layer token-entropy in ten open-weight models.
 
 Across these models, we see the typical "copy plateau, then sharp entropy drop" that coincides with factual recall. These measurements form the baseline for the causal and cross-modal probes planned in later stages.
 
@@ -12,9 +12,9 @@ Across these models, we see the typical "copy plateau, then sharp entropy drop" 
 
 ### 001: Layer-by-Layer Analysis
 
-Review of the latest iteration of the experiment: [`001_layers_and_logits/run-latest/meta-evaluation.md`](001_layers_and_logits/run-latest/meta-evaluation.md)
+Review of the latest iteration of the experiment: [`001_layers_baseline/run-latest/meta-evaluation.md`](001_layers_baseline/run-latest/meta-evaluation.md)
 
-See `001_layers_and_logits/README.md` for detailed usage, outputs, testing, and internals. Evaluation reports for the latest run live in `001_layers_and_logits/run-latest/*.md`; additional implementation notes are in `001_layers_and_logits/NOTES.md`.
+See `001_layers_baseline/README.md` for detailed usage, outputs, testing, and internals. Evaluation reports for the latest run live in `001_layers_baseline/run-latest/*.md`; additional implementation notes are in `001_layers_baseline/NOTES.md`.
 
 Device notes: the script now auto-selects the best device per model (prefers `cuda` → `mps` → `cpu`) based on a conservative memory‑fit estimate. You can still override with `--device {cuda|mps|cpu}` when needed.
 
@@ -53,7 +53,7 @@ cd 000_basic_chat
 python run.py
 
 # Run the layer-by-layer analysis (all models)
-cd 001_layers_and_logits
+cd 001_layers_baseline
 python run.py
 ```
 
@@ -79,7 +79,7 @@ python run.py --device cpu --out_dir ./some_dir mistralai/Mistral-7B-v0.1
 ### Testing and Self-Test
 
 - All CPU-only tests (no downloads): `scripts/run_cpu_tests.sh`
-- Single test: `venv/bin/python 001_layers_and_logits/tests/test_numerics.py`
+- Single test: `venv/bin/python 001_layers_baseline/tests/test_numerics.py`
 - KL self-test (network+HF auth may be required):
   - Default: `scripts/self_test.sh`
   - Custom: `scripts/self_test.sh <MODEL_ID> <DEVICE>` (e.g., `mps`)

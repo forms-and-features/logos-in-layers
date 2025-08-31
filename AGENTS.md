@@ -9,7 +9,7 @@ This is an LLM interpretability research project investigating the philosophical
 ## Project Structure
 
 - `000_basic_chat/` - Simple chat interface using llama-cpp for basic model interaction
-- `001_layers_and_logits/` - Main experimental suite with layer-by-layer analysis
+- `001_layers_baseline/` - Main experimental suite with layer-by-layer analysis
   - `run.py` - Core analysis script that evaluates multiple models
   - `run-latest/` - Latest experimental results and evaluation reports
   - `NOTES.md` - Technical implementation notes
@@ -45,7 +45,7 @@ huggingface-cli login  # Required for gated models
 - Alternate: `source venv/bin/activate && scripts/run_cpu_tests.sh` (uses `PYTHON_BIN=venv/bin/python`).
 - The test driver performs a preflight torch import check and exits with a helpful hint if the venv isn’t active.
 - In sandboxed/approval modes, request escalation when invoking these scripts so venv activation “sticks”.
-- For the KL scaling check: `scripts/self_test.sh [MODEL_ID] [DEVICE]` or `cd 001_layers_and_logits && python run.py --self-test <MODEL_ID>`.
+- For the KL scaling check: `scripts/self_test.sh [MODEL_ID] [DEVICE]` or `cd 001_layers_baseline && python run.py --self-test <MODEL_ID>`.
 
 ### Timeouts & Approvals (for agents)
 - Tool calls are non-interactive and stateless: activation and the command must run in the same call.
@@ -62,15 +62,15 @@ huggingface-cli login  # Required for gated models
 cd 000_basic_chat && python run.py
 
 # Layer-by-layer analysis (all models)
-cd 001_layers_and_logits && python run.py
+cd 001_layers_baseline && python run.py
 
 # Single model analysis
-cd 001_layers_and_logits && python run.py meta-llama/Meta-Llama-3-8B
+cd 001_layers_baseline && python run.py meta-llama/Meta-Llama-3-8B
 
 # Run KL sanity test to validate normalization scaling
-cd 001_layers_and_logits && python run.py --self-test meta-llama/Meta-Llama-3-8B
+cd 001_layers_baseline && python run.py --self-test meta-llama/Meta-Llama-3-8B
 # Or run standalone:
-cd 001_layers_and_logits && python kl_sanity_test.py meta-llama/Meta-Llama-3-8B
+cd 001_layers_baseline && python kl_sanity_test.py meta-llama/Meta-Llama-3-8B
 ```
 
 ## Code Architecture
@@ -79,8 +79,8 @@ cd 001_layers_and_logits && python kl_sanity_test.py meta-llama/Meta-Llama-3-8B
 Device selection is dynamic. The runner estimates whether a model will fit on each available device and auto-picks the best fit in order `cuda → mps → cpu`. The curated model list remains advisory; models that do not fit on any device are skipped with a clear log.
 
 ### Key Components
-- **Logit Lens Pipeline**: `001_layers_and_logits/run.py` implements layer-by-layer token prediction analysis
-- **KL Sanity Test**: `001_layers_and_logits/kl_sanity_test.py` validates normalization scaling correctness
+- **Logit Lens Pipeline**: `001_layers_baseline/run.py` implements layer-by-layer token prediction analysis
+- **KL Sanity Test**: `001_layers_baseline/kl_sanity_test.py` validates normalization scaling correctness
 - **Deterministic Execution**: SEED=316 with torch deterministic algorithms for reproducible results
 - **Output Formats**: 
   - JSON metadata files with run configuration
