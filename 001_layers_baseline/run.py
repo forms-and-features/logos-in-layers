@@ -31,19 +31,7 @@ TOP_K_VERBOSE = 20  # number of tokens to record for verbose slots and answer po
 # Layer-by-layer prediction analysis with LayerNorm lens correction
 # Toggle USE_NORM_LENS for raw vs normalized residual stream analysis
 
-# Candidate models (small → large). Device fit is decided per model at runtime.
-CANDIDATE_MODELS = [
-    "mistralai/Mistral-7B-v0.1",
-    "meta-llama/Meta-Llama-3-8B",
-    "Qwen/Qwen3-8B",
-    "google/gemma-2-9b",
-    "Qwen/Qwen3-14B",
-    "google/gemma-2-27b",
-    "01-ai/Yi-34B",
-    "meta-llama/Meta-Llama-3-70B",
-    "mistralai/Mistral-Small-24B-Base-2501",
-    "Qwen/Qwen2.5-72B",
-]
+from models import CANDIDATE_MODELS
 
 # Backward-compatible name used throughout this script
 CONFIRMED_MODELS = CANDIDATE_MODELS
@@ -84,6 +72,7 @@ from layers_core.raw_lens import (
 )
 from layers_core.summaries import summarize_pure_records
 from layers_core.gold import compute_gold_answer_info, compute_gold_answer_info_from_sequences
+from layers_core.prism import load_prism_artifacts, whiten_apply
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -219,6 +208,19 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             if analysis_b_U is not None:
                 analysis_b_U = analysis_b_U.float()
             UNEMBED_DTYPE = torch.float32
+
+        # Helper: unembed matmul that matches device of inputs (avoids CPU/MPS mismatch)
+        def _unembed_mm(X: torch.Tensor, W: torch.Tensor, b: torch.Tensor | None) -> torch.Tensor:
+            W_use = W
+            if hasattr(W_use, 'device') and X.device != W_use.device:
+                W_use = W_use.to(X.device)
+            out = X @ W_use
+            if b is not None:
+                b_use = b
+                if hasattr(b_use, 'device') and X.device != b_use.device:
+                    b_use = b_use.to(X.device)
+                out = out + b_use
+            return out
         
         context_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
         ground_truth = "Berlin"  # For display/comparison
@@ -305,6 +307,28 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             "context_prompt": context_prompt,
             "target_prediction": "first unseen token (likely 'Berlin')"
         }
+        # Prism sidecar setup (auto/on/off) and summary (filled below)
+        prism_mode = getattr(CLI_ARGS, "prism", "auto")
+        prism_dir_base = getattr(CLI_ARGS, "prism_dir", "prisms")
+        prism_clean = clean_model_name(model_id)
+        prism_art_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), prism_dir_base, prism_clean)
+        prism_stats = None
+        prism_Q = None
+        prism_prov = None
+        prism_active = False
+        prism_error = None
+        try:
+            if prism_mode != "off":
+                stats, Q, prov = load_prism_artifacts(prism_art_dir)
+                d_model = int(model.cfg.d_model)
+                if stats.mean.numel() != d_model or Q.shape != (d_model, d_model):
+                    raise RuntimeError(f"prism artifacts incompatible with model dims (d_model={d_model})")
+                prism_stats, prism_Q, prism_prov = stats, Q, prov
+                prism_active = True
+        except Exception as e:
+            prism_error = str(e)
+            if prism_mode == "on":
+                raise RuntimeError(f"Prism mode=on but artifacts unavailable/incompatible: {e}")
         # Collect data for JSON output
         json_data = {
             "prompt": {"type": "prompt", "context_prompt": context_prompt, "ground_truth": ground_truth},
@@ -318,6 +342,18 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             # Raw-vs-Norm sanity block (PROJECT_NOTES §1.4)
             "raw_lens_check": init_raw_lens_check(RAW_LENS_MODE),
         }
+        # Initialize prism summary on diagnostics
+        diag["prism_summary"] = {
+            "mode": prism_mode,
+            "artifact_path": prism_art_dir,
+            "present": bool(prism_prov is not None),
+            "compatible": bool(prism_active),
+            "k": (None if prism_prov is None else prism_prov.get("k")),
+            "layers": (None if prism_prov is None else prism_prov.get("layers")),
+            "error": prism_error,
+        }
+        # Sidecar record buffers for Prism (identical schemas to baseline CSVs)
+        json_data_prism = {"records": [], "pure_next_token_records": []}
         IMPORTANT_WORDS = ["Germany", "Berlin", "capital", "Answer", "word", "simply"]
 
         def is_verbose_position(pos, token_str, seq_len):
@@ -626,10 +662,16 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 
                 # Vectorized unembedding for all positions using analysis shadow weights
                 resid_cast = safe_cast_for_unembed(resid[0], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
-                logits_all = (resid_cast @ analysis_W_U)
-                if analysis_b_U is not None:
-                    logits_all = logits_all + analysis_b_U
+                logits_all = _unembed_mm(resid_cast, analysis_W_U, analysis_b_U)
                 logits_all = logits_all.float()  # downstream numerics in fp32
+                # Prism sidecar logits for all positions (if active)
+                if prism_active:
+                    Xw_L0 = whiten_apply(resid[0], prism_stats)
+                    Xp_L0 = Xw_L0 @ prism_Q.to(Xw_L0.device)
+                    Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
+                    bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
+                    prism_logits_all_L0 = _unembed_mm(Xp_L0, Wp, bp)
+                    prism_logits_all_L0 = prism_logits_all_L0.float()
                 
                 # Save residuals if requested
                 if config.keep_residuals:
@@ -673,6 +715,46 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     do_raw_lens_sample=True,
                     resid_raw_tensor=resid_raw_L0,
                 )
+                # Prism sidecar: pure next-token (layer 0)
+                if prism_active:
+                    last_pos = tokens.shape[1] - 1
+                    pz = prism_logits_all_L0[last_pos]
+                    pprobs = torch.softmax(pz, dim=0)
+                    pent = bits_entropy_from_logits(pz)
+                    _, p_top_idx = torch.topk(pz, TOP_K_RECORD, largest=True, sorted=True)
+                    p_top_probs = pprobs[p_top_idx]
+                    p_top_tokens = [decode_id(idx) for idx in p_top_idx]
+                    p_top1_id = p_top_idx[0].item()
+                    # Update rolling window for copy detector (shares window_ids)
+                    window_ids.append(p_top1_id)
+                    if len(window_ids) > getattr(config, "copy_window_k", 1):
+                        window_ids.pop(0)
+                    p_copy = detect_copy_collapse_id_subseq(pz, ctx_ids, window_ids, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin)
+                    if p_copy and is_pure_whitespace_or_punct(p_top_tokens[0]):
+                        p_copy = False
+                    p_metrics = compute_next_token_metrics(pprobs, p_top1_id, final_probs, first_ans_id, topk_cum=5)
+                    p_is_answer = (p_metrics.get("answer_rank") == 1) if p_metrics.get("answer_rank") is not None else is_semantic_top1(p_top_tokens[0], ground_truth)
+                    _pn = torch.norm(pz) + 1e-12
+                    p_cos = torch.dot((pz / _pn), final_dir).item()
+                    json_data_prism["pure_next_token_records"].append({
+                        "prompt_id": current_prompt_id,
+                        "prompt_variant": current_prompt_variant,
+                        "layer": 0,
+                        "pos": last_pos,
+                        "token": "⟨NEXT⟩",
+                        "entropy": pent,
+                        "topk": [[tok, prob.item()] for tok, prob in zip(p_top_tokens, p_top_probs)],
+                        "copy_collapse": p_copy,
+                        "entropy_collapse": pent <= 1.0,
+                        "is_answer": p_is_answer,
+                        "p_top1": p_metrics.get("p_top1"),
+                        "p_top5": p_metrics.get("p_top5"),
+                        "p_answer": p_metrics.get("p_answer"),
+                        "kl_to_final_bits": p_metrics.get("kl_to_final_bits"),
+                        "answer_rank": p_metrics.get("answer_rank"),
+                        "cos_to_final": p_cos,
+                        "control_margin": None,
+                    })
                 
                 # --- free Layer-0 residual to keep host RAM flat ---------------------
                 del resid
@@ -706,10 +788,16 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     
                     # Vectorized unembedding for all positions using analysis shadow weights
                     resid_cast = safe_cast_for_unembed(resid[0], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
-                    logits_all = (resid_cast @ analysis_W_U)
-                    if analysis_b_U is not None:
-                        logits_all = logits_all + analysis_b_U
+                    logits_all = _unembed_mm(resid_cast, analysis_W_U, analysis_b_U)
                     logits_all = logits_all.float()  # downstream numerics in fp32
+                    # Prism sidecar logits (post-block) for all positions
+                    if prism_active:
+                        Xw = whiten_apply(resid[0], prism_stats)
+                        Xp = Xw @ prism_Q.to(Xw.device)
+                        Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
+                        bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
+                        prism_logits_all = _unembed_mm(Xp, Wp, bp)
+                        prism_logits_all = prism_logits_all.float()
                     
                     # Save residuals if requested
                     if config.keep_residuals:
@@ -736,8 +824,26 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         _, top_indices_k = torch.topk(layer_logits, k, largest=True, sorted=True)
                         top_probs_k = full_probs[top_indices_k]
                         top_tokens_k = [decode_id(idx) for idx in top_indices_k]
-                        print_summary(layer + 1, pos, token_str, entropy_bits, top_tokens_k, top_probs_k)
-                        # Verbose console output removed to reduce noise - data still captured in files
+                    print_summary(layer + 1, pos, token_str, entropy_bits, top_tokens_k, top_probs_k)
+                    # Verbose console output removed to reduce noise - data still captured in files
+                    # Prism sidecar record (post-block layer)
+                    if prism_active:
+                        pz = prism_logits_all[pos]
+                        pprobs = torch.softmax(pz, dim=0)
+                        pent = bits_entropy_from_logits(pz)
+                        _, p_top_idx = torch.topk(pz, k, largest=True, sorted=True)
+                        p_top_probs = pprobs[p_top_idx]
+                        p_top_tokens = [decode_id(idx) for idx in p_top_idx]
+                        json_data_prism["records"].append({
+                            "type": "record",
+                            "prompt_id": current_prompt_id,
+                            "prompt_variant": current_prompt_variant,
+                            "layer": layer + 1,
+                            "pos": pos,
+                            "token": token_str,
+                            "entropy": pent,
+                            "topk": [[tok, prob.item()] for tok, prob in zip(p_top_tokens, p_top_probs)],
+                        })
                     
                     # Pure next-token record via helper (post-block layer)
                     emit_pure_next_token_record(
@@ -753,6 +859,45 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         do_raw_lens_sample=_should_sample(layer + 1),
                         resid_raw_tensor=resid_raw,
                     )
+                    # Prism sidecar pure next-token record (post-block layer)
+                    if prism_active:
+                        last_pos = tokens.shape[1] - 1
+                        pz = prism_logits_all[last_pos]
+                        pprobs = torch.softmax(pz, dim=0)
+                        pent = bits_entropy_from_logits(pz)
+                        _, p_top_idx = torch.topk(pz, TOP_K_RECORD, largest=True, sorted=True)
+                        p_top_probs = pprobs[p_top_idx]
+                        p_top_tokens = [decode_id(idx) for idx in p_top_idx]
+                        p_top1_id = p_top_idx[0].item()
+                        window_ids.append(p_top1_id)
+                        if len(window_ids) > getattr(config, "copy_window_k", 1):
+                            window_ids.pop(0)
+                        p_copy = detect_copy_collapse_id_subseq(pz, ctx_ids, window_ids, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin)
+                        if p_copy and is_pure_whitespace_or_punct(p_top_tokens[0]):
+                            p_copy = False
+                        p_metrics = compute_next_token_metrics(pprobs, p_top1_id, final_probs, first_ans_id, topk_cum=5)
+                        p_is_answer = (p_metrics.get("answer_rank") == 1) if p_metrics.get("answer_rank") is not None else is_semantic_top1(p_top_tokens[0], ground_truth)
+                        _pn = torch.norm(pz) + 1e-12
+                        p_cos = torch.dot((pz / _pn), final_dir).item()
+                        json_data_prism["pure_next_token_records"].append({
+                            "prompt_id": current_prompt_id,
+                            "prompt_variant": current_prompt_variant,
+                            "layer": layer + 1,
+                            "pos": last_pos,
+                            "token": "⟨NEXT⟩",
+                            "entropy": pent,
+                            "topk": [[tok, prob.item()] for tok, prob in zip(p_top_tokens, p_top_probs)],
+                            "copy_collapse": p_copy,
+                            "entropy_collapse": pent <= 1.0,
+                            "is_answer": p_is_answer,
+                            "p_top1": p_metrics.get("p_top1"),
+                            "p_top5": p_metrics.get("p_top5"),
+                            "p_answer": p_metrics.get("p_answer"),
+                            "kl_to_final_bits": p_metrics.get("kl_to_final_bits"),
+                            "answer_rank": p_metrics.get("answer_rank"),
+                            "cos_to_final": p_cos,
+                            "control_margin": None,
+                        })
 
                     # Record last-layer lens vs final-head consistency snapshot
                     if layer == (n_layers - 1):
@@ -1030,10 +1175,13 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     norm_module = get_correct_norm_module(model, 0, probe_after_block=False)
                     resid = apply_norm_or_skip(resid, norm_module)
                 casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
-                layer_logits = (casted @ analysis_W_U)
-                if analysis_b_U is not None:
-                    layer_logits = layer_logits + analysis_b_U
-                layer_logits = layer_logits.float()
+                layer_logits = _unembed_mm(casted, analysis_W_U, analysis_b_U).float()
+                if prism_active:
+                    Xw_nf0 = whiten_apply(resid[0, :, :], prism_stats)
+                    Xp_nf0 = Xw_nf0 @ prism_Q.to(Xw_nf0.device)
+                    Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
+                    bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
+                    prism_logits_all_nf0 = _unembed_mm(Xp_nf0, Wp, bp).float()
                 emit_pure_next_token_record(
                     0,
                     layer_logits,
@@ -1047,6 +1195,44 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     do_raw_lens_sample=False,
                     resid_raw_tensor=resid_raw_tensor,
                 )
+                if prism_active:
+                    last_pos = tokens_nf.shape[1] - 1
+                    pz = prism_logits_all_nf0[last_pos]
+                    pprobs = torch.softmax(pz, dim=0)
+                    pent = bits_entropy_from_logits(pz)
+                    _, p_top_idx = torch.topk(pz, TOP_K_RECORD, largest=True, sorted=True)
+                    p_top_probs = pprobs[p_top_idx]
+                    p_top_tokens = [decode_id(idx) for idx in p_top_idx]
+                    p_top1_id = p_top_idx[0].item()
+                    window_ids_nf.append(p_top1_id)
+                    if len(window_ids_nf) > getattr(config, "copy_window_k", 1):
+                        window_ids_nf.pop(0)
+                    p_copy = detect_copy_collapse_id_subseq(pz, ctx_ids_nf, window_ids_nf, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin)
+                    if p_copy and is_pure_whitespace_or_punct(p_top_tokens[0]):
+                        p_copy = False
+                    p_metrics = compute_next_token_metrics(pprobs, p_top1_id, final_probs_nf, first_ans_id_nf, topk_cum=5)
+                    p_is_answer = (p_metrics.get("answer_rank") == 1) if p_metrics.get("answer_rank") is not None else is_semantic_top1(p_top_tokens[0], ground_truth)
+                    _pn = torch.norm(pz) + 1e-12
+                    p_cos = torch.dot((pz / _pn), final_dir_nf).item()
+                    json_data_prism["pure_next_token_records"].append({
+                        "prompt_id": current_prompt_id,
+                        "prompt_variant": current_prompt_variant,
+                        "layer": 0,
+                        "pos": last_pos,
+                        "token": "⟨NEXT⟩",
+                        "entropy": pent,
+                        "topk": [[tok, prob.item()] for tok, prob in zip(p_top_tokens, p_top_probs)],
+                        "copy_collapse": p_copy,
+                        "entropy_collapse": pent <= 1.0,
+                        "is_answer": p_is_answer,
+                        "p_top1": p_metrics.get("p_top1"),
+                        "p_top5": p_metrics.get("p_top5"),
+                        "p_answer": p_metrics.get("p_answer"),
+                        "kl_to_final_bits": p_metrics.get("kl_to_final_bits"),
+                        "answer_rank": p_metrics.get("answer_rank"),
+                        "cos_to_final": p_cos,
+                        "control_margin": None,
+                    })
 
                 # Post-block layers
                 n_layers = model.cfg.n_layers
@@ -1057,10 +1243,13 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
                         resid = apply_norm_or_skip(resid, norm_module)
                     casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
-                    layer_logits = (casted @ analysis_W_U)
-                    if analysis_b_U is not None:
-                        layer_logits = layer_logits + analysis_b_U
-                    layer_logits = layer_logits.float()
+                    layer_logits = _unembed_mm(casted, analysis_W_U, analysis_b_U).float()
+                    if prism_active:
+                        Xw_nfl = whiten_apply(resid[0, :, :], prism_stats)
+                        Xp_nfl = Xw_nfl @ prism_Q.to(Xw_nfl.device)
+                        Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
+                        bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
+                        prism_logits_all_nfl = _unembed_mm(Xp_nfl, Wp, bp).float()
                     emit_pure_next_token_record(
                         layer + 1,
                         layer_logits,
@@ -1074,6 +1263,44 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         do_raw_lens_sample=False,
                         resid_raw_tensor=resid_raw_tensor,
                     )
+                    if prism_active:
+                        last_pos = tokens_nf.shape[1] - 1
+                        pz = prism_logits_all_nfl[last_pos]
+                        pprobs = torch.softmax(pz, dim=0)
+                        pent = bits_entropy_from_logits(pz)
+                        _, p_top_idx = torch.topk(pz, TOP_K_RECORD, largest=True, sorted=True)
+                        p_top_probs = pprobs[p_top_idx]
+                        p_top_tokens = [decode_id(idx) for idx in p_top_idx]
+                        p_top1_id = p_top_idx[0].item()
+                        window_ids_nf.append(p_top1_id)
+                        if len(window_ids_nf) > getattr(config, "copy_window_k", 1):
+                            window_ids_nf.pop(0)
+                        p_copy = detect_copy_collapse_id_subseq(pz, ctx_ids_nf, window_ids_nf, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin)
+                        if p_copy and is_pure_whitespace_or_punct(p_top_tokens[0]):
+                            p_copy = False
+                        p_metrics = compute_next_token_metrics(pprobs, p_top1_id, final_probs_nf, first_ans_id_nf, topk_cum=5)
+                        p_is_answer = (p_metrics.get("answer_rank") == 1) if p_metrics.get("answer_rank") is not None else is_semantic_top1(p_top_tokens[0], ground_truth)
+                        _pn = torch.norm(pz) + 1e-12
+                        p_cos = torch.dot((pz / _pn), final_dir_nf).item()
+                        json_data_prism["pure_next_token_records"].append({
+                            "prompt_id": current_prompt_id,
+                            "prompt_variant": current_prompt_variant,
+                            "layer": layer + 1,
+                            "pos": last_pos,
+                            "token": "⟨NEXT⟩",
+                            "entropy": pent,
+                            "topk": [[tok, prob.item()] for tok, prob in zip(p_top_tokens, p_top_probs)],
+                            "copy_collapse": p_copy,
+                            "entropy_collapse": pent <= 1.0,
+                            "is_answer": p_is_answer,
+                            "p_top1": p_metrics.get("p_top1"),
+                            "p_top5": p_metrics.get("p_top5"),
+                            "p_answer": p_metrics.get("p_answer"),
+                            "kl_to_final_bits": p_metrics.get("kl_to_final_bits"),
+                            "answer_rank": p_metrics.get("answer_rank"),
+                            "cos_to_final": p_cos,
+                            "control_margin": None,
+                        })
 
                 # Summarize ablation variant
                 diag_nf = summarize_pure_records(
@@ -1127,10 +1354,14 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     norm_module = get_correct_norm_module(model, 0, probe_after_block=False)
                     resid = apply_norm_or_skip(resid, norm_module)
                 casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
-                layer_logits = (casted @ analysis_W_U)
-                if analysis_b_U is not None:
-                    layer_logits = layer_logits + analysis_b_U
-                layer_logits = layer_logits.float()
+                layer_logits = _unembed_mm(casted, analysis_W_U, analysis_b_U).float()
+                # Prepare Prism logits for control L0 if active
+                if prism_active:
+                    Xw_ctl0 = whiten_apply(resid[0, :, :], prism_stats)
+                    Xp_ctl0 = Xw_ctl0 @ prism_Q.to(Xw_ctl0.device)
+                    Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
+                    bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
+                    prism_logits_all_ctl0 = _unembed_mm(Xp_ctl0, Wp, bp).float()
                 emit_pure_next_token_record(
                     0,
                     layer_logits,
@@ -1145,6 +1376,50 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     resid_raw_tensor=resid_raw_tensor,
                     control_ids=(first_ans_id_ctl, first_ans_id),
                 )
+                if prism_active:
+                    last_pos = tokens_ctl.shape[1] - 1
+                    pz = prism_logits_all_ctl0[last_pos]
+                    pprobs = torch.softmax(pz, dim=0)
+                    pent = bits_entropy_from_logits(pz)
+                    _, p_top_idx = torch.topk(pz, TOP_K_RECORD, largest=True, sorted=True)
+                    p_top_probs = pprobs[p_top_idx]
+                    p_top_tokens = [decode_id(idx) for idx in p_top_idx]
+                    p_top1_id = p_top_idx[0].item()
+                    window_ids.append(p_top1_id)
+                    if len(window_ids) > getattr(config, "copy_window_k", 1):
+                        window_ids.pop(0)
+                    p_copy = detect_copy_collapse_id_subseq(pz, ctx_ids_ctl, window_ids, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin)
+                    if p_copy and is_pure_whitespace_or_punct(p_top_tokens[0]):
+                        p_copy = False
+                    p_metrics = compute_next_token_metrics(pprobs, p_top1_id, final_probs_ctl, first_ans_id_ctl, topk_cum=5)
+                    p_is_answer = (p_metrics.get("answer_rank") == 1) if p_metrics.get("answer_rank") is not None else is_semantic_top1(p_top_tokens[0], control_ground_truth)
+                    _pn = torch.norm(pz) + 1e-12
+                    p_cos = torch.dot((pz / _pn), final_dir_ctl).item()
+                    control_margin = None
+                    try:
+                        if first_ans_id_ctl is not None and first_ans_id is not None:
+                            control_margin = float(pprobs[int(first_ans_id_ctl)]) - float(pprobs[int(first_ans_id)])
+                    except Exception:
+                        control_margin = None
+                    json_data_prism["pure_next_token_records"].append({
+                        "prompt_id": current_prompt_id,
+                        "prompt_variant": current_prompt_variant,
+                        "layer": 0,
+                        "pos": last_pos,
+                        "token": "⟨NEXT⟩",
+                        "entropy": pent,
+                        "topk": [[tok, prob.item()] for tok, prob in zip(p_top_tokens, p_top_probs)],
+                        "copy_collapse": p_copy,
+                        "entropy_collapse": pent <= 1.0,
+                        "is_answer": p_is_answer,
+                        "p_top1": p_metrics.get("p_top1"),
+                        "p_top5": p_metrics.get("p_top5"),
+                        "p_answer": p_metrics.get("p_answer"),
+                        "kl_to_final_bits": p_metrics.get("kl_to_final_bits"),
+                        "answer_rank": p_metrics.get("answer_rank"),
+                        "cos_to_final": p_cos,
+                        "control_margin": control_margin,
+                    })
 
                 # Each block's post-residual layers
                 n_layers = model.cfg.n_layers
@@ -1154,25 +1429,72 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     if USE_NORM_LENS:
                         norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
                         resid = apply_norm_or_skip(resid, norm_module)
-                    casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
-                    layer_logits = (casted @ analysis_W_U)
-                    if analysis_b_U is not None:
-                        layer_logits = layer_logits + analysis_b_U
-                    layer_logits = layer_logits.float()
-                    emit_pure_next_token_record(
-                        layer + 1,
-                        layer_logits,
-                        tokens_ctl,
-                        ctx_ids_ctl,
-                        window_ids,
-                        final_probs_ctl,
-                        first_ans_id_ctl,
-                        final_dir_ctl,
-                        collected_records=[],
-                        do_raw_lens_sample=False,
-                        resid_raw_tensor=resid_raw_tensor,
-                        control_ids=(first_ans_id_ctl, first_ans_id),
-                    )
+                casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
+                layer_logits = _unembed_mm(casted, analysis_W_U, analysis_b_U).float()
+                if prism_active:
+                    Xw_ctll = whiten_apply(resid[0, :, :], prism_stats)
+                    Xp_ctll = Xw_ctll @ prism_Q.to(Xw_ctll.device)
+                    Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
+                    bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
+                    prism_logits_all_ctll = _unembed_mm(Xp_ctll, Wp, bp).float()
+                emit_pure_next_token_record(
+                    layer + 1,
+                    layer_logits,
+                    tokens_ctl,
+                    ctx_ids_ctl,
+                    window_ids,
+                    final_probs_ctl,
+                    first_ans_id_ctl,
+                    final_dir_ctl,
+                    collected_records=[],
+                    do_raw_lens_sample=False,
+                    resid_raw_tensor=resid_raw_tensor,
+                    control_ids=(first_ans_id_ctl, first_ans_id),
+                )
+                if prism_active:
+                    last_pos = tokens_ctl.shape[1] - 1
+                    pz = prism_logits_all_ctll[last_pos]
+                    pprobs = torch.softmax(pz, dim=0)
+                    pent = bits_entropy_from_logits(pz)
+                    _, p_top_idx = torch.topk(pz, TOP_K_RECORD, largest=True, sorted=True)
+                    p_top_probs = pprobs[p_top_idx]
+                    p_top_tokens = [decode_id(idx) for idx in p_top_idx]
+                    p_top1_id = p_top_idx[0].item()
+                    window_ids.append(p_top1_id)
+                    if len(window_ids) > getattr(config, "copy_window_k", 1):
+                        window_ids.pop(0)
+                    p_copy = detect_copy_collapse_id_subseq(pz, ctx_ids_ctl, window_ids, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin)
+                    if p_copy and is_pure_whitespace_or_punct(p_top_tokens[0]):
+                        p_copy = False
+                    p_metrics = compute_next_token_metrics(pprobs, p_top1_id, final_probs_ctl, first_ans_id_ctl, topk_cum=5)
+                    p_is_answer = (p_metrics.get("answer_rank") == 1) if p_metrics.get("answer_rank") is not None else is_semantic_top1(p_top_tokens[0], control_ground_truth)
+                    _pn = torch.norm(pz) + 1e-12
+                    p_cos = torch.dot((pz / _pn), final_dir_ctl).item()
+                    control_margin = None
+                    try:
+                        if first_ans_id_ctl is not None and first_ans_id is not None:
+                            control_margin = float(pprobs[int(first_ans_id_ctl)]) - float(pprobs[int(first_ans_id)])
+                    except Exception:
+                        control_margin = None
+                    json_data_prism["pure_next_token_records"].append({
+                        "prompt_id": current_prompt_id,
+                        "prompt_variant": current_prompt_variant,
+                        "layer": layer + 1,
+                        "pos": last_pos,
+                        "token": "⟨NEXT⟩",
+                        "entropy": pent,
+                        "topk": [[tok, prob.item()] for tok, prob in zip(p_top_tokens, p_top_probs)],
+                        "copy_collapse": p_copy,
+                        "entropy_collapse": pent <= 1.0,
+                        "is_answer": p_is_answer,
+                        "p_top1": p_metrics.get("p_top1"),
+                        "p_top5": p_metrics.get("p_top5"),
+                        "p_answer": p_metrics.get("p_answer"),
+                        "kl_to_final_bits": p_metrics.get("kl_to_final_bits"),
+                        "answer_rank": p_metrics.get("answer_rank"),
+                        "cos_to_final": p_cos,
+                        "control_margin": control_margin,
+                    })
             finally:
                 detach_hooks(hooks)
                 residual_cache.clear()
@@ -1240,6 +1562,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         
+        # Attach Prism buffers for outer writer (sidecar CSVs)
+        json_data["prism_sidecar"] = json_data_prism
         return json_data
 
     try:
@@ -1255,10 +1579,31 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
 
         # Write CSV files FIRST (they need the full record lists)
         write_csv_files(json_data, csv_filepath, pure_csv_filepath, TOP_K_VERBOSE)
+        # Prism sidecar CSVs (auto/on): only if artifacts were loaded and records exist
+        try:
+            prism_buf = json_data.get("prism_sidecar")
+            prism_summary = (json_data.get("diagnostics") or {}).get("prism_summary") or {}
+            if prism_summary.get("compatible") and prism_buf and (prism_buf["records"] or prism_buf["pure_next_token_records"]):
+                out_dir = os.path.dirname(csv_filepath)
+                clean_name = clean_model_name(model_id)
+                csv_prism = os.path.join(out_dir, f"output-{clean_name}-records-prism.csv")
+                pure_prism = os.path.join(out_dir, f"output-{clean_name}-pure-next-token-prism.csv")
+                write_csv_files(prism_buf, csv_prism, pure_prism, TOP_K_VERBOSE)
+                print(f"✅ Prism Records CSV saved to: {csv_prism}")
+                print(f"✅ Prism Pure next-token CSV saved to: {pure_prism}")
+            elif getattr(CLI_ARGS, "prism", "auto") != "off":
+                # Single-line notice in auto mode when missing/incompatible
+                err = prism_summary.get("error")
+                if err:
+                    print(f"ℹ️ Prism sidecar disabled: {err}")
+                else:
+                    print("ℹ️ Prism sidecar not written (no artifacts or empty buffers)")
+        except Exception as e:
+            print(f"⚠️ Failed to write Prism sidecar CSVs: {e}")
 
         # Strip bulky per-token records from JSON to keep it compact
         json_data_compact = {k: v for k, v in json_data.items()
-                             if k not in ("records", "pure_next_token_records")}
+                             if k not in ("records", "pure_next_token_records", "prism_sidecar")}
 
         # Write compact JSON metadata
         with open(meta_filepath, 'w', encoding='utf-8') as f:
@@ -1387,6 +1732,14 @@ def parse_cli():
     p.add_argument("--self-test",
                    action="store_true",
                    help="Run KL sanity test to validate normalization scaling (PROJECT_NOTES.md section 1.1). Can also run standalone: python kl_sanity_test.py MODEL_ID")
+    # Prism sidecar (shared decoder) controls
+    p.add_argument("--prism",
+                   default=os.environ.get("LOGOS_PRISM", "auto"),
+                   choices=["auto", "on", "off"],
+                   help="Prism sidecar mode: auto (default), on (require artifacts), off (disable)")
+    p.add_argument("--prism-dir",
+                   default="prisms",
+                   help="Prism artifacts root directory (default: prisms under this script directory)")
     return p.parse_args()
 
 

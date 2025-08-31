@@ -53,6 +53,7 @@ models/
 *.safetensors
 checkpoints/
 weights/
+001_layers_baseline/prisms/
 
 # HuggingFace cache
 .cache/

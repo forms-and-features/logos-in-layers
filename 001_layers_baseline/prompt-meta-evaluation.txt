@@ -6,7 +6,7 @@ With the help of an AI co-pilot, the user ran experiments on a few open-weights 
 - the python script: 
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run.py
 
-- structured output of the script for each of the models in JSON (model-level results) and CSV (detailed layer-by-layer results) files:
+- structured output of the script for each of the models in JSON (model-level results) and CSV (detailed layer-by-layer results) files. Some runs may also include Prism sidecar CSVs and a `diagnostics.prism_summary` block in JSON for calibration comparison:
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b.json
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b-records.csv
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b-pure-next-token.csv
@@ -58,6 +58,13 @@ https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-Yi-34B.md
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-Mistral-Small-24B-Base-2501.md
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-Qwen2.5-72B.md
+
+
+If Prism sidecars are present in the run (calibration overlay), they will appear as additional CSVs per model:
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-records-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-pure-next-token-prism.csv
+… and similarly for other models. JSON files include `diagnostics.prism_summary` when Prism was active.
+
 
 - cross-model evaluation:
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-cross-models.md

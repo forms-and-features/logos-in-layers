@@ -46,6 +46,30 @@ Run creates or rotates `run-latest/` (previous → `run-YYYYMMDD-HHMM/`). For ea
   - Default (Mistral‑7B on CPU): `scripts/self_test.sh`
   - Custom: `scripts/self_test.sh <MODEL_ID> <DEVICE>` (e.g., `mps`)
 
+## Prism Artifacts (optional)
+
+Prism sidecar decode writes `*-records-prism.csv` and `*-pure-next-token-prism.csv` when artifacts are present under `001_layers_baseline/prisms/<clean_model>/`.
+
+- Upload artifacts (from a machine where you ran `prism_fit.py`):
+  - `python scripts/prism_upload.py --repo-id <user_or_org>/logos-in-layers-prism`
+  - Or only specific models: `--models Meta-Llama-3-8B Qwen3-8B`
+
+- Download artifacts (on the analysis machine):
+  - Single model: `python scripts/prism_download.py --repo-id <user_or_org>/logos-in-layers-prism --models Meta-Llama-3-8B`
+  - Multiple models: `--models Meta-Llama-3-8B Qwen3-8B`
+  - All: `--all`
+
+Once artifacts are in place, run with Prism auto (default):
+
+```bash
+cd 001_layers_baseline
+python run.py  # prism=auto; sidecar CSVs are emitted when artifacts are present
+```
+
+Notes:
+- `001_layers_baseline/prisms/` is git-ignored. Host artifacts on a public HF dataset repo for easy reuse.
+- Public repos require no auth for download; private repos do.
+
 Self-test notes: `--self-test` validates scaling and prints results; it does not write JSON/CSV artifacts or rotate `run-latest/`.
 
 ## CLI Flags

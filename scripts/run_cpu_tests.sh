@@ -42,10 +42,18 @@ ${PY} 001_layers_baseline/tests/test_kl_metrics.py
 ${PY} 001_layers_baseline/tests/test_summaries.py
 ${PY} 001_layers_baseline/tests/test_raw_lens.py
 
+# Prism unit tests (CPU-only)
+${PY} 001_layers_baseline/tests/test_prism_whiten.py
+${PY} 001_layers_baseline/tests/test_prism_procrustes.py
+${PY} 001_layers_baseline/tests/test_prism_artifacts.py
+
 (
   cd 001_layers_baseline/tests
   "$PY" test_refactored_self_test.py
 )
+
+# Prism sidecar smoke test (uses mock model and synthetic artifacts)
+${PY} 001_layers_baseline/tests/test_prism_sidecar.py
 
 # Normalization test prints status; still CPU-only
 ${PY} 001_layers_baseline/tests/test_normalization.py

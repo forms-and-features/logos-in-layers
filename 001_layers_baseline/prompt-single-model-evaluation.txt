@@ -10,6 +10,8 @@ INPUTS
 Note: this JSON is a compact version; the bulky per-token records live only in the CSVs.
 Also read `diagnostics.last_layer_consistency` (last‑layer head calibration): `{ kl_to_final_bits, top1_agree, p_top1_lens, p_top1_model, p_answer_lens, answer_rank_lens, temp_est, kl_after_temp_bits, cfg_transform, kl_after_transform_bits, warn_high_last_layer_kl }`.
 
+If present, also read `diagnostics.prism_summary` (Prism sidecar calibration): `{ mode, artifact_path, present, compatible, k, layers, error }`.
+
 Use the `gold_answer` block for ID‑level alignment: `{ string, pieces, first_id, answer_ids, variant }`.
 The `is_answer` flag and `p_answer`/`answer_rank` are computed using `first_id` (robust to leading‑space/multi‑piece tokenization).
 
@@ -21,6 +23,10 @@ Ablation: read `ablation_summary` with `{ L_copy_orig, L_sem_orig, L_copy_nf, L_
 001_layers_baseline/run-latest/output-MODEL-pure-next-token.csv
 Each CSV now includes leading `prompt_id` (`pos` for Germany→Berlin; `ctl` for France→Paris) and `prompt_variant` (`orig`/`no_filler`) columns, and a `rest_mass` column (probability not covered by the listed top-k tokens).
 The pure-next-token CSV adds boolean flags `copy_collapse`, `entropy_collapse`, and `is_answer` produced by the script, as well as per-layer probability/calibration fields: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, `kl_to_final_bits` (bits), `cos_to_final` (cosine similarity to the final logits direction; PROJECT_NOTES §1.5), and `control_margin = p(Paris) − p(Berlin)` for control rows.
+
+If present, include the Prism sidecar CSVs for calibration comparison:
+001_layers_baseline/run-latest/output-MODEL-records-prism.csv
+001_layers_baseline/run-latest/output-MODEL-pure-next-token-prism.csv
 
 - Parameters (copy-collapse): copy_threshold = 0.95, copy_margin = 0.10
 
@@ -63,8 +69,8 @@ A table, one row per each layer: “L 0 – entropy  X bits, top‑1 ‘t
 Bold semantic layer (L_semantic) – first layer where `is_answer = True` (ID‑level gold token). For reference, `gold_answer.string` is “Berlin”.
 
 Control margin (from JSON `control_summary`):
-• `first_control_margin_pos` = first layer with control_margin > 0;  
-• `max_control_margin` = maximum margin across layers.  
+• `first_control_margin_pos` = first layer with control_margin > 0;
+• `max_control_margin` = maximum margin across layers.
 If gold alignment for either gold token is unresolved, note the limitation and avoid absolute probability claims; prefer rank thresholds.
 Use only the pure-next-token CSV (it already contains entropy in bits plus the collapse flags).  The `rest_mass` column is provided for KL/entropy sanity-checks.
 
@@ -82,12 +88,20 @@ Rank milestones (from diagnostics):
 rank ≤ 10 at layer …, rank ≤ 5 at layer …, rank ≤ 1 at layer …
 KL milestones (from diagnostics):  
 first_kl_below_1.0 at layer …, first_kl_below_0.5 at layer …; comment on whether KL decreases with depth and is ≈ 0 at final. If not ≈ 0 at final, annotate it, reference `diagnostics.last_layer_consistency`, and do not treat final `p_top1` as directly comparable across families.
- Cosine milestones (from pure CSV):  
+ Cosine milestones (from pure CSV):
  first `cos_to_final ≥ 0.2` at layer …, `≥ 0.4` at layer …, `≥ 0.6` at layer …; final `cos_to_final = …`.
+
+Prism Sidecar Analysis (if present)
+- Presence: if `diagnostics.prism_summary.compatible != true`, skip Prism analysis and note unavailability.
+- Early-depth stability: at L≈0, ⌊n/4⌋, ⌊n/2⌋, ⌊3n/4⌋, compare KL(P_layer||P_final) from baseline vs `*-pure-next-token-prism.csv`.
+- Rank milestones: compute `first_rank_le_{10,5,1}` from Prism pure CSV and report deltas vs baseline.
+- Top‑1 agreement: at sampled depths, note any Prism→final top‑1 agreements where baseline disagreed (and vice versa).
+- Cosine drift: compare `cos_to_final` at early/mid layers (Prism vs baseline); call out earlier stabilization if observed.
+- Copy flags: verify `copy_collapse` calls don’t spuriously flip under Prism; explain any flips plausibly.
+- Verdict: Helpful (clear KL drop ≥0.5 bits at early layer and same/earlier `first_rank_le_1`), Neutral (±0.2 bits, no qualitative shifts), or Regressive (KL increases or later rank milestones).
 
 You may consult records CSV for additional context,
 but do not use it for the table or for bolding the collapse layer.
-
 
 4. Qualitative patterns & anomalies  
 - Concise but thorough paragraph for each notable behaviour; use your knowledge of the latest LLM interpretability research; cite sources.
