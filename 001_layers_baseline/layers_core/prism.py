@@ -142,11 +142,17 @@ def _left_singular_vectors_WU(W_U: torch.Tensor, k: int) -> torch.Tensor:
 
 @torch.no_grad()
 def fit_prism_Q(W_U: torch.Tensor, E_k: torch.Tensor) -> torch.Tensor:
-    """Fit orthogonal Q (d×d) minimizing ||Q E_k − U_k||_F.
+    """Fit orthogonal Q (d×d) minimizing ||Q E_k − U_k||_F via Procrustes.
 
     - W_U: model unembedding matrix (d×vocab)
     - E_k: residual subspace basis (d×k), orthonormal columns
-    Solution: SVD of U_k E_kᵀ → U Σ Vᵀ, then Q = U Vᵀ.
+    - Returns Q = U Vᵀ where U Σ Vᵀ = svd(U_k E_kᵀ).
+
+    Notes
+    - Q = U Vᵀ is already orthogonal in exact arithmetic; we avoid an extra
+      SVD “polish” because it can fail to converge on near‑identity spectra.
+    - As a safety net, if ||QᵀQ − I||_F is unexpectedly large, we apply a
+      QR orthonormalization fallback instead of a second SVD.
     """
     if E_k.dim() != 2:
         raise ValueError("E_k must be 2D (d×k)")
@@ -157,11 +163,21 @@ def fit_prism_Q(W_U: torch.Tensor, E_k: torch.Tensor) -> torch.Tensor:
     U_k = _left_singular_vectors_WU(W_U, k)
     M = U_k @ E_k.transpose(0, 1)  # (d×d) rank ≤ k
     U, S, Vh = torch.linalg.svd(M, full_matrices=False)
-    Q = U @ Vh
-    # Final polish to enforce orthogonality (Q ← UVᵀ of its own SVD)
-    Uq, _, Vhq = torch.linalg.svd(Q, full_matrices=False)
-    Q = Uq @ Vhq
-    return Q.to(dtype=torch.float32).contiguous()
+    Q = (U @ Vh).to(dtype=torch.float32)
+
+    # Robustness: if numerical drift makes Q noticeably non‑orthogonal,
+    # apply a QR-based orthonormalization fallback.
+    try:
+        err = orthogonality_error(Q)
+    except Exception:
+        err = float("inf")
+
+    if not math.isfinite(err) or err > 1e-3:
+        # QR fallback avoids degeneracy issues seen in SVD polishing on CPU.
+        Q, _ = torch.linalg.qr(Q, mode="reduced")
+        Q = Q.to(dtype=torch.float32)
+
+    return Q.contiguous()
 
 
 @torch.no_grad()

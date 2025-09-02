@@ -218,7 +218,7 @@ def fit_single_model(
         "d_vocab": d_vocab,
         "n_layers": n_layers,
         "orthogonality_error": ortho_err,
-        "notes": "whiten=diag(mean/var), U_k from W_U W_Uᵀ, QR-polished",
+        "notes": "whiten=diag(mean/var); U_k from W_U W_Uᵀ; Q=U Vᵀ (QR fallback if needed)",
     }
     w_path, q_path, p_path = save_prism_artifacts(out_dir, stats=stats, Q=Q, provenance=prov)
     print(f"Saved prism artifacts to: {out_dir}\n - {w_path.name}\n - {q_path.name}\n - {p_path.name}")
@@ -236,6 +236,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--k", type=int, default=None, help="Rank k for subspace alignment (default min(512, d_model))")
     p.add_argument("--prism-dir", default="prisms", help="Artifacts root (relative to this script dir)")
     p.add_argument("--prompts-file", type=str, default=None, help="Optional path to a prompts file (one prompt per line)")
+    p.add_argument("--force", action="store_true", help="Refit even if artifacts already exist for the model")
     return p.parse_args()
 
 
@@ -256,6 +257,15 @@ def main():
         return 160_000, 30_000
 
     def run_for(model_id: str) -> Tuple[bool, Optional[str]]:
+        # Skip if artifacts already exist (unless --force)
+        art_dir = prism_root / clean_model_name(model_id)
+        w_path = art_dir / "whiten.pt"
+        q_path = art_dir / "Q_prism.pt"
+        p_path = art_dir / "provenance.json"
+        if not args.force and w_path.exists() and q_path.exists() and p_path.exists():
+            print(f"⏭️  Skipping {model_id}: artifacts already present at {art_dir}")
+            return False, "exists"
+
         # Device selection
         if args.device == "auto":
             sel = select_best_device(model_id)
@@ -293,7 +303,9 @@ def main():
 
     if args.model_id:
         ok, msg = run_for(args.model_id)
-        raise SystemExit(0 if ok else 1)
+        # Treat "exists" as success for single-model invocation
+        exit_ok = ok or (msg == "exists")
+        raise SystemExit(0 if exit_ok else 1)
 
     # All baseline models
     results: List[Tuple[str, str]] = []

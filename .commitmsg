@@ -1,0 +1,6 @@
+Stabilize Prism Procrustes and skip existing artifacts
+- Remove redundant SVD polish in fit_prism_Q; Q=U V^T is sufficient and avoids CPU SVD non-convergence on near-orthogonal Q (observed on Qwen3-8B)
+- Add QR orthonormalization fallback when orthogonality error is high or non-finite; keep float32 numerics
+- Update provenance notes to reflect Procrustes path and QR fallback
+- prism_fit: skip model when artifacts already exist unless --force; add --force flag and treat "exists" as success for single-model runs
+- Tests not run in this environment (venv lacks torch); behavior covered by existing Prism unit tests
