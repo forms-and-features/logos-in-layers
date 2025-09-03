@@ -139,18 +139,23 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         except Exception as e:
             print(f"Direct loading to {device} failed: {e}")
             print("Falling back to CPU loading...")
-            # Fallback: load on CPU then move
+            # Fallback: load on CPU
             model = HookedTransformer.from_pretrained_no_processing(
                 model_id,
                 device="cpu",
                 torch_dtype=dtype,
                 low_cpu_mem_usage=True,
             )
-            # Clear cache before moving
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            print(f"Moving model to {device}...")
-            model = model.to(device)
+            # Try move to requested device; if it fails, stay on CPU
+            if device != "cpu":
+                try:
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    print(f"Moving model to {device}...")
+                    model = model.to(device)
+                except Exception as move_e:
+                    print(f"Move to {device} failed: {move_e}. Staying on CPU for this run.")
+                    device = "cpu"
             
         model.eval()  # Hygiene: avoid dropout etc.
         
@@ -209,16 +214,21 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 analysis_b_U = analysis_b_U.float()
             UNEMBED_DTYPE = torch.float32
 
-        # Helper: unembed matmul that matches device of inputs (avoids CPU/MPS mismatch)
+        # Helper: unembed matmul with simple per-device cache to avoid repeated transfers
+        _unembed_cache = {"device": None, "W": None, "b": None}
         def _unembed_mm(X: torch.Tensor, W: torch.Tensor, b: torch.Tensor | None) -> torch.Tensor:
+            dev = X.device
             W_use = W
-            if hasattr(W_use, 'device') and X.device != W_use.device:
-                W_use = W_use.to(X.device)
+            b_use = b
+            if hasattr(W, 'device') and W.device != dev:
+                if _unembed_cache["device"] != dev:
+                    _unembed_cache["W"] = W.to(dev)
+                    _unembed_cache["b"] = (b.to(dev) if (b is not None and hasattr(b, 'device')) else b)
+                    _unembed_cache["device"] = dev
+                W_use = _unembed_cache["W"]
+                b_use = _unembed_cache["b"]
             out = X @ W_use
-            if b is not None:
-                b_use = b
-                if hasattr(b_use, 'device') and X.device != b_use.device:
-                    b_use = b_use.to(X.device)
+            if b_use is not None:
                 out = out + b_use
             return out
         
@@ -416,6 +426,26 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         def decode_id(idx):
             return model.tokenizer.decode([idx.item() if hasattr(idx, 'item') else int(idx)])
 
+        # Helper: safe residual accessor (avoids brittle keying)
+        def get_residual_safely(cache: dict, layer: int) -> torch.Tensor:
+            key = f"blocks.{layer}.hook_resid_post"
+            if key not in cache:
+                candidates = [k for k in cache.keys() if f"blocks.{layer}" in k]
+                raise KeyError(f"Missing '{key}' in residual cache. Available near layer {layer}: {candidates}")
+            return cache[key]
+
+        # Helper: finite float coercion for JSON safety
+        import math as _math
+        def _to_finite_float(x):
+            try:
+                v = float(x)
+            except Exception:
+                try:
+                    v = float(x.item())  # torch scalar
+                except Exception:
+                    return None
+            return v if _math.isfinite(v) else None
+
         # Helper: emit pure next-token metrics and record (reduces duplication)
         def emit_pure_next_token_record(
             layer_out_idx: int,
@@ -477,8 +507,12 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 paris_id, berlin_id = control_ids  # type: ignore
                 try:
                     control_margin = float(last_full_probs[int(paris_id)]) - float(last_full_probs[int(berlin_id)])
-                except Exception:
+                except (IndexError, ValueError, TypeError) as e:
+                    print(f"Warning: control margin unavailable: {e}")
                     control_margin = None
+                except Exception as e:
+                    print(f"Unexpected error computing control margin: {e}")
+                    raise
 
             record_extra = {
                 "copy_collapse": copy_collapse,
@@ -537,7 +571,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     decode_id=(lambda i: model.tokenizer.decode([i])),
                     answer_str=ground_truth,
                 )
-            except Exception:
+            except (KeyError, AttributeError, ValueError, TypeError) as e:
+                print(f"Warning: tokenizer-based gold alignment failed; trying TL tokens fallback: {e}")
                 try:
                     ctx_ids_try = model.to_tokens(context_prompt)[0].tolist()
                     ctx_ans_ws_try = model.to_tokens(context_prompt + " " + ground_truth)[0].tolist()
@@ -550,7 +585,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         decode_id=dec,
                         answer_str=ground_truth,
                     )
-                except Exception:
+                except (KeyError, AttributeError, ValueError, TypeError) as e2:
+                    print(f"Warning: TL tokens fallback for gold alignment failed: {e2}")
                     gold_info = {
                         "string": ground_truth,
                         "status": "unresolved",
@@ -561,6 +597,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         "ctx_ids": [],
                         "ctx_len": 0,
                     }
+                except Exception as e2:
+                    print(f"Unexpected error during gold alignment fallbacks: {e2}")
+                    raise
 
         # Provide ctx ids for copy detector and first answer id for metrics
         ctx_ids = gold_info.get("ctx_ids", [])
@@ -580,7 +619,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     decode_id=(lambda i: model.tokenizer.decode([i])),
                     answer_str=control_ground_truth,
                 )
-            except Exception:
+            except (KeyError, AttributeError, ValueError, TypeError) as e:
+                print(f"Warning: tokenizer-based control gold alignment failed; marking unresolved: {e}")
                 gold_info_ctl = {
                     "string": control_ground_truth,
                     "status": "unresolved",
@@ -591,6 +631,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     "ctx_ids": [],
                     "ctx_len": 0,
                 }
+            except Exception as e:
+                print(f"Unexpected error during control gold alignment: {e}")
+                raise
         ctx_ids_ctl = gold_info_ctl.get("ctx_ids", [])
         first_ans_id_ctl = gold_info_ctl.get("first_id", None)
         # Rolling window of the last k top-1 IDs
@@ -688,13 +731,27 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 logits_all = _unembed_mm(resid_cast, analysis_W_U, analysis_b_U)
                 logits_all = logits_all.float()  # downstream numerics in fp32
                 # Prism sidecar logits for all positions (if active)
+                prism_enabled = prism_active
+                prism_Q_use = prism_Q
                 if prism_active:
                     Xw_L0 = whiten_apply(resid[0], prism_stats)
-                    Xp_L0 = Xw_L0 @ prism_Q.to(Xw_L0.device)
+                    try:
+                        if hasattr(prism_Q_use, 'device') and prism_Q_use.device != Xw_L0.device:
+                            prism_Q_use = prism_Q_use.to(Xw_L0.device)
+                    except RuntimeError as e:
+                        prism_enabled = False
+                        # Record placement error for diagnostics
+                        try:
+                            if isinstance(diag.get("prism_summary"), dict):
+                                diag["prism_summary"]["placement_error"] = str(e)
+                        except Exception:
+                            pass
+                    Xp_L0 = Xw_L0 @ (prism_Q_use if prism_enabled else torch.eye(Xw_L0.shape[-1], device=Xw_L0.device))
                     Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
                     bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
-                    prism_logits_all_L0 = _unembed_mm(Xp_L0, Wp, bp)
-                    prism_logits_all_L0 = prism_logits_all_L0.float()
+                    if prism_enabled:
+                        prism_logits_all_L0 = _unembed_mm(Xp_L0, Wp, bp)
+                        prism_logits_all_L0 = prism_logits_all_L0.float()
                 
                 # Save residuals if requested
                 if config.keep_residuals:
@@ -740,7 +797,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     resid_raw_tensor=resid_raw_L0,
                 )
                 # Prism sidecar: pure next-token (layer 0)
-                if prism_active:
+                if prism_enabled:
                     last_pos = tokens.shape[1] - 1
                     pz = prism_logits_all_L0[last_pos]
                     pprobs = torch.softmax(pz, dim=0)
@@ -779,9 +836,10 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 
                 # --- free Layer-0 residual to keep host RAM flat ---------------------
                 del resid
-                gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+                gc.collect()
                 
                 # Layers 1 to n_layers: after each transformer block
                 # Detect architecture once for efficiency
@@ -798,7 +856,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 for layer in range(n_layers):
                     print(f"Layer {layer + 1:2d} (after transformer block {layer}):")
                     # Get residual stream after this layer's block
-                    resid = residual_cache[f'blocks.{layer}.hook_resid_post']
+                    resid = get_residual_safely(residual_cache, layer)
                     resid_raw = resid  # keep pre-norm for raw lens
                     
                     # Apply normalization if requested
@@ -812,9 +870,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     logits_all = _unembed_mm(resid_cast, analysis_W_U, analysis_b_U)
                     logits_all = logits_all.float()  # downstream numerics in fp32
                     # Prism sidecar logits (post-block) for all positions
-                    if prism_active:
+                    if prism_enabled:
                         Xw = whiten_apply(resid[0], prism_stats)
-                        Xp = Xw @ prism_Q.to(Xw.device)
+                        Xp = Xw @ prism_Q_use
                         Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
                         bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
                         prism_logits_all = _unembed_mm(Xp, Wp, bp)
@@ -848,7 +906,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     print_summary(layer + 1, pos, token_str, entropy_bits, top_tokens_k, top_probs_k)
                     # Verbose console output removed to reduce noise - data still captured in files
                     # Prism sidecar record (post-block layer)
-                    if prism_active:
+                    if prism_enabled:
                         pz = prism_logits_all[pos]
                         pprobs = torch.softmax(pz, dim=0)
                         pent = bits_entropy_from_logits(pz)
@@ -882,7 +940,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         resid_raw_tensor=resid_raw,
                     )
                     # Prism sidecar pure next-token record (post-block layer)
-                    if prism_active:
+                    if prism_enabled:
                         last_pos = tokens.shape[1] - 1
                         pz = prism_logits_all[last_pos]
                         pprobs = torch.softmax(pz, dim=0)
@@ -974,21 +1032,21 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                             pass
 
                         last_layer_consistency = {
-                            "kl_to_final_bits": m.get("kl_to_final_bits"),
+                            "kl_to_final_bits": _to_finite_float(m.get("kl_to_final_bits")),
                             "top1_agree": bool(lens_top1_id == final_top1_id),
-                            "p_top1_lens": m.get("p_top1"),
-                            "p_top1_model": float(final_probs[final_top1_id].item()),
-                            "p_answer_lens": m.get("p_answer"),
+                            "p_top1_lens": _to_finite_float(m.get("p_top1")),
+                            "p_top1_model": _to_finite_float(final_probs[final_top1_id].item()),
+                            "p_answer_lens": _to_finite_float(m.get("p_answer")),
                             "answer_rank_lens": m.get("answer_rank"),
                             # Temperature probe: best scalar s and KL after rescale
-                            "temp_est": best_s,
-                            "kl_after_temp_bits": best_kl,
+                            "temp_est": _to_finite_float(best_s),
+                            "kl_after_temp_bits": _to_finite_float(best_kl),
                             # Config-reported head transforms and KL after applying them
                             "cfg_transform": cfg_transform,
                             "kl_after_transform_bits": {
-                                "scale": kl_after_scale,
-                                "softcap": kl_after_softcap,
-                                "scale_then_softcap": kl_after_scale_then_softcap,
+                                "scale": _to_finite_float(kl_after_scale),
+                                "softcap": _to_finite_float(kl_after_softcap),
+                                "scale_then_softcap": _to_finite_float(kl_after_scale_then_softcap),
                             },
                             # Advisory warning for family-agnostic visibility
                             "warn_high_last_layer_kl": bool(m.get("kl_to_final_bits") is not None and m.get("kl_to_final_bits") > 0.5),
@@ -997,9 +1055,10 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     # --- free residual for this layer -----------------------------------
                     del resid
                     del residual_cache[f'blocks.{layer}.hook_resid_post']
-                    gc.collect()
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
+                        torch.cuda.synchronize()
+                    gc.collect()
                 
                 # Summarize collapse and thresholds via helper
                 diag.update(
@@ -1104,36 +1163,33 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 # Clean up tensors immediately
                 del test_tokens, test_logits, test_top_indices, test_full_probs, test_top_probs
             
-            # Emit temperature exploration records
+            # Emit temperature exploration records (memory-safe)
             # Note: Using consistent prompt for temperature exploration to maintain comparability
-            temp_test_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
-            temp_tokens = model.to_tokens(temp_test_prompt)      # let Accelerate move it
-            
-            # Single forward pass - then rescale for different temperatures
-            base_logits = model(temp_tokens)[0, -1, :]
-            
-            temperatures = [0.1, 2.0]
-            
-            for temp in temperatures:
-                # Compute for temperature and emit JSONL record
-                
-                # Rescale existing logits instead of new forward pass (cast to float32 for numerical stability)
-                scaled_logits = (base_logits / temp).float()
-                _, temp_top_indices = torch.topk(scaled_logits, 15, largest=True, sorted=True)
-                temp_full_probs = torch.softmax(scaled_logits, dim=0)
-                temp_top_probs = temp_full_probs[temp_top_indices]
-                temp_entropy_bits = bits_entropy_from_logits(scaled_logits)
-                # Collect temperature exploration data
-                temp_record = {
-                    "type": "temperature_exploration",
-                    "temperature": temp,
-                    "entropy": temp_entropy_bits,
-                    "topk": [[decode_id(idx), prob.item()] for prob, idx in zip(temp_top_probs, temp_top_indices)]
-                }
-                json_data["temperature_exploration"].append(temp_record)
-            
-            # Clean up temperature exploration tensors
-            del temp_tokens, base_logits
+            with torch.no_grad():
+                temp_test_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
+                temp_tokens = model.to_tokens(temp_test_prompt)
+                base_logits = model(temp_tokens)[0, -1, :]
+                temperatures = [0.1, 2.0]
+                for temp in temperatures:
+                    scaled_logits = (base_logits / temp).float()
+                    _, temp_top_indices = torch.topk(scaled_logits, 15, largest=True, sorted=True)
+                    temp_full_probs = torch.softmax(scaled_logits, dim=0)
+                    temp_top_probs = temp_full_probs[temp_top_indices]
+                    temp_entropy_bits = bits_entropy_from_logits(scaled_logits)
+                    temp_record = {
+                        "type": "temperature_exploration",
+                        "temperature": float(temp),
+                        "entropy": float(temp_entropy_bits),
+                        "topk": [[decode_id(idx), prob.item()] for prob, idx in zip(temp_top_probs, temp_top_indices)]
+                    }
+                    json_data["temperature_exploration"].append(temp_record)
+                    # Cleanup loop temps
+                    del scaled_logits, temp_top_indices, temp_full_probs, temp_top_probs
+                # Cleanup tensors
+                del temp_tokens, base_logits
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
         
         print("=== END OF INSPECTING ==============\n")
 
@@ -1199,7 +1255,20 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 layer_logits = _unembed_mm(casted, analysis_W_U, analysis_b_U).float()
                 if prism_active:
                     Xw_nf0 = whiten_apply(resid[0, :, :], prism_stats)
-                    Xp_nf0 = Xw_nf0 @ prism_Q.to(Xw_nf0.device)
+                    # one-time placement per (NF) pass
+                    prism_enabled_nf = True
+                    prism_Q_nf = prism_Q
+                    try:
+                        if hasattr(prism_Q_nf, 'device') and prism_Q_nf.device != Xw_nf0.device:
+                            prism_Q_nf = prism_Q_nf.to(Xw_nf0.device)
+                    except RuntimeError as e:
+                        prism_enabled_nf = False
+                        try:
+                            if isinstance(diag.get("prism_summary"), dict):
+                                diag["prism_summary"]["placement_error_nf"] = str(e)
+                        except Exception:
+                            pass
+                    Xp_nf0 = Xw_nf0 @ (prism_Q_nf if prism_enabled_nf else torch.eye(Xw_nf0.shape[-1], device=Xw_nf0.device))
                     Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
                     bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
                     prism_logits_all_nf0 = _unembed_mm(Xp_nf0, Wp, bp).float()
@@ -1217,7 +1286,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     do_raw_lens_sample=False,
                     resid_raw_tensor=resid_raw_tensor,
                 )
-                if prism_active:
+                if prism_enabled_nf:
                     last_pos = tokens_nf.shape[1] - 1
                     pz = prism_logits_all_nf0[last_pos]
                     pprobs = torch.softmax(pz, dim=0)
@@ -1257,16 +1326,16 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 # Post-block layers
                 n_layers = model.cfg.n_layers
                 for layer in range(n_layers):
-                    resid = residual_cache[f'blocks.{layer}.hook_resid_post']
+                    resid = get_residual_safely(residual_cache, layer)
                     resid_raw_tensor = resid.detach().clone() if RAW_LENS_MODE != "off" else None
                     if USE_NORM_LENS:
                         norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
                         resid = apply_norm_or_skip(resid, norm_module)
                     casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
                     layer_logits = _unembed_mm(casted, analysis_W_U, analysis_b_U).float()
-                    if prism_active:
+                    if prism_enabled_nf:
                         Xw_nfl = whiten_apply(resid[0, :, :], prism_stats)
-                        Xp_nfl = Xw_nfl @ prism_Q.to(Xw_nfl.device)
+                        Xp_nfl = Xw_nfl @ prism_Q_nf
                         Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
                         bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
                         prism_logits_all_nfl = _unembed_mm(Xp_nfl, Wp, bp).float()
@@ -1284,7 +1353,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         do_raw_lens_sample=False,
                         resid_raw_tensor=resid_raw_tensor,
                     )
-                    if prism_active:
+                    if prism_enabled_nf:
                         last_pos = tokens_nf.shape[1] - 1
                         pz = prism_logits_all_nfl[last_pos]
                         pprobs = torch.softmax(pz, dim=0)
@@ -1378,7 +1447,19 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 # Prepare Prism logits for control L0 if active
                 if prism_active:
                     Xw_ctl0 = whiten_apply(resid[0, :, :], prism_stats)
-                    Xp_ctl0 = Xw_ctl0 @ prism_Q.to(Xw_ctl0.device)
+                    prism_enabled_ctl = True
+                    prism_Q_ctl = prism_Q
+                    try:
+                        if hasattr(prism_Q_ctl, 'device') and prism_Q_ctl.device != Xw_ctl0.device:
+                            prism_Q_ctl = prism_Q_ctl.to(Xw_ctl0.device)
+                    except RuntimeError as e:
+                        prism_enabled_ctl = False
+                        try:
+                            if isinstance(diag.get("prism_summary"), dict):
+                                diag["prism_summary"]["placement_error_ctl"] = str(e)
+                        except Exception:
+                            pass
+                    Xp_ctl0 = Xw_ctl0 @ (prism_Q_ctl if prism_enabled_ctl else torch.eye(Xw_ctl0.shape[-1], device=Xw_ctl0.device))
                     Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
                     bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
                     prism_logits_all_ctl0 = _unembed_mm(Xp_ctl0, Wp, bp).float()
@@ -1397,7 +1478,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     resid_raw_tensor=resid_raw_tensor,
                     control_ids=(first_ans_id_ctl, first_ans_id),
                 )
-                if prism_active:
+                if prism_enabled_ctl:
                     last_pos = tokens_ctl.shape[1] - 1
                     pz = prism_logits_all_ctl0[last_pos]
                     pprobs = torch.softmax(pz, dim=0)
@@ -1418,8 +1499,12 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     try:
                         if first_ans_id_ctl is not None and first_ans_id is not None:
                             control_margin = float(pprobs[int(first_ans_id_ctl)]) - float(pprobs[int(first_ans_id)])
-                    except Exception:
+                    except (IndexError, ValueError, TypeError) as e:
+                        print(f"Warning: control margin unavailable (ctl L0): {e}")
                         control_margin = None
+                    except Exception as e:
+                        print(f"Unexpected error computing control margin (ctl L0): {e}")
+                        raise
                     json_data_prism["pure_next_token_records"].append({
                         "prompt_id": current_prompt_id,
                         "prompt_variant": current_prompt_variant,
@@ -1443,7 +1528,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 # Each block's post-residual layers
                 n_layers = model.cfg.n_layers
                 for layer in range(n_layers):
-                    resid = residual_cache[f'blocks.{layer}.hook_resid_post']
+                    resid = get_residual_safely(residual_cache, layer)
                     resid_raw_tensor = resid.detach().clone() if RAW_LENS_MODE != "off" else None
                     if USE_NORM_LENS:
                         norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
@@ -1481,7 +1566,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         resid_raw_tensor=resid_raw_tensor,
                         control_ids=(first_ans_id_ctl, first_ans_id),
                     )
-                    if prism_active:
+                    if prism_enabled_ctl:
                         last_pos = tokens_ctl.shape[1] - 1
                         pz = prism_logits_all_ctll[last_pos]
                         pprobs = torch.softmax(pz, dim=0)
@@ -1510,8 +1595,12 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         try:
                             if first_ans_id_ctl is not None and first_ans_id is not None:
                                 control_margin = float(pprobs[int(first_ans_id_ctl)]) - float(pprobs[int(first_ans_id)])
-                        except Exception:
+                        except (IndexError, ValueError, TypeError) as e:
+                            print(f"Warning: control margin unavailable (ctl layer): {e}")
                             control_margin = None
+                        except Exception as e:
+                            print(f"Unexpected error computing control margin (ctl layer): {e}")
+                            raise
                         json_data_prism["pure_next_token_records"].append(
                             {
                                 "prompt_id": current_prompt_id,

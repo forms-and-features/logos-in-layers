@@ -90,6 +90,8 @@ Status: Implemented
 ## Phase 2: Should Fix
 
 ### Bug 3 — Prism Device Placement Safety
+
+Status: Implemented (per pass) — one-time placement with guarded fallback; sidecar gated by local prism_enabled*. Placement errors recorded in diagnostics.
 - Summary: `prism_Q.to(Xw.device)` is called inline across layers; can thrash memory or fail on constrained devices.
 - Impact:
   - Repeated device transfers; potential OOM/runtime errors; perf loss.
@@ -114,6 +116,8 @@ Status: Implemented
 - Validation: No device mismatch; reduced transfers; stable memory footprint.
 
 ### Bug 4 — Fragile Hook Key Access
+
+Status: Implemented — added get_residual_safely() and used in per-layer loops.
 - Summary: Directly indexes `residual_cache[f'blocks.{layer}.hook_resid_post']` without validation.
 - Proposed fix:
   - Add a tiny accessor with a clear error message and use it in all three passes:
@@ -128,6 +132,8 @@ Status: Implemented
 - Validation: Clear failure mode if hooks drift; easier debugging.
 
 ### Bug 5 — Over‑Broad Exception Handling (Systematic)
+
+Status: Partially implemented — narrowed exceptions for control margin and gold alignment fallbacks; remaining generic handlers kept for outermost paths.
 - Summary: Many `except Exception:` blocks swallow real errors across model loading, tokenization, metric computation, device transfers, and control margin.
 - Proposed fix:
   - Sweep and narrow excepts with a helper for warn‑and‑default:
@@ -146,6 +152,8 @@ Status: Implemented
 - Validation: Legitimate mistakes surface; expected edge cases remain handled gracefully.
 
 ### Bug 6 — Temperature Exploration Memory Pressure
+
+Status: Implemented — wrapped in no_grad, added explicit cleanup and CUDA cache/sync.
 - Summary: The temperature probe allocates tensors in a loop without explicit no_grad/cleanup; on GPU this can retain intermediates.
 - Proposed fix:
   - Wrap the block in `with torch.no_grad():`.
@@ -154,6 +162,8 @@ Status: Implemented
 - Validation: No progressive memory growth during the loop.
 
 ### Bug 7 — JSON Data Safety (NaN/Inf, Python types)
+
+Status: Implemented (targeted) — applied finite coercion to last-layer consistency metrics.
 - Summary: Tensor operations can produce NaN/Inf; JSON serialization expects finite Python types.
 - Proposed fix:
   - Introduce helpers to coerce/sanitize floats:
@@ -169,6 +179,8 @@ Status: Implemented
 - Validation: JSON dumps without errors; no NaN/Inf present.
 
 ### Bug 8 — Model Loading Fallback Robustness
+
+Status: Implemented — degrade to CPU if move fails; update effective device.
 - Summary: If direct device load fails, code loads on CPU and then attempts to move to the same device; this can trigger the same failure again without clear degradation.
 - Proposed fix:
   - Fallback algorithm:
@@ -178,6 +190,8 @@ Status: Implemented
 - Validation: Runs proceed on CPU with a clear log when device moves fail.
 
 ### Promoted to Phase 2 (from Phase 3)
+
+Status: Unembed cache + cleanup ordering implemented; CLI globals deferred.
 - Pre‑move analysis unembed weights: Create device‑local shadow `W_U`/`b_U` once per pass (fp32 if promoted) and reuse across layers.
 - Cleanup ordering in hot paths: Prefer `torch.cuda.empty_cache(); torch.cuda.synchronize()` before `gc.collect()` for better allocator behavior.
 - CLI global tightening: Reduce reliance on module‑level `CLI_ARGS` by threading `cli_args` to key functions (`run_single_model`, runner), to improve testability (minimal change, no behavior alteration).
