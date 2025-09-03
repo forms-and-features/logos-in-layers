@@ -1446,11 +1446,12 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     resid = apply_norm_or_skip(resid, norm_module)
                 casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
                 layer_logits = _unembed_mm(casted, analysis_W_U, analysis_b_U).float()
-                # Prepare Prism logits for control L0 if active
+                # Prepare Prism logits for control L0
+                prism_enabled_ctl = False
+                prism_Q_ctl = prism_Q
                 if prism_active:
                     Xw_ctl0 = whiten_apply(resid[0, :, :], prism_stats)
                     prism_enabled_ctl = True
-                    prism_Q_ctl = prism_Q
                     try:
                         if hasattr(prism_Q_ctl, 'device') and prism_Q_ctl.device != Xw_ctl0.device:
                             prism_Q_ctl = prism_Q_ctl.to(Xw_ctl0.device)
