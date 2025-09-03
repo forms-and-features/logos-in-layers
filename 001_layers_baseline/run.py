@@ -370,6 +370,27 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         current_prompt_id = "pos"
         current_prompt_variant = "orig"
 
+        # Rolling window manager to isolate copy-detection state per lens and per variant
+        class WindowManager:
+            def __init__(self, window_k: int):
+                self.window_k = window_k
+                self.windows: dict[tuple[str, str, str], list[int]] = {}
+
+            def append_and_trim(self, lens_type: str, prompt_id: str, variant: str, token_id: int) -> list[int]:
+                key = (lens_type, prompt_id, variant)
+                wl = self.windows.setdefault(key, [])
+                wl.append(int(token_id))
+                if len(wl) > self.window_k:
+                    wl.pop(0)
+                return wl.copy()
+
+            def reset_variant(self, prompt_id: str, variant: str):
+                # reset both lens windows for this (prompt, variant)
+                for lens in ("norm", "prism"):
+                    self.windows.pop((lens, prompt_id, variant), None)
+
+        window_mgr = WindowManager(getattr(config, "copy_window_k", 1))
+
         def print_summary(layer_idx, pos, token_str, entropy_bits, top_tokens, top_probs, is_pure_next_token=False, extra=None):
             # Collect record data for JSON output
             record = {
@@ -401,7 +422,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             logits_all: torch.Tensor,
             tokens_tensor: torch.Tensor,
             ctx_ids_list,
-            window_ids_list,
+            window_manager: WindowManager,
+            lens_type: str,
             final_probs_tensor: torch.Tensor,
             first_ans_token_id,
             final_dir_vec: torch.Tensor,
@@ -420,11 +442,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             last_top_probs = last_full_probs[last_top_indices]
             last_top_tokens = [decode_id(idx) for idx in last_top_indices]
 
-            # Update rolling window
-            top1_id = last_top_indices[0].item()
-            window_ids_list.append(top1_id)
-            if len(window_ids_list) > config.copy_window_k:
-                window_ids_list.pop(0)
+            # Update rolling window (per lens, per variant)
+            top1_id = int(last_top_indices[0].item())
+            window_ids_list = window_manager.append_and_trim(lens_type, current_prompt_id, current_prompt_variant, top1_id)
 
             # Copy / semantic flags and metrics
             copy_collapse = detect_copy_collapse_id_subseq(
@@ -639,6 +659,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 # Get string representations of tokens for labeling output
                 str_tokens = model.to_str_tokens(context_prompt)
 
+                # Reset windows for this variant (start fresh)
+                window_mgr.reset_variant(current_prompt_id, current_prompt_variant)
+
                 # Layer 0: embeddings (+ positional embeddings if available)
                 print("Layer  0 (embeddings):")
                 if has_pos_embed:
@@ -707,7 +730,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     logits_all=logits_all,
                     tokens_tensor=tokens,
                     ctx_ids_list=ctx_ids,
-                    window_ids_list=window_ids,
+                    window_manager=window_mgr,
+                    lens_type="norm",
                     final_probs_tensor=final_probs,
                     first_ans_token_id=first_ans_id,
                     final_dir_vec=final_dir,
@@ -725,11 +749,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     p_top_probs = pprobs[p_top_idx]
                     p_top_tokens = [decode_id(idx) for idx in p_top_idx]
                     p_top1_id = p_top_idx[0].item()
-                    # Update rolling window for copy detector (shares window_ids)
-                    window_ids.append(p_top1_id)
-                    if len(window_ids) > getattr(config, "copy_window_k", 1):
-                        window_ids.pop(0)
-                    p_copy = detect_copy_collapse_id_subseq(pz, ctx_ids, window_ids, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin)
+                    prism_window_ids = window_mgr.append_and_trim("prism", current_prompt_id, current_prompt_variant, int(p_top1_id))
+                    p_copy = detect_copy_collapse_id_subseq(pz, ctx_ids, prism_window_ids, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin)
                     if p_copy and is_pure_whitespace_or_punct(p_top_tokens[0]):
                         p_copy = False
                     p_metrics = compute_next_token_metrics(pprobs, p_top1_id, final_probs, first_ans_id, topk_cum=5)
@@ -851,7 +872,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         logits_all=logits_all,
                         tokens_tensor=tokens,
                         ctx_ids_list=ctx_ids,
-                        window_ids_list=window_ids,
+                        window_manager=window_mgr,
+                        lens_type="norm",
                         final_probs_tensor=final_probs,
                         first_ans_token_id=first_ans_id,
                         final_dir_vec=final_dir,
@@ -869,10 +891,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         p_top_probs = pprobs[p_top_idx]
                         p_top_tokens = [decode_id(idx) for idx in p_top_idx]
                         p_top1_id = p_top_idx[0].item()
-                        window_ids.append(p_top1_id)
-                        if len(window_ids) > getattr(config, "copy_window_k", 1):
-                            window_ids.pop(0)
-                        p_copy = detect_copy_collapse_id_subseq(pz, ctx_ids, window_ids, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin)
+                        prism_window_ids = window_mgr.append_and_trim("prism", current_prompt_id, current_prompt_variant, int(p_top1_id))
+                        p_copy = detect_copy_collapse_id_subseq(pz, ctx_ids, prism_window_ids, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin)
                         if p_copy and is_pure_whitespace_or_punct(p_top_tokens[0]):
                             p_copy = False
                         p_metrics = compute_next_token_metrics(pprobs, p_top1_id, final_probs, first_ans_id, topk_cum=5)
@@ -1121,6 +1141,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         # Run a separate forward pass on the positive prompt without the stylistic filler
         current_prompt_id = "pos"
         current_prompt_variant = "no_filler"
+        window_mgr.reset_variant(current_prompt_id, current_prompt_variant)
         # Gold alignment for the ablated variant
         gold_info_nf = compute_gold_answer_info(getattr(model, 'tokenizer', None), context_prompt_nf, ground_truth, pieces_k=4)
         if gold_info_nf.get("status") != "ok":
@@ -1187,10 +1208,11 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     layer_logits,
                     tokens_nf,
                     ctx_ids_nf,
-                    window_ids_nf,
-                    final_probs_nf,
-                    first_ans_id_nf,
-                    final_dir_nf,
+                    window_manager=window_mgr,
+                    lens_type="norm",
+                    final_probs_tensor=final_probs_nf,
+                    first_ans_token_id=first_ans_id_nf,
+                    final_dir_vec=final_dir_nf,
                     collected_records=collected_pure_records_nf,
                     do_raw_lens_sample=False,
                     resid_raw_tensor=resid_raw_tensor,
@@ -1204,10 +1226,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     p_top_probs = pprobs[p_top_idx]
                     p_top_tokens = [decode_id(idx) for idx in p_top_idx]
                     p_top1_id = p_top_idx[0].item()
-                    window_ids_nf.append(p_top1_id)
-                    if len(window_ids_nf) > getattr(config, "copy_window_k", 1):
-                        window_ids_nf.pop(0)
-                    p_copy = detect_copy_collapse_id_subseq(pz, ctx_ids_nf, window_ids_nf, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin)
+                    prism_window_ids_nf = window_mgr.append_and_trim("prism", current_prompt_id, current_prompt_variant, int(p_top1_id))
+                    p_copy = detect_copy_collapse_id_subseq(pz, ctx_ids_nf, prism_window_ids_nf, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin)
                     if p_copy and is_pure_whitespace_or_punct(p_top_tokens[0]):
                         p_copy = False
                     p_metrics = compute_next_token_metrics(pprobs, p_top1_id, final_probs_nf, first_ans_id_nf, topk_cum=5)
@@ -1255,10 +1275,11 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         layer_logits,
                         tokens_nf,
                         ctx_ids_nf,
-                        window_ids_nf,
-                        final_probs_nf,
-                        first_ans_id_nf,
-                        final_dir_nf,
+                        window_manager=window_mgr,
+                        lens_type="norm",
+                        final_probs_tensor=final_probs_nf,
+                        first_ans_token_id=first_ans_id_nf,
+                        final_dir_vec=final_dir_nf,
                         collected_records=collected_pure_records_nf,
                         do_raw_lens_sample=False,
                         resid_raw_tensor=resid_raw_tensor,
@@ -1272,10 +1293,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         p_top_probs = pprobs[p_top_idx]
                         p_top_tokens = [decode_id(idx) for idx in p_top_idx]
                         p_top1_id = p_top_idx[0].item()
-                        window_ids_nf.append(p_top1_id)
-                        if len(window_ids_nf) > getattr(config, "copy_window_k", 1):
-                            window_ids_nf.pop(0)
-                        p_copy = detect_copy_collapse_id_subseq(pz, ctx_ids_nf, window_ids_nf, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin)
+                        prism_window_ids_nf = window_mgr.append_and_trim("prism", current_prompt_id, current_prompt_variant, int(p_top1_id))
+                        p_copy = detect_copy_collapse_id_subseq(pz, ctx_ids_nf, prism_window_ids_nf, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin)
                         if p_copy and is_pure_whitespace_or_punct(p_top_tokens[0]):
                             p_copy = False
                         p_metrics = compute_next_token_metrics(pprobs, p_top1_id, final_probs_nf, first_ans_id_nf, topk_cum=5)
@@ -1331,6 +1350,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         # Run a separate forward pass on the control prompt (France → Paris)
         current_prompt_id = "ctl"
         current_prompt_variant = "orig"
+        window_mgr.reset_variant(current_prompt_id, current_prompt_variant)
         with torch.no_grad():
             residual_cache = {}
             cache_hook = build_cache_hook(residual_cache)
@@ -1367,10 +1387,11 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     layer_logits,
                     tokens_ctl,
                     ctx_ids_ctl,
-                    window_ids,
-                    final_probs_ctl,
-                    first_ans_id_ctl,
-                    final_dir_ctl,
+                    window_manager=window_mgr,
+                    lens_type="norm",
+                    final_probs_tensor=final_probs_ctl,
+                    first_ans_token_id=first_ans_id_ctl,
+                    final_dir_vec=final_dir_ctl,
                     collected_records=[],
                     do_raw_lens_sample=False,
                     resid_raw_tensor=resid_raw_tensor,
@@ -1385,10 +1406,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     p_top_probs = pprobs[p_top_idx]
                     p_top_tokens = [decode_id(idx) for idx in p_top_idx]
                     p_top1_id = p_top_idx[0].item()
-                    window_ids.append(p_top1_id)
-                    if len(window_ids) > getattr(config, "copy_window_k", 1):
-                        window_ids.pop(0)
-                    p_copy = detect_copy_collapse_id_subseq(pz, ctx_ids_ctl, window_ids, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin)
+                    prism_window_ids_ctl = window_mgr.append_and_trim("prism", current_prompt_id, current_prompt_variant, int(p_top1_id))
+                    p_copy = detect_copy_collapse_id_subseq(pz, ctx_ids_ctl, prism_window_ids_ctl, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin)
                     if p_copy and is_pure_whitespace_or_punct(p_top_tokens[0]):
                         p_copy = False
                     p_metrics = compute_next_token_metrics(pprobs, p_top1_id, final_probs_ctl, first_ans_id_ctl, topk_cum=5)
@@ -1452,10 +1471,11 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         layer_logits,
                         tokens_ctl,
                         ctx_ids_ctl,
-                        window_ids,
-                        final_probs_ctl,
-                        first_ans_id_ctl,
-                        final_dir_ctl,
+                        window_manager=window_mgr,
+                        lens_type="norm",
+                        final_probs_tensor=final_probs_ctl,
+                        first_ans_token_id=first_ans_id_ctl,
+                        final_dir_vec=final_dir_ctl,
                         collected_records=[],
                         do_raw_lens_sample=False,
                         resid_raw_tensor=resid_raw_tensor,
@@ -1470,11 +1490,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         p_top_probs = pprobs[p_top_idx]
                         p_top_tokens = [decode_id(idx) for idx in p_top_idx]
                         p_top1_id = p_top_idx[0].item()
-                        window_ids.append(p_top1_id)
-                        if len(window_ids) > getattr(config, "copy_window_k", 1):
-                            window_ids.pop(0)
+                        prism_window_ids_ctl = window_mgr.append_and_trim("prism", current_prompt_id, current_prompt_variant, int(p_top1_id))
                         p_copy = detect_copy_collapse_id_subseq(
-                            pz, ctx_ids_ctl, window_ids, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin
+                            pz, ctx_ids_ctl, prism_window_ids_ctl, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin
                         )
                         if p_copy and is_pure_whitespace_or_punct(p_top_tokens[0]):
                             p_copy = False

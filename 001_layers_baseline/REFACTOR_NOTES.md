@@ -81,6 +81,12 @@ Status: Implemented
   - `L_copy` per lens/variant stable whether Prism is on/off.
   - Windows never exceed `window_k`; no cross‑variant pollution.
 
+Status: Implemented
+- Change: Introduced `WindowManager` (per-lens/per-variant rolling windows), replaced shared list mutations. Norm-lens `emit_pure_next_token_record` now uses the manager; all Prism branches updated to use separate windows. Windows are reset at the start of each prompt variant (`pos/orig`, `pos/no_filler`, `ctl/orig`).
+- File: 001_layers_baseline/run.py
+- Touch points: helper definition after prompt_id/variant; helper signature updated; call sites updated in orig/NF/CTL passes; Prism L0 and per-layer windows now isolated.
+- Next: Validate `L_copy` stability with Prism toggled and confirm no cross-variant leakage.
+
 ## Phase 2: Should Fix
 
 ### Bug 3 — Prism Device Placement Safety
