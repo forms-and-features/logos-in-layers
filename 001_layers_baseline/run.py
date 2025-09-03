@@ -1253,11 +1253,13 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     resid = apply_norm_or_skip(resid, norm_module)
                 casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
                 layer_logits = _unembed_mm(casted, analysis_W_U, analysis_b_U).float()
+                # Setup Prism state for no_filler variant
+                prism_enabled_nf = False
+                prism_Q_nf = prism_Q
                 if prism_active:
                     Xw_nf0 = whiten_apply(resid[0, :, :], prism_stats)
                     # one-time placement per (NF) pass
                     prism_enabled_nf = True
-                    prism_Q_nf = prism_Q
                     try:
                         if hasattr(prism_Q_nf, 'device') and prism_Q_nf.device != Xw_nf0.device:
                             prism_Q_nf = prism_Q_nf.to(Xw_nf0.device)
