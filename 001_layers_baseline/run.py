@@ -15,12 +15,12 @@ import random, numpy as np
 SEED = 316
 random.seed(SEED)
 np.random.seed(SEED)
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"  # harmless on CPU, required for CUDA; set before any CUDA checks
 torch.manual_seed(SEED)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(SEED)
 
 torch.use_deterministic_algorithms(True)   # PyTorch 2.x+
-os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"  # harmless on CPU, required for CUDA
 torch.set_num_threads(1)  # optional; comment out if you need full CPU speed
 # -----------------------------------------------------------------------------
 
@@ -145,6 +145,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 device="cpu",
                 torch_dtype=dtype,
                 low_cpu_mem_usage=True,
+                trust_remote_code=True,
             )
             # Try move to requested device; if it fails, stay on CPU
             if device != "cpu":
@@ -486,7 +487,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             )
             if copy_collapse and is_pure_whitespace_or_punct(last_top_tokens[0]):
                 copy_collapse = False
-            entropy_collapse = last_entropy_bits <= 1.0
+            entropy_collapse = last_entropy_bits <= getattr(config, 'entropy_collapse_threshold', 1.0)
             # Defer final is_answer decision until rank is known; keep string fallback
             is_answer_fallback = is_semantic_top1(last_top_tokens[0], ground_truth)
 
@@ -664,7 +665,11 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 # Representation-drift baseline direction (PROJECT_NOTES §1.5)
                 _final_norm = torch.norm(final_logits) + 1e-12
                 final_dir = (final_logits / _final_norm)
-                final_top1_id = int(torch.argmax(final_probs).item())
+                # Robust argmax with finite check
+                if not torch.isfinite(final_probs).all():
+                    print("Warning: non-finite values in final_probs; argmax may be unreliable")
+                _arg = torch.argmax(final_probs)
+                final_top1_id = int(_arg.item())
                 
                 # Debug: print device placements of cached activations and tokens
                 for name, t in residual_cache.items():
@@ -759,7 +764,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     resid_filename = f"{clean_name}_00_resid.pt"
                     # Use configured output directory; meta_filepath is not available here
                     resid_path = os.path.join(config.out_dir or os.getcwd(), resid_filename)
-                    resid_cpu = resid.to(dtype=model.cfg.dtype if hasattr(model.cfg, 'dtype') else torch.float32).cpu()
+                    # Save using the residual's current dtype to avoid relying on cfg dtype strings
+                    resid_cpu = resid.to(dtype=resid.dtype).cpu()
                     torch.save(resid_cpu, resid_path)
                     del resid_cpu
                 
@@ -823,7 +829,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         "entropy": pent,
                         "topk": [[tok, prob.item()] for tok, prob in zip(p_top_tokens, p_top_probs)],
                         "copy_collapse": p_copy,
-                        "entropy_collapse": pent <= 1.0,
+                        "entropy_collapse": pent <= getattr(config, 'entropy_collapse_threshold', 1.0),
                         "is_answer": p_is_answer,
                         "p_top1": p_metrics.get("p_top1"),
                         "p_top5": p_metrics.get("p_top5"),
@@ -966,7 +972,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                             "entropy": pent,
                             "topk": [[tok, prob.item()] for tok, prob in zip(p_top_tokens, p_top_probs)],
                             "copy_collapse": p_copy,
-                            "entropy_collapse": pent <= 1.0,
+                            "entropy_collapse": pent <= getattr(config, 'entropy_collapse_threshold', 1.0),
                             "is_answer": p_is_answer,
                             "p_top1": p_metrics.get("p_top1"),
                             "p_top5": p_metrics.get("p_top5"),
@@ -1314,7 +1320,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         "entropy": pent,
                         "topk": [[tok, prob.item()] for tok, prob in zip(p_top_tokens, p_top_probs)],
                         "copy_collapse": p_copy,
-                        "entropy_collapse": pent <= 1.0,
+                        "entropy_collapse": pent <= getattr(config, 'entropy_collapse_threshold', 1.0),
                         "is_answer": p_is_answer,
                         "p_top1": p_metrics.get("p_top1"),
                         "p_top5": p_metrics.get("p_top5"),
@@ -1381,7 +1387,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                             "entropy": pent,
                             "topk": [[tok, prob.item()] for tok, prob in zip(p_top_tokens, p_top_probs)],
                             "copy_collapse": p_copy,
-                            "entropy_collapse": pent <= 1.0,
+                            "entropy_collapse": pent <= getattr(config, 'entropy_collapse_threshold', 1.0),
                             "is_answer": p_is_answer,
                             "p_top1": p_metrics.get("p_top1"),
                             "p_top5": p_metrics.get("p_top5"),
@@ -1517,7 +1523,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         "entropy": pent,
                         "topk": [[tok, prob.item()] for tok, prob in zip(p_top_tokens, p_top_probs)],
                         "copy_collapse": p_copy,
-                        "entropy_collapse": pent <= 1.0,
+                        "entropy_collapse": pent <= getattr(config, 'entropy_collapse_threshold', 1.0),
                         "is_answer": p_is_answer,
                         "p_top1": p_metrics.get("p_top1"),
                         "p_top5": p_metrics.get("p_top5"),
@@ -1614,7 +1620,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                                 "entropy": pent,
                                 "topk": [[tok, prob.item()] for tok, prob in zip(p_top_tokens, p_top_probs)],
                                 "copy_collapse": p_copy,
-                                "entropy_collapse": pent <= 1.0,
+                                "entropy_collapse": pent <= getattr(config, 'entropy_collapse_threshold', 1.0),
                                 "is_answer": p_is_answer,
                                 "p_top1": p_metrics.get("p_top1"),
                                 "p_top5": p_metrics.get("p_top5"),

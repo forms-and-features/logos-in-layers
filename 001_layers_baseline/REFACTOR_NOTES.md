@@ -201,11 +201,17 @@ Status: Unembed cache + cleanup ordering implemented; CLI globals deferred.
 These are non‑blocking improvements to consider after Phase 1–2 land.
 
 - Determinism env placement: Set `CUBLAS_WORKSPACE_CONFIG` before any CUDA checks/context creation.
+  - Status: Implemented — moved env var assignment above any `torch.cuda.is_available()` call.
 - Duplicate return in self‑test fail path: Remove repeated `return {"error": "Self-test failed"}`.
+  - Status: Verified — duplicate return no longer present; no change needed.
 - Residual save dtype: When `--keep-residuals`, prefer `resid.dtype` or explicit `torch.float32` instead of `model.cfg.dtype` (which may be a string).
+  - Status: Implemented — save uses `resid.dtype`.
 - Unify `trust_remote_code` usage across load paths (or drop if not used by TransformerLens), for parity.
+  - Status: Implemented — added to CPU fallback load path for parity with direct load paths.
 - Argmax conversions: Optional guard against NaN/Inf; use direct `.item()` from `argmax_tensor` with a finite check.
+  - Status: Implemented — finite check on `final_probs`; robust argmax extraction.
 - Configurability: Move `entropy_collapse_threshold` from magic `1.0` to `ExperimentConfig`.
+  - Status: Implemented — added to `ExperimentConfig`; all `<= 1.0` checks now consult `config.entropy_collapse_threshold` (including Prism sidecar rows).
 
 ## Validation, Rollback, and Testing Strategy
 
