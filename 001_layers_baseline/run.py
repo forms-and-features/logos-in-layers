@@ -1429,72 +1429,92 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     if USE_NORM_LENS:
                         norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
                         resid = apply_norm_or_skip(resid, norm_module)
-                casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
-                layer_logits = _unembed_mm(casted, analysis_W_U, analysis_b_U).float()
-                if prism_active:
-                    Xw_ctll = whiten_apply(resid[0, :, :], prism_stats)
-                    Xp_ctll = Xw_ctll @ prism_Q.to(Xw_ctll.device)
-                    Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
-                    bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
-                    prism_logits_all_ctll = _unembed_mm(Xp_ctll, Wp, bp).float()
-                emit_pure_next_token_record(
-                    layer + 1,
-                    layer_logits,
-                    tokens_ctl,
-                    ctx_ids_ctl,
-                    window_ids,
-                    final_probs_ctl,
-                    first_ans_id_ctl,
-                    final_dir_ctl,
-                    collected_records=[],
-                    do_raw_lens_sample=False,
-                    resid_raw_tensor=resid_raw_tensor,
-                    control_ids=(first_ans_id_ctl, first_ans_id),
-                )
-                if prism_active:
-                    last_pos = tokens_ctl.shape[1] - 1
-                    pz = prism_logits_all_ctll[last_pos]
-                    pprobs = torch.softmax(pz, dim=0)
-                    pent = bits_entropy_from_logits(pz)
-                    _, p_top_idx = torch.topk(pz, TOP_K_RECORD, largest=True, sorted=True)
-                    p_top_probs = pprobs[p_top_idx]
-                    p_top_tokens = [decode_id(idx) for idx in p_top_idx]
-                    p_top1_id = p_top_idx[0].item()
-                    window_ids.append(p_top1_id)
-                    if len(window_ids) > getattr(config, "copy_window_k", 1):
-                        window_ids.pop(0)
-                    p_copy = detect_copy_collapse_id_subseq(pz, ctx_ids_ctl, window_ids, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin)
-                    if p_copy and is_pure_whitespace_or_punct(p_top_tokens[0]):
-                        p_copy = False
-                    p_metrics = compute_next_token_metrics(pprobs, p_top1_id, final_probs_ctl, first_ans_id_ctl, topk_cum=5)
-                    p_is_answer = (p_metrics.get("answer_rank") == 1) if p_metrics.get("answer_rank") is not None else is_semantic_top1(p_top_tokens[0], control_ground_truth)
-                    _pn = torch.norm(pz) + 1e-12
-                    p_cos = torch.dot((pz / _pn), final_dir_ctl).item()
-                    control_margin = None
-                    try:
-                        if first_ans_id_ctl is not None and first_ans_id is not None:
-                            control_margin = float(pprobs[int(first_ans_id_ctl)]) - float(pprobs[int(first_ans_id)])
-                    except Exception:
+                    # FIX: compute logits inside the per-layer loop (was wrongly dedented)
+                    casted = safe_cast_for_unembed(
+                        resid[0, :, :],
+                        analysis_W_U,
+                        force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED),
+                    )
+                    layer_logits = _unembed_mm(casted, analysis_W_U, analysis_b_U).float()
+                    # Prism sidecar logits (post-block) for this layer
+                    if prism_active:
+                        Xw_ctll = whiten_apply(resid[0, :, :], prism_stats)
+                        Xp_ctll = Xw_ctll @ prism_Q.to(Xw_ctll.device)
+                        Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
+                        bp = (
+                            analysis_b_U.float()
+                            if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32)
+                            else analysis_b_U
+                        )
+                        prism_logits_all_ctll = _unembed_mm(Xp_ctll, Wp, bp).float()
+                    emit_pure_next_token_record(
+                        layer + 1,
+                        layer_logits,
+                        tokens_ctl,
+                        ctx_ids_ctl,
+                        window_ids,
+                        final_probs_ctl,
+                        first_ans_id_ctl,
+                        final_dir_ctl,
+                        collected_records=[],
+                        do_raw_lens_sample=False,
+                        resid_raw_tensor=resid_raw_tensor,
+                        control_ids=(first_ans_id_ctl, first_ans_id),
+                    )
+                    if prism_active:
+                        last_pos = tokens_ctl.shape[1] - 1
+                        pz = prism_logits_all_ctll[last_pos]
+                        pprobs = torch.softmax(pz, dim=0)
+                        pent = bits_entropy_from_logits(pz)
+                        _, p_top_idx = torch.topk(pz, TOP_K_RECORD, largest=True, sorted=True)
+                        p_top_probs = pprobs[p_top_idx]
+                        p_top_tokens = [decode_id(idx) for idx in p_top_idx]
+                        p_top1_id = p_top_idx[0].item()
+                        window_ids.append(p_top1_id)
+                        if len(window_ids) > getattr(config, "copy_window_k", 1):
+                            window_ids.pop(0)
+                        p_copy = detect_copy_collapse_id_subseq(
+                            pz, ctx_ids_ctl, window_ids, copy_threshold=config.copy_threshold, copy_margin=config.copy_margin
+                        )
+                        if p_copy and is_pure_whitespace_or_punct(p_top_tokens[0]):
+                            p_copy = False
+                        p_metrics = compute_next_token_metrics(
+                            pprobs, p_top1_id, final_probs_ctl, first_ans_id_ctl, topk_cum=5
+                        )
+                        p_is_answer = (
+                            (p_metrics.get("answer_rank") == 1)
+                            if p_metrics.get("answer_rank") is not None
+                            else is_semantic_top1(p_top_tokens[0], control_ground_truth)
+                        )
+                        _pn = torch.norm(pz) + 1e-12
+                        p_cos = torch.dot((pz / _pn), final_dir_ctl).item()
                         control_margin = None
-                    json_data_prism["pure_next_token_records"].append({
-                        "prompt_id": current_prompt_id,
-                        "prompt_variant": current_prompt_variant,
-                        "layer": layer + 1,
-                        "pos": last_pos,
-                        "token": "⟨NEXT⟩",
-                        "entropy": pent,
-                        "topk": [[tok, prob.item()] for tok, prob in zip(p_top_tokens, p_top_probs)],
-                        "copy_collapse": p_copy,
-                        "entropy_collapse": pent <= 1.0,
-                        "is_answer": p_is_answer,
-                        "p_top1": p_metrics.get("p_top1"),
-                        "p_top5": p_metrics.get("p_top5"),
-                        "p_answer": p_metrics.get("p_answer"),
-                        "kl_to_final_bits": p_metrics.get("kl_to_final_bits"),
-                        "answer_rank": p_metrics.get("answer_rank"),
-                        "cos_to_final": p_cos,
-                        "control_margin": control_margin,
-                    })
+                        try:
+                            if first_ans_id_ctl is not None and first_ans_id is not None:
+                                control_margin = float(pprobs[int(first_ans_id_ctl)]) - float(pprobs[int(first_ans_id)])
+                        except Exception:
+                            control_margin = None
+                        json_data_prism["pure_next_token_records"].append(
+                            {
+                                "prompt_id": current_prompt_id,
+                                "prompt_variant": current_prompt_variant,
+                                "layer": layer + 1,
+                                "pos": last_pos,
+                                "token": "⟨NEXT⟩",
+                                "entropy": pent,
+                                "topk": [[tok, prob.item()] for tok, prob in zip(p_top_tokens, p_top_probs)],
+                                "copy_collapse": p_copy,
+                                "entropy_collapse": pent <= 1.0,
+                                "is_answer": p_is_answer,
+                                "p_top1": p_metrics.get("p_top1"),
+                                "p_top5": p_metrics.get("p_top5"),
+                                "p_answer": p_metrics.get("p_answer"),
+                                "kl_to_final_bits": p_metrics.get("kl_to_final_bits"),
+                                "answer_rank": p_metrics.get("answer_rank"),
+                                "cos_to_final": p_cos,
+                                "control_margin": control_margin,
+                            }
+                        )
             finally:
                 detach_hooks(hooks)
                 residual_cache.clear()

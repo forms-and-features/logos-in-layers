@@ -41,6 +41,12 @@ Note: Line numbers are approximate; search by the cited code fragments when appl
   - Control pure CSV shows changing logits across layers.
   - `control_summary.first_control_margin_pos` becomes non‑None and plausible.
 
+Status: Implemented
+- Change: Moved control pass per-layer unembed/logits computation and Prism sidecar emission inside the `for layer in range(n_layers)` loop (was wrongly dedented).
+- File: 001_layers_baseline/run.py
+- Lines: around 1426–1497 (casted/layer_logits, emit_pure_next_token_record, and Prism per-layer block now correctly indented inside the loop).
+- Next: Validate on a small run that control-layer logits vary and `first_control_margin_pos` is populated when appropriate.
+
 ### Bug 2 — Rolling Window Contamination (lens + variants)
 - Summary: The same rolling window list is mutated by both the normalized‑lens path and the Prism sidecar. Additionally, the control and ablation variants reuse the positive prompt’s window history.
 - Evidence/Location: Updates to a shared `window_ids` occur in both main emit and Prism branches (e.g., ~420, ~720, ~870), and the control pass continues using `window_ids` from the positive pass.
