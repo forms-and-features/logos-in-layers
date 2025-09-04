@@ -72,10 +72,19 @@ Goal: reduce `run.py` size and complexity without changing behavior. We will ext
   - User ran `scripts/run_cpu_tests.sh` — CPU-only suite passed.
   - Behavior change: none; outputs and schemas unchanged.
 
-4) Record construction (medium risk)
-- What: `print_summary()` record builder and JSON appends.
-- Why: consolidate record shaping into pure functions returning row dictionaries; easier to test.
+4) ✅ Record construction (medium risk)
+- Status: completed
+- What: centralized record shaping into pure helpers and refactored `run.py`'s `print_summary` to delegate.
+- Why: consolidates duplicated schema logic; makes behavior easier to test and maintain.
 - Target: `layers_core/records.py` (new): `make_record(...) -> dict` and `make_pure_record(...) -> dict`.
+ Implementation:
+  - Added `layers_core/records.py` with `_pack_topk`, `make_record`, and `make_pure_record` (preserve `[token, prob]` schema and `.item()` extraction).
+  - Exported via `layers_core/__init__.py`.
+  - Updated `run.py` `print_summary(...)` to call these helpers and append to `json_data`.
+  - Added unit test `001_layers_baseline/tests/test_records.py`; wired into `scripts/run_cpu_tests.sh`.
+ Validation:
+  - User ran `scripts/run_cpu_tests.sh` — CPU-only suite passed.
+  - Behavior change: none; JSON/CSV schemas and console output unchanged.
 
 5) Pure next‑token emission (medium–higher risk)
 - What: `emit_pure_next_token_record(...)` (currently a large nested helper).

@@ -49,6 +49,10 @@ from .unembed import (
     prepare_unembed_weights,
     unembed_mm,
 )
+from .records import (
+    make_record,
+    make_pure_record,
+)
 
 __all__ = [
     "_get_rms_scale",
@@ -84,4 +88,7 @@ __all__ = [
     # unembed helpers
     "prepare_unembed_weights",
     "unembed_mm",
+    # records
+    "make_record",
+    "make_pure_record",
 ]

@@ -71,6 +71,7 @@ from layers_core.raw_lens import (
     summarize_raw_lens_check,
 )
 from layers_core.summaries import summarize_pure_records
+from layers_core.records import make_record, make_pure_record
 from layers_core.windows import WindowManager
 from layers_core.gold import compute_gold_answer_info, compute_gold_answer_info_from_sequences
 from layers_core.prism import load_prism_artifacts, whiten_apply
@@ -344,25 +345,31 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         window_mgr = WindowManager(getattr(config, "copy_window_k", 1))
 
         def print_summary(layer_idx, pos, token_str, entropy_bits, top_tokens, top_probs, is_pure_next_token=False, extra=None):
-            # Collect record data for JSON output
-            record = {
-                "type": "pure_next_token_record" if is_pure_next_token else "record",
-                "prompt_id": current_prompt_id,
-                "prompt_variant": current_prompt_variant,
-                "layer": layer_idx,
-                "pos": pos,
-                "token": token_str,
-                "entropy": entropy_bits,
-                "topk": [[tok, prob.item()] for tok, prob in zip(top_tokens, top_probs)]
-            }
-            if extra:
-                record.update(extra)
-            
-            # Add to appropriate collection
             if is_pure_next_token:
-                json_data["pure_next_token_records"].append(record)
+                rec = make_pure_record(
+                    prompt_id=current_prompt_id,
+                    prompt_variant=current_prompt_variant,
+                    layer=layer_idx,
+                    pos=pos,
+                    token=token_str,
+                    entropy=entropy_bits,
+                    top_tokens=top_tokens,
+                    top_probs=top_probs,
+                    extra=extra,
+                )
+                json_data["pure_next_token_records"].append(rec)
             else:
-                json_data["records"].append(record)
+                rec = make_record(
+                    prompt_id=current_prompt_id,
+                    prompt_variant=current_prompt_variant,
+                    layer=layer_idx,
+                    pos=pos,
+                    token=token_str,
+                    entropy=entropy_bits,
+                    top_tokens=top_tokens,
+                    top_probs=top_probs,
+                )
+                json_data["records"].append(rec)
 
         # Helper: robust single-id decode (tensor or int)
         def decode_id(idx):
