@@ -39,6 +39,9 @@ from .config import (
 from .metrics import (
     compute_next_token_metrics,
 )
+from .windows import (
+    WindowManager,
+)
 
 __all__ = [
     "_get_rms_scale",
@@ -67,4 +70,6 @@ __all__ = [
     "ExperimentConfig",
     # metrics
     "compute_next_token_metrics",
+    # windows
+    "WindowManager",
 ]

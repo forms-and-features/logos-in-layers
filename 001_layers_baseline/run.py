@@ -71,6 +71,7 @@ from layers_core.raw_lens import (
     summarize_raw_lens_check,
 )
 from layers_core.summaries import summarize_pure_records
+from layers_core.windows import WindowManager
 from layers_core.gold import compute_gold_answer_info, compute_gold_answer_info_from_sequences
 from layers_core.prism import load_prism_artifacts, whiten_apply
 
@@ -382,24 +383,6 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         current_prompt_variant = "orig"
 
         # Rolling window manager to isolate copy-detection state per lens and per variant
-        class WindowManager:
-            def __init__(self, window_k: int):
-                self.window_k = window_k
-                self.windows: dict[tuple[str, str, str], list[int]] = {}
-
-            def append_and_trim(self, lens_type: str, prompt_id: str, variant: str, token_id: int) -> list[int]:
-                key = (lens_type, prompt_id, variant)
-                wl = self.windows.setdefault(key, [])
-                wl.append(int(token_id))
-                if len(wl) > self.window_k:
-                    wl.pop(0)
-                return wl.copy()
-
-            def reset_variant(self, prompt_id: str, variant: str):
-                # reset both lens windows for this (prompt, variant)
-                for lens in ("norm", "prism"):
-                    self.windows.pop((lens, prompt_id, variant), None)
-
         window_mgr = WindowManager(getattr(config, "copy_window_k", 1))
 
         def print_summary(layer_idx, pos, token_str, entropy_bits, top_tokens, top_probs, is_pure_next_token=False, extra=None):
