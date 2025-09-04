@@ -74,6 +74,7 @@ from layers_core.summaries import summarize_pure_records
 from layers_core.windows import WindowManager
 from layers_core.gold import compute_gold_answer_info, compute_gold_answer_info_from_sequences
 from layers_core.prism import load_prism_artifacts, whiten_apply
+from layers_core.head_transforms import detect_head_transforms
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -278,29 +279,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         # Track a last-layer consistency snapshot (lens vs model final head)
         last_layer_consistency = None
 
-        # Helper: detect simple final-head transforms exposed by the model/config
-        def _detect_head_transforms():
-            def _get_num(obj, names):
-                for n in names:
-                    try:
-                        v = getattr(obj, n)
-                    except Exception:
-                        continue
-                    if isinstance(v, (int, float)):
-                        return float(v)
-                return None
-
-            cfg = getattr(model, 'cfg', None)
-            scale = None
-            softcap = None
-            if cfg is not None:
-                scale = _get_num(cfg, ['final_logit_scale', 'logit_scale', 'final_logits_scale']) or scale
-                softcap = _get_num(cfg, ['final_logit_softcap', 'logit_softcap', 'final_logits_softcap', 'softcap']) or softcap
-            scale = _get_num(model, ['final_logit_scale', 'logit_scale']) or scale
-            softcap = _get_num(model, ['final_logit_softcap', 'logit_softcap']) or softcap
-            return scale, softcap
-
-        head_scale_cfg, head_softcap_cfg = _detect_head_transforms()
+        # Detect simple final-head transforms exposed by the model/config (factorized)
+        head_scale_cfg, head_softcap_cfg = detect_head_transforms(model)
 
         diag = {
             "type": "diagnostics",

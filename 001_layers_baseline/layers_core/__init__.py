@@ -42,6 +42,9 @@ from .metrics import (
 from .windows import (
     WindowManager,
 )
+from .head_transforms import (
+    detect_head_transforms,
+)
 
 __all__ = [
     "_get_rms_scale",
@@ -72,4 +75,6 @@ __all__ = [
     "compute_next_token_metrics",
     # windows
     "WindowManager",
+    # head transforms
+    "detect_head_transforms",
 ]
