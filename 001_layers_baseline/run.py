@@ -1691,144 +1691,34 @@ def run_single_model(model_id):
             f.write(f"Timestamp: {datetime.now().strftime('%Y%m%d%H%M%S')}\n")
         return False
 
-# CLI -----------------------------------------------------------------------
-def parse_cli():
-    p = argparse.ArgumentParser(description="Layer-by-layer logit-lens sweep")
-    p.add_argument("--device",
-                   default="auto",
-                   choices=["auto", "cuda", "mps", "cpu"],
-                   help="compute device to run on (default: auto picks best fit)")
-    p.add_argument("--fp32-unembed",
-                   action="store_true",
-                   help="Use FP32 shadow unembedding for analysis-only decoding (do not mutate model params)")
-    p.add_argument("--keep-residuals",
-                   action="store_true",
-                   help="Dump full residual tensors; if absent, keep only per-layer logits")
-    p.add_argument("--copy-threshold", type=float, default=0.95,
-                   help="Minimum P(top-1) for copy collapse")
-    p.add_argument("--copy-margin", type=float, default=0.10,
-                   help="Require P(top-1) − P(top-2) > margin for copy collapse")
-    p.add_argument("model_id", nargs="?", default=None,
-                   help="Model ID for single-run (when invoking as subprocess)")
-    p.add_argument("--out_dir",
-                   default=None,
-                   help="Output directory to save CSV & JSON results (default: current script directory or value forwarded by parent launcher)")
-    p.add_argument("--self-test",
-                   action="store_true",
-                   help="Run KL sanity test to validate normalization scaling (PROJECT_NOTES.md section 1.1). Can also run standalone: python kl_sanity_test.py MODEL_ID")
-    # Prism sidecar (shared decoder) controls
-    p.add_argument("--prism",
-                   default=os.environ.get("LOGOS_PRISM", "auto"),
-                   choices=["auto", "on", "off"],
-                   help="Prism sidecar mode: auto (default), on (require artifacts), off (disable)")
-    p.add_argument("--prism-dir",
-                   default="prisms",
-                   help="Prism artifacts root directory (default: prisms under this script directory)")
-    return p.parse_args()
+from types import SimpleNamespace
 
-
-# Parse once and promote to module-global so run_single_model and main can see it
-CLI_ARGS = parse_cli()
-
-def main():
-    """Main function to launch separate processes for each model"""
-    # If a model_id was provided, run in single-model mode
-    if CLI_ARGS.model_id:
-        success = run_single_model(CLI_ARGS.model_id)
-        sys.exit(0 if success else 1)
-    
-    # Main process - launch subprocess for each model
-    print(f"🎯 Starting experiment launcher for {len(CONFIRMED_MODELS)} models...")
-    print("Each model will run in a separate process for clean memory isolation.")
-
-    script_path = os.path.abspath(__file__)
-
-    # Set up run-latest directory with automatic rotation
-    run_dir = setup_run_latest_directory(os.path.dirname(script_path))
-
-    # Create empty markdown files for evaluation reports
-    print(f"📝 Creating empty evaluation markdown files...")
-    for model_id in CONFIRMED_MODELS:
-        clean_name = clean_model_name(model_id)
-        eval_md_path = os.path.join(run_dir, f"evaluation-{clean_name}.md")
-        with open(eval_md_path, 'w', encoding='utf-8') as f:
-            f.write(f"# Evaluation Report: {model_id}\n\n")
-            f.write(f"*Run executed on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
-
-        print(f"   📄 Created: evaluation-{clean_name}.md")
-
-    results = []
-    launched_models = []
-    
-    for i, model_id in enumerate(CONFIRMED_MODELS, 1):
-        print(f"\n{'='*80}")
-        print(f"📋 Launching process {i}/{len(CONFIRMED_MODELS)}: {model_id}")
-        print(f"{'='*80}")
-        
-        try:
-            # Decide device per model (auto by default)
-            if CLI_ARGS.device == "auto":
-                sel = select_best_device(model_id)
-                if sel is None:
-                    print(f"⛔ Skipping {model_id}: no device fits (estimates)")
-                    results.append((model_id, "SKIPPED_NO_FIT"))
-                    continue
-                dev, dtype, debug = sel
-                print(f"📐 Decision for {model_id}: device={dev} dtype={dtype} est_peak={debug.get('est_peak')} avail={debug.get('available')}")
-                chosen_device = dev
-            else:
-                chosen_device = CLI_ARGS.device
-
-            # Launch subprocess
-            cmd = [
-                sys.executable,
-                script_path,
-                "--device", chosen_device,   # forward the per-model device
-                "--out_dir", run_dir,        # ensure all subprocesses share same dir
-            ]
-            if CLI_ARGS.fp32_unembed:
-                cmd.append("--fp32-unembed")   # forward the fp32-unembed flag
-            if CLI_ARGS.keep_residuals:
-                cmd.append("--keep-residuals") # forward the keep-residuals flag
-            # Forward copy-collapse parameters
-            cmd.extend(["--copy-threshold", str(CLI_ARGS.copy_threshold)])
-            cmd.extend(["--copy-margin", str(CLI_ARGS.copy_margin)])
-            cmd.append(model_id)
-            
-            result = subprocess.run(cmd, capture_output=False, text=True, check=False)
-
-            if result.returncode == 0:
-                print(f"✅ Process {i} completed successfully")
-                results.append((model_id, "SUCCESS"))
-                launched_models.append(model_id)
-            else:
-                print(f"❌ Process {i} failed with return code {result.returncode}")
-                results.append((model_id, "FAILED"))
-                
-        except Exception as e:
-            error_msg = f"Failed to launch subprocess for {model_id}: {str(e)}"
-            print(f"❌ {error_msg}")
-            results.append((model_id, f"LAUNCH_FAILED: {str(e)}"))
-    
-    # Summary
-    print(f"\n{'='*80}")
-    print("🎉 All model processes completed!")
-    print(f"📁 Output files saved in: {run_dir}")
-    
-    print("\n📊 Results Summary:")
-    for model_id, status in results:
-        clean_name = clean_model_name(model_id)
-        status_emoji = "✅" if status == "SUCCESS" else "❌"
-        print(f"   {status_emoji} {clean_name}: {status}")
-    
-    print(f"\n📄 Expected output files:")
-    for model_id in (launched_models if len(launched_models) > 0 else CONFIRMED_MODELS):
-        clean_name = clean_model_name(model_id)
-        print(f"   {os.path.join(run_dir, f'output-{clean_name}.json')}")
-        print(f"   {os.path.join(run_dir, f'output-{clean_name}-records.csv')}")
-        print(f"   {os.path.join(run_dir, f'output-{clean_name}-pure-next-token.csv')} ")
-        print(f"   {os.path.join(run_dir, f'evaluation-{clean_name}.md')}")
-    print(f"{'='*80}")
+# Provide default CLI args for test and programmatic usage; launcher overrides
+CLI_ARGS = SimpleNamespace(
+    device="auto",
+    fp32_unembed=False,
+    keep_residuals=False,
+    copy_threshold=0.95,
+    copy_margin=0.10,
+    model_id=None,
+    out_dir=None,
+    self_test=False,
+    prism=os.environ.get("LOGOS_PRISM", "auto"),
+    prism_dir="prisms",
+)
 
 if __name__ == "__main__":
-    main()
+    import sys
+    # Ensure the running module is also available as 'run' to avoid a fresh import in launcher
+    sys.modules.setdefault("run", sys.modules[__name__])
+    # Provide a friendly help that mentions standalone self-test usage
+    if any(arg in ("-h", "--help") for arg in sys.argv[1:]):
+        print("Layer-by-layer logit-lens sweep (worker)\n")
+        print("Flags are parsed by the launcher. Common flags:")
+        print("  --device {auto|cuda|mps|cpu}")
+        print("  --fp32-unembed  --keep-residuals  --copy-threshold  --copy-margin  --self-test")
+        print("\nSelf-test: validates normalization scaling (PROJECT_NOTES §1.1).\n"
+              "Can also run standalone: python kl_sanity_test.py MODEL_ID")
+        sys.exit(0)
+    import launcher as _launcher
+    _launcher.main()

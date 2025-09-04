@@ -114,10 +114,15 @@ Goal: reduce `run.py` size and complexity without changing behavior. We will ext
   - User ran `scripts/run_cpu_tests.sh` — CPU-only suite passed.
   - Behavior change: none; sidecar CSV schema and fields unchanged; control margin preserved on control rows.
 
-7) CLI/launcher separation (low–medium risk)
+7) ✅ CLI/launcher separation (low–medium risk)
+- Status: completed
 - What: `parse_cli()` + `main()` orchestration/rotation/launching.
 - Why: trims the file; reduces import‑time side effects by isolating the launcher.
 - Target: `001_layers_baseline/launcher.py` (later); keep `run.py` as the worker.
+ Implementation:
+  - Added `launcher.py` with CLI parsing and multi‑model orchestration; forwards args into `run.CLI_ARGS`.
+  - `run.py` now exposes a default `CLI_ARGS` namespace for tests and programmatic use and defers to `launcher` when executed directly.
+  - `run.py --help` prints a small help block that mentions standalone `kl_sanity_test.py` usage required by tests.
 
 ## Notes on Safety and Backward Compatibility
 
