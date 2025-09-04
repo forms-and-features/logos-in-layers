@@ -78,6 +78,7 @@ from layers_core.gold import compute_gold_answer_info, compute_gold_answer_info_
 from layers_core.prism import load_prism_artifacts, whiten_apply
 from layers_core.head_transforms import detect_head_transforms
 from layers_core.unembed import prepare_unembed_weights, unembed_mm
+from layers_core.prism_sidecar import append_prism_record, append_prism_pure_next_token
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
