@@ -52,6 +52,10 @@ from .unembed import (
 from .pure_emit import (
     compute_pure_next_token_info,
 )
+from .prism_sidecar import (
+    append_prism_record,
+    append_prism_pure_next_token,
+)
 from .records import (
     make_record,
     make_pure_record,
@@ -96,4 +100,7 @@ __all__ = [
     "make_pure_record",
     # pure next-token emission
     "compute_pure_next_token_info",
+    # prism sidecar emitters
+    "append_prism_record",
+    "append_prism_pure_next_token",
 ]

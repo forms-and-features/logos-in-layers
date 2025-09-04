@@ -100,10 +100,19 @@ Goal: reduce `run.py` size and complexity without changing behavior. We will ext
   - User ran `scripts/run_cpu_tests.sh` — CPU-only suite passed.
   - Behavior change: none; schemas and console behavior unchanged.
 
-6) Prism sidecar emitters (higher risk)
-- What: sidecar per‑position and pure‑next‑token writing (duplicated across passes).
-- Why: sizeable block; already has supporting `prism.py` utils and tests; can be isolated once (1–5) are stable.
+6) ✅ Prism sidecar emitters (higher risk)
+- Status: completed
+- What: extracted Prism per‑position and pure‑next‑token writers used across orig/no_filler/control passes.
+- Why: removed sizeable duplication; leverages shared compute and record helpers to keep schemas consistent.
 - Target: `layers_core/prism_sidecar.py` (new) with mirror interfaces to baseline emitters.
+ Implementation:
+  - Added `append_prism_record(...)` for per‑position rows and `append_prism_pure_next_token(...)` for pure rows (calls `compute_pure_next_token_info`).
+  - Updated `run.py` to delegate all Prism appends to these helpers; preserved whitening/placement code.
+  - Exported via `layers_core/__init__.py`.
+  - Added unit test `001_layers_baseline/tests/test_prism_sidecar_helpers.py`; wired into `scripts/run_cpu_tests.sh`.
+ Validation:
+  - User ran `scripts/run_cpu_tests.sh` — CPU-only suite passed.
+  - Behavior change: none; sidecar CSV schema and fields unchanged; control margin preserved on control rows.
 
 7) CLI/launcher separation (low–medium risk)
 - What: `parse_cli()` + `main()` orchestration/rotation/launching.

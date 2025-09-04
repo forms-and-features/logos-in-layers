@@ -1,0 +1,71 @@
+import _pathfix  # noqa: F401
+import torch
+
+from layers_core.windows import WindowManager
+from layers_core.prism_sidecar import append_prism_record, append_prism_pure_next_token
+
+
+def test_append_prism_record_appends_row():
+    buf = {"records": []}
+    logits = torch.randn(10)
+    append_prism_record(
+        buf,
+        prompt_id="pos",
+        prompt_variant="orig",
+        layer=3,
+        pos=1,
+        token="tok",
+        logits_pos=logits,
+        decode_id_fn=lambda i: f"t{int(i)}",
+        top_k=3,
+    )
+    assert len(buf["records"]) == 1
+    rec = buf["records"][0]
+    assert rec["type"] == "record"
+    assert rec["prompt_id"] == "pos"
+    assert rec["prompt_variant"] == "orig"
+    assert rec["layer"] == 3 and rec["pos"] == 1
+    assert isinstance(rec["entropy"], float)
+    assert len(rec["topk"]) == 3
+
+
+def test_append_prism_pure_next_token_builds_pure_record():
+    torch.manual_seed(0)
+    buf = {"pure_next_token_records": []}
+    seq_len = 4
+    vocab = 12
+    prism_logits_all = torch.randn(seq_len, vocab)
+    tokens = torch.zeros(1, seq_len, dtype=torch.long)
+    wm = WindowManager(window_k=1)
+    final_logits = torch.randn(vocab)
+    final_probs = torch.softmax(final_logits, dim=0)
+    final_dir = final_logits / (final_logits.norm() + 1e-12)
+
+    append_prism_pure_next_token(
+        buf,
+        layer_out_idx=2,
+        prism_logits_all=prism_logits_all,
+        tokens_tensor=tokens,
+        ctx_ids_list=[1, 2, 3],
+        window_manager=wm,
+        final_probs_tensor=final_probs,
+        first_ans_token_id=None,
+        final_dir_vec=final_dir,
+        copy_threshold=0.0,
+        copy_margin=0.0,
+        entropy_collapse_threshold=10.0,
+        decode_id_fn=lambda i: f"t{int(i)}",
+        ground_truth="X",
+        top_k_record=5,
+        prompt_id="pos",
+        prompt_variant="orig",
+    )
+    assert len(buf["pure_next_token_records"]) == 1
+    rec = buf["pure_next_token_records"][0]
+    assert rec["type"] == "pure_next_token_record"
+    assert rec["layer"] == 2 and rec["pos"] == seq_len - 1
+    assert rec["prompt_id"] == "pos" and rec["prompt_variant"] == "orig"
+    # has expected extra metrics
+    for k in ("copy_collapse", "entropy_collapse", "p_top1", "kl_to_final_bits"):
+        assert k in rec
+
