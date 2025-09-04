@@ -45,6 +45,10 @@ from .windows import (
 from .head_transforms import (
     detect_head_transforms,
 )
+from .unembed import (
+    prepare_unembed_weights,
+    unembed_mm,
+)
 
 __all__ = [
     "_get_rms_scale",
@@ -77,4 +81,7 @@ __all__ = [
     "WindowManager",
     # head transforms
     "detect_head_transforms",
+    # unembed helpers
+    "prepare_unembed_weights",
+    "unembed_mm",
 ]

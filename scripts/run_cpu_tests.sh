@@ -43,6 +43,7 @@ ${PY} 001_layers_baseline/tests/test_summaries.py
 ${PY} 001_layers_baseline/tests/test_head_transforms.py
 ${PY} 001_layers_baseline/tests/test_windows.py
 ${PY} 001_layers_baseline/tests/test_raw_lens.py
+${PY} 001_layers_baseline/tests/test_unembed.py
 
 # Prism unit tests (CPU-only)
 ${PY} 001_layers_baseline/tests/test_prism_whiten.py

@@ -75,6 +75,7 @@ from layers_core.windows import WindowManager
 from layers_core.gold import compute_gold_answer_info, compute_gold_answer_info_from_sequences
 from layers_core.prism import load_prism_artifacts, whiten_apply
 from layers_core.head_transforms import detect_head_transforms
+from layers_core.unembed import prepare_unembed_weights, unembed_mm
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -194,46 +195,23 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         
         # Toggle for FP32 unembedding (recommended for research-grade precision)
         # Prevents under-resolving logit gaps < 1e-5 with minimal memory overhead.
-        USE_FP32_UNEMBED = should_auto_promote_unembed(dtype)
+        AUTO_FP32_UNEMBED = should_auto_promote_unembed(dtype)
 
-        # Shadow copies for analysis-only unembedding (do NOT mutate model params)
-        analysis_W_U = model.unembed.W_U  # default: use model parameter dtype
-        analysis_b_U = getattr(model.unembed, 'b_U', None)
-        UNEMBED_DTYPE = analysis_W_U.dtype  # initial report
+        # Prepare analysis-only unembedding weights (no mutation of model params)
+        orig_unembed_dtype = model.unembed.W_U.dtype
+        if config.fp32_unembed and orig_unembed_dtype != torch.float32:
+            print(f"🔬 CLI: Forcing FP32 shadow unembed weights for analysis (was {orig_unembed_dtype})")
+        elif AUTO_FP32_UNEMBED and orig_unembed_dtype != torch.float32:
+            print(f"🔬 Using FP32 shadow unembed weights for analysis (was {orig_unembed_dtype})")
+        analysis_W_U, analysis_b_U = prepare_unembed_weights(
+            model.unembed.W_U,
+            getattr(model.unembed, 'b_U', None),
+            force_fp32=(config.fp32_unembed or AUTO_FP32_UNEMBED),
+        )
+        UNEMBED_DTYPE = analysis_W_U.dtype
 
-        # If enabled, create FP32 shadow weights for unembedding without touching the model's forward path
-        if USE_FP32_UNEMBED and analysis_W_U.dtype != torch.float32:
-            print(f"🔬 Using FP32 shadow unembed weights for analysis (was {analysis_W_U.dtype})")
-            analysis_W_U = analysis_W_U.float()
-            if analysis_b_U is not None:
-                analysis_b_U = analysis_b_U.float()
-            UNEMBED_DTYPE = torch.float32
-
-        # Apply CLI-based FP32 unembed promotion if requested (analysis-only)
-        if config.fp32_unembed and UNEMBED_DTYPE != torch.float32:
-            print(f"🔬 CLI: Forcing FP32 shadow unembed weights for analysis (was {UNEMBED_DTYPE})")
-            analysis_W_U = analysis_W_U.float()
-            if analysis_b_U is not None:
-                analysis_b_U = analysis_b_U.float()
-            UNEMBED_DTYPE = torch.float32
-
-        # Helper: unembed matmul with simple per-device cache to avoid repeated transfers
+        # Per-device cache for unembedding matmul
         _unembed_cache = {"device": None, "W": None, "b": None}
-        def _unembed_mm(X: torch.Tensor, W: torch.Tensor, b: torch.Tensor | None) -> torch.Tensor:
-            dev = X.device
-            W_use = W
-            b_use = b
-            if hasattr(W, 'device') and W.device != dev:
-                if _unembed_cache["device"] != dev:
-                    _unembed_cache["W"] = W.to(dev)
-                    _unembed_cache["b"] = (b.to(dev) if (b is not None and hasattr(b, 'device')) else b)
-                    _unembed_cache["device"] = dev
-                W_use = _unembed_cache["W"]
-                b_use = _unembed_cache["b"]
-            out = X @ W_use
-            if b_use is not None:
-                out = out + b_use
-            return out
         
         context_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
         ground_truth = "Berlin"  # For display/comparison
@@ -287,7 +265,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             "model": model_id,
             "device": device,
             "use_norm_lens": USE_NORM_LENS,
-            "use_fp32_unembed": USE_FP32_UNEMBED,
+            "use_fp32_unembed": AUTO_FP32_UNEMBED,
             "unembed_dtype": str(UNEMBED_DTYPE),
             "first_block_ln1_type": first_block_ln1_type,
             "final_ln_type": final_ln_type,
@@ -508,7 +486,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     resid_raw_last_vec=resid_raw_tensor[0, last_pos, :],
                     W_U=analysis_W_U,
                     b_U=analysis_b_U,
-                    force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED),
+                    force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
                     tokenizer=model.tokenizer,
                     final_probs=final_probs_tensor,
                     first_ans_id=first_ans_token_id,
@@ -695,8 +673,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     resid = apply_norm_or_skip(resid, norm_module)
                 
                 # Vectorized unembedding for all positions using analysis shadow weights
-                resid_cast = safe_cast_for_unembed(resid[0], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
-                logits_all = _unembed_mm(resid_cast, analysis_W_U, analysis_b_U)
+                resid_cast = safe_cast_for_unembed(resid[0], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED))
+                logits_all = unembed_mm(resid_cast, analysis_W_U, analysis_b_U, cache=_unembed_cache)
                 logits_all = logits_all.float()  # downstream numerics in fp32
                 # Prism sidecar logits for all positions (if active)
                 prism_enabled = prism_active
@@ -718,7 +696,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
                     bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
                     if prism_enabled:
-                        prism_logits_all_L0 = _unembed_mm(Xp_L0, Wp, bp)
+                        prism_logits_all_L0 = unembed_mm(Xp_L0, Wp, bp, cache=_unembed_cache)
                         prism_logits_all_L0 = prism_logits_all_L0.float()
                 
                 # Save residuals if requested
@@ -835,8 +813,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         resid = apply_norm_or_skip(resid, norm_module)
                     
                     # Vectorized unembedding for all positions using analysis shadow weights
-                    resid_cast = safe_cast_for_unembed(resid[0], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
-                    logits_all = _unembed_mm(resid_cast, analysis_W_U, analysis_b_U)
+                    resid_cast = safe_cast_for_unembed(resid[0], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED))
+                    logits_all = unembed_mm(resid_cast, analysis_W_U, analysis_b_U, cache=_unembed_cache)
                     logits_all = logits_all.float()  # downstream numerics in fp32
                     # Prism sidecar logits (post-block) for all positions
                     if prism_enabled:
@@ -844,7 +822,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         Xp = Xw @ prism_Q_use
                         Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
                         bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
-                        prism_logits_all = _unembed_mm(Xp, Wp, bp)
+                        prism_logits_all = unembed_mm(Xp, Wp, bp, cache=_unembed_cache)
                         prism_logits_all = prism_logits_all.float()
                     
                     # Save residuals if requested
@@ -1220,8 +1198,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 if USE_NORM_LENS:
                     norm_module = get_correct_norm_module(model, 0, probe_after_block=False)
                     resid = apply_norm_or_skip(resid, norm_module)
-                casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
-                layer_logits = _unembed_mm(casted, analysis_W_U, analysis_b_U).float()
+                casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED))
+                layer_logits = unembed_mm(casted, analysis_W_U, analysis_b_U, cache=_unembed_cache).float()
                 # Setup Prism state for no_filler variant
                 prism_enabled_nf = False
                 prism_Q_nf = prism_Q
@@ -1242,7 +1220,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     Xp_nf0 = Xw_nf0 @ (prism_Q_nf if prism_enabled_nf else torch.eye(Xw_nf0.shape[-1], device=Xw_nf0.device))
                     Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
                     bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
-                    prism_logits_all_nf0 = _unembed_mm(Xp_nf0, Wp, bp).float()
+                    prism_logits_all_nf0 = unembed_mm(Xp_nf0, Wp, bp, cache=_unembed_cache).float()
                 emit_pure_next_token_record(
                     0,
                     layer_logits,
@@ -1302,14 +1280,14 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     if USE_NORM_LENS:
                         norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
                         resid = apply_norm_or_skip(resid, norm_module)
-                    casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
-                    layer_logits = _unembed_mm(casted, analysis_W_U, analysis_b_U).float()
+                    casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED))
+                    layer_logits = unembed_mm(casted, analysis_W_U, analysis_b_U, cache=_unembed_cache).float()
                     if prism_enabled_nf:
                         Xw_nfl = whiten_apply(resid[0, :, :], prism_stats)
                         Xp_nfl = Xw_nfl @ prism_Q_nf
                         Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
                         bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
-                        prism_logits_all_nfl = _unembed_mm(Xp_nfl, Wp, bp).float()
+                        prism_logits_all_nfl = unembed_mm(Xp_nfl, Wp, bp, cache=_unembed_cache).float()
                     emit_pure_next_token_record(
                         layer + 1,
                         layer_logits,
@@ -1413,8 +1391,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 if USE_NORM_LENS:
                     norm_module = get_correct_norm_module(model, 0, probe_after_block=False)
                     resid = apply_norm_or_skip(resid, norm_module)
-                casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED))
-                layer_logits = _unembed_mm(casted, analysis_W_U, analysis_b_U).float()
+                casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED))
+                layer_logits = unembed_mm(casted, analysis_W_U, analysis_b_U, cache=_unembed_cache).float()
                 # Prepare Prism logits for control L0
                 prism_enabled_ctl = False
                 prism_Q_ctl = prism_Q
@@ -1434,7 +1412,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     Xp_ctl0 = Xw_ctl0 @ (prism_Q_ctl if prism_enabled_ctl else torch.eye(Xw_ctl0.shape[-1], device=Xw_ctl0.device))
                     Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
                     bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
-                    prism_logits_all_ctl0 = _unembed_mm(Xp_ctl0, Wp, bp).float()
+                    prism_logits_all_ctl0 = unembed_mm(Xp_ctl0, Wp, bp, cache=_unembed_cache).float()
                 emit_pure_next_token_record(
                     0,
                     layer_logits,
@@ -1509,9 +1487,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     casted = safe_cast_for_unembed(
                         resid[0, :, :],
                         analysis_W_U,
-                        force_fp32_unembed=(config.fp32_unembed or USE_FP32_UNEMBED),
+                        force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
                     )
-                    layer_logits = _unembed_mm(casted, analysis_W_U, analysis_b_U).float()
+                    layer_logits = unembed_mm(casted, analysis_W_U, analysis_b_U, cache=_unembed_cache).float()
                     # Prism sidecar logits (post-block) for this layer
                     if prism_active:
                         Xw_ctll = whiten_apply(resid[0, :, :], prism_stats)
@@ -1522,7 +1500,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                             if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32)
                             else analysis_b_U
                         )
-                        prism_logits_all_ctll = _unembed_mm(Xp_ctll, Wp, bp).float()
+                        prism_logits_all_ctll = unembed_mm(Xp_ctll, Wp, bp, cache=_unembed_cache).float()
                     emit_pure_next_token_record(
                         layer + 1,
                         layer_logits,

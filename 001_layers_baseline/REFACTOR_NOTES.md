@@ -2,6 +2,18 @@
 
 Goal: reduce `run.py` size and complexity without changing behavior. We will extract small, well‑scoped units with minimal coupling first, add tests when prudent, and verify via the existing CPU test suite. Each move should be reversible and low risk.
 
+## Instructions to the coding assistant
+
+- Approach each step separately, never attempt to do multiple steps at the same time.
+- After the user tells you to implement a step, plan the implementation and report back to the user to run it by them.
+- If the user tells you to adjust the approach, rethink it and report back to the user.
+- If the user tells you that you may proceed, implement the change as planned, including a test or a test case in an existing test file located in `001_layers_baseline/tests/`.
+- If you introduced a new test file, also add it to the test-running shell script in `scripts/run_cpu_tests.sh`.
+- Don't run the test — just tell the user that the implementation is complete, and the user can run the test; the user will run the suite themselves.
+- If something broke in the tests, the user will tell you and possibly provide details, and you'll investigate the problem, immediately fix it, and ask the user to re-run the tests.
+- After the user tells you that the tests completed fine, mark the step as completed in `001_layers_baseline/REFACTOR_NOTES.md` in the same format as the previous steps (checkbox emoji in the heading of the step, status line, brief notes on the implementation etc).
+- After updating the refactor plan, commit the changes (don't wait for the user to tell you to do so — do it immediately after changing the refactor plan); use a multiline commit message; the top line should have a concise description of the step (don't add anything like "step 3" etc — this is irrelevant from the point of view of commit history; describe the change itself; no need to mention refactor notes — they are also irrelevant from the point of view of commit history).
+
 ## Principles
 
 - Preserve behavior and outputs byte‑for‑byte where feasible.
@@ -41,12 +53,24 @@ Goal: reduce `run.py` size and complexity without changing behavior. We will ext
   - Ran `bash scripts/test.sh` — CPU-only suite passed.
  Behavior change: none; only code relocation and test addition.
 
-3) Unembedding helper + fp32 shadow selection (low–medium risk)
-- What: `_unembed_mm` closure + block that promotes analysis unembedding weights to fp32 when needed.
-- Why: reused in many places; centralizes dtype/device handling; reduces clutter in `run.py`.
+3) ✅ Unembedding helper + fp32 shadow selection (low–medium risk)
+- Status: completed
+- What: extracted the fp32-shadow selection and the unembedding matmul into reusable helpers; replaced the inline `_unembed_mm` closure and ad‑hoc promotion logic in `run.py`.
+- Why: logic is reused across passes and in Prism sidecar; centralizing dtype/device handling reduces duplication and future drift.
 - Target: `layers_core/unembed.py` (new):
-  - `prepare_unembed_weights(W_U, b_U, force_fp32: bool) -> (W, b, dtype_str)`
+  - `prepare_unembed_weights(W_U, b_U, force_fp32: bool) -> (W, b)`
   - `unembed_mm(X, W, b, cache=None) -> logits`
+  - Per‑device tiny cache to avoid repeated host↔device transfers.
+  - No mutation of model parameters; helpers return analysis‑only tensors.
+ Implementation:
+  - Added `layers_core/unembed.py` with the two helpers.
+  - Exported via `layers_core/__init__.py`.
+  - Refactored `run.py` to use `prepare_unembed_weights` and `unembed_mm`; preserved console messages and diagnostics (`unembed_dtype`, `use_fp32_unembed`).
+  - Kept `safe_cast_for_unembed` usage unchanged; maintained Prism paths.
+  - Added unit test `001_layers_baseline/tests/test_unembed.py` and wired it into `scripts/run_cpu_tests.sh`.
+ Validation:
+  - User ran `scripts/run_cpu_tests.sh` — CPU-only suite passed.
+  - Behavior change: none; outputs and schemas unchanged.
 
 4) Record construction (medium risk)
 - What: `print_summary()` record builder and JSON appends.
