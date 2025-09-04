@@ -49,6 +49,9 @@ from .unembed import (
     prepare_unembed_weights,
     unembed_mm,
 )
+from .pure_emit import (
+    compute_pure_next_token_info,
+)
 from .records import (
     make_record,
     make_pure_record,
@@ -91,4 +94,6 @@ __all__ = [
     # records
     "make_record",
     "make_pure_record",
+    # pure next-token emission
+    "compute_pure_next_token_info",
 ]

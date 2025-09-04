@@ -86,10 +86,19 @@ Goal: reduce `run.py` size and complexity without changing behavior. We will ext
   - User ran `scripts/run_cpu_tests.sh` — CPU-only suite passed.
   - Behavior change: none; JSON/CSV schemas and console output unchanged.
 
-5) Pure next‑token emission (medium–higher risk)
-- What: `emit_pure_next_token_record(...)` (currently a large nested helper).
-- Why: concentrates metrics, flags, and optional raw‑lens sample; but has many inputs and call‑site context.
-- Target: later step after (1–4) so we can pass smaller, typed inputs and reuse helpers. Keep signature explicit; return the record and a small summary for `collected_pure_records`.
+5) ✅ Pure next‑token emission (medium–higher risk)
+- Status: completed
+- What: factored the pure next-token computation into a reusable helper and slimmed the local emitter in `run.py`.
+- Why: reduces complexity and duplication across passes; centralizes metric derivation and record shaping.
+- Target: `layers_core/pure_emit.py` (new): `compute_pure_next_token_info(...)` returns view/collected/dual_ctx dicts.
+ Implementation:
+  - Added `compute_pure_next_token_info` that computes entropy, top‑k, copy/entropy collapse, rank metrics, cosine to final, and optional control margin.
+  - Updated `run.py` local `emit_pure_next_token_record` to call the helper, build a record via `make_pure_record`, append to JSON, push summary to `collected_records`, and optionally log a dual‑lens sample.
+  - Exported via `layers_core/__init__.py`.
+  - Added unit test `001_layers_baseline/tests/test_pure_emit.py`; wired into `scripts/run_cpu_tests.sh`.
+ Validation:
+  - User ran `scripts/run_cpu_tests.sh` — CPU-only suite passed.
+  - Behavior change: none; schemas and console behavior unchanged.
 
 6) Prism sidecar emitters (higher risk)
 - What: sidecar per‑position and pure‑next‑token writing (duplicated across passes).

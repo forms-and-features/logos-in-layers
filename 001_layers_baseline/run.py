@@ -72,6 +72,7 @@ from layers_core.raw_lens import (
 )
 from layers_core.summaries import summarize_pure_records
 from layers_core.records import make_record, make_pure_record
+from layers_core.pure_emit import compute_pure_next_token_info
 from layers_core.windows import WindowManager
 from layers_core.gold import compute_gold_answer_info, compute_gold_answer_info_from_sequences
 from layers_core.prism import load_prism_artifacts, whiten_apply
@@ -395,7 +396,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     return None
             return v if _math.isfinite(v) else None
 
-        # Helper: emit pure next-token metrics and record (reduces duplication)
+        # Helper: compute pure next-token info and append records
         def emit_pure_next_token_record(
             layer_out_idx: int,
             logits_all: torch.Tensor,
@@ -412,92 +413,58 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             *,
             control_ids: tuple[int | None, int | None] | None = None,
         ):
-            last_pos = tokens_tensor.shape[1] - 1
-            last_logits = logits_all[last_pos]
-            last_entropy_bits = bits_entropy_from_logits(last_logits)
-            last_full_probs = torch.softmax(last_logits, dim=0)
-            last_token_str = "⟨NEXT⟩"
-            _, last_top_indices = torch.topk(last_logits, TOP_K_RECORD, largest=True, sorted=True)
-            last_top_probs = last_full_probs[last_top_indices]
-            last_top_tokens = [decode_id(idx) for idx in last_top_indices]
-
-            # Update rolling window (per lens, per variant)
-            top1_id = int(last_top_indices[0].item())
-            window_ids_list = window_manager.append_and_trim(lens_type, current_prompt_id, current_prompt_variant, top1_id)
-
-            # Copy / semantic flags and metrics
-            copy_collapse = detect_copy_collapse_id_subseq(
-                last_logits,
-                ctx_ids_list,
-                window_ids_list,
+            view, collected, dual_ctx = compute_pure_next_token_info(
+                layer_out_idx=layer_out_idx,
+                logits_all=logits_all,
+                tokens_tensor=tokens_tensor,
+                ctx_ids_list=ctx_ids_list,
+                window_manager=window_manager,
+                lens_type=lens_type,
+                final_probs_tensor=final_probs_tensor,
+                first_ans_token_id=first_ans_token_id,
+                final_dir_vec=final_dir_vec,
                 copy_threshold=config.copy_threshold,
                 copy_margin=config.copy_margin,
-            )
-            if copy_collapse and is_pure_whitespace_or_punct(last_top_tokens[0]):
-                copy_collapse = False
-            entropy_collapse = last_entropy_bits <= getattr(config, 'entropy_collapse_threshold', 1.0)
-            # Defer final is_answer decision until rank is known; keep string fallback
-            is_answer_fallback = is_semantic_top1(last_top_tokens[0], ground_truth)
-
-            metrics = compute_next_token_metrics(
-                last_full_probs, top1_id, final_probs_tensor, first_ans_token_id, topk_cum=5
+                entropy_collapse_threshold=getattr(config, 'entropy_collapse_threshold', 1.0),
+                decode_id_fn=decode_id,
+                ground_truth=ground_truth,
+                top_k_record=TOP_K_RECORD,
+                prompt_id=current_prompt_id,
+                prompt_variant=current_prompt_variant,
+                control_ids=control_ids,
             )
 
-            # Prefer rank-based ID check when available; fallback to string match
-            is_answer = (metrics.get("answer_rank") == 1) if metrics.get("answer_rank") is not None else is_answer_fallback
+            # Build and append pure-next-token record
+            rec = make_pure_record(
+                prompt_id=current_prompt_id,
+                prompt_variant=current_prompt_variant,
+                layer=layer_out_idx,
+                pos=view["pos"],
+                token=view["token_str"],
+                entropy=view["entropy_bits"],
+                top_tokens=view["top_tokens"],
+                top_probs=view["top_probs"],
+                extra=view["record_extra"],
+            )
+            json_data["pure_next_token_records"].append(rec)
 
-            # Cosine to final direction (PROJECT_NOTES §1.5)
-            _curr_norm = torch.norm(last_logits) + 1e-12
-            cos_to_final = torch.dot((last_logits / _curr_norm), final_dir_vec).item()
+            # Append to collected summary list
+            collected_records.append(collected)
 
-            # Control margin (PROJECT_NOTES §1.8): only meaningful for control prompt rows
-            control_margin = None
-            if control_ids is not None and all(x is not None for x in control_ids):
-                paris_id, berlin_id = control_ids  # type: ignore
-                try:
-                    control_margin = float(last_full_probs[int(paris_id)]) - float(last_full_probs[int(berlin_id)])
-                except (IndexError, ValueError, TypeError) as e:
-                    print(f"Warning: control margin unavailable: {e}")
-                    control_margin = None
-                except Exception as e:
-                    print(f"Unexpected error computing control margin: {e}")
-                    raise
-
-            record_extra = {
-                "copy_collapse": copy_collapse,
-                "entropy_collapse": entropy_collapse,
-                "is_answer": is_answer,
-                **metrics,
-                "cos_to_final": cos_to_final,
-                "control_margin": control_margin,
-            }
-
-            # Collect for L_copy/L_semantic computation
-            collected_records.append({
-                "layer": layer_out_idx,
-                "copy_collapse": copy_collapse,
-                "entropy_collapse": entropy_collapse,
-                "is_answer": is_answer,
-                "kl_to_final_bits": metrics["kl_to_final_bits"],
-                "answer_rank": metrics["answer_rank"],
-            })
-
-            print_summary(layer_out_idx, last_pos, last_token_str, last_entropy_bits, last_top_tokens, last_top_probs, is_pure_next_token=True, extra=record_extra)
-
-            # Dual-lens sanity sample (PROJECT_NOTES §1.4)
+            # Optional: record dual-lens sample
             if RAW_LENS_MODE != "off" and do_raw_lens_sample and resid_raw_tensor is not None:
                 record_dual_lens_sample(
                     json_data["raw_lens_check"],
-                    layer_out_idx=layer_out_idx,
-                    last_logits_norm=last_logits,
-                    resid_raw_last_vec=resid_raw_tensor[0, last_pos, :],
+                    layer_out_idx=dual_ctx["layer"],
+                    last_logits_norm=dual_ctx["last_logits_norm"],
+                    resid_raw_last_vec=resid_raw_tensor[0, int(dual_ctx["last_pos"]) , :],
                     W_U=analysis_W_U,
                     b_U=analysis_b_U,
                     force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
                     tokenizer=model.tokenizer,
-                    final_probs=final_probs_tensor,
-                    first_ans_id=first_ans_token_id,
-                    ground_truth=ground_truth,
+                    final_probs=dual_ctx["final_probs"],
+                    first_ans_id=dual_ctx["first_ans_id"],
+                    ground_truth=dual_ctx["ground_truth"],
                 )
         
         # Tokenize the context prompt (without "Answer:" to avoid teacher-forcing)
