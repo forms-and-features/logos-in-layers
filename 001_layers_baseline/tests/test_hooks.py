@@ -5,7 +5,7 @@ import _pathfix  # noqa: F401
 
 import torch
 
-from layers_core.hooks import build_cache_hook, attach_residual_hooks, detach_hooks
+from layers_core.hooks import build_cache_hook, attach_residual_hooks, detach_hooks, get_residual_safely
 
 
 class MockHandle:
@@ -77,3 +77,24 @@ def test_attach_without_positional():
     assert has_pos is False
     assert len(handles) == 1 + model.cfg.n_layers
 
+
+def test_get_residual_safely_success_and_failure():
+    model = MockModel(n_layers=2, with_pos=True)
+    cache = {}
+    cache_hook = build_cache_hook(cache)
+    handles, _ = attach_residual_hooks(model, cache_hook)
+    x = torch.randn(1, 3)
+    # Fire only layer 1 residual
+    model.blocks[1].hook_resid_post.fire(x)
+    # Success
+    got = get_residual_safely(cache, 1)
+    assert torch.equal(got, x)
+    # Failure shows helpful candidates
+    try:
+        get_residual_safely(cache, 0)
+        assert False, "expected KeyError"
+    except KeyError as e:
+        msg = str(e)
+        assert "blocks.0.hook_resid_post" in msg
+    finally:
+        detach_hooks(handles)

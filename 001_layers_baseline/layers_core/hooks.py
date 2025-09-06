@@ -1,5 +1,7 @@
 from typing import Tuple, List, Dict, Any
 
+import torch
+
 
 def build_cache_hook(cache_dict: Dict[str, Any]):
     """Return a hook fn that stores detached tensors keyed by hook.name."""
@@ -38,3 +40,17 @@ def detach_hooks(handles: List[Any]) -> None:
         if h is not None:
             h.remove()
 
+
+def get_residual_safely(cache: Dict[str, Any], layer: int) -> torch.Tensor:
+    """Return the cached post-block residual for a layer with a helpful error.
+
+    Looks up key 'blocks.{layer}.hook_resid_post'. If missing, raises KeyError
+    including any nearby keys that match 'blocks.{layer}'.
+    """
+    key = f"blocks.{layer}.hook_resid_post"
+    if key not in cache:
+        candidates = [k for k in cache.keys() if f"blocks.{layer}" in k]
+        raise KeyError(
+            f"Missing '{key}' in residual cache. Available near layer {layer}: {candidates}"
+        )
+    return cache[key]

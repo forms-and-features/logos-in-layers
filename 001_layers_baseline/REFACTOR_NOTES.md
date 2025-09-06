@@ -42,12 +42,17 @@ Legend: [ ] pending · [x] completed
   - prism_sidecar entropy now uses bits_entropy_from_logits to match baseline numerics.
   - Added tests/test_prism_sidecar_equivalence.py and updated scripts/run_cpu_tests.sh.
 
-2) [ ] Extract get_residual_safely to layers_core.hooks
+2) [x] Extract get_residual_safely to layers_core.hooks
 - Scope: Move the inline helper from run.py into hooks.get_residual_safely(cache, layer) and reuse.
 - Rationale: Centralize residual lookup and uniform error messages.
 - Deliverables: New helper with docstring; run.py uses it; no behavior change.
 - Tests: Extend tests/test_hooks.py with success and failure cases.
 - Rollback: Inline the function again.
+ - Status: completed 2025-09-06
+ - Notes:
+   - Added hooks.get_residual_safely with helpful KeyError including nearby keys.
+   - run.py imports and uses the helper; removed inline closure.
+   - tests/test_hooks.py covers success and failure; included in scripts/run_cpu_tests.sh already.
 
 3) [ ] Extract last-layer consistency computation
 - Scope: Move temperature/KL and head-transform diagnostics into a new layers_core/consistency.py: compute_last_layer_consistency(...).

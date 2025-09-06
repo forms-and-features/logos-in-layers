@@ -60,7 +60,7 @@ from layers_core.device_policy import (
     should_auto_promote_unembed,
     select_best_device,
 )
-from layers_core.hooks import build_cache_hook, attach_residual_hooks, detach_hooks
+from layers_core.hooks import build_cache_hook, attach_residual_hooks, detach_hooks, get_residual_safely
 from layers_core.run_dir import setup_run_latest_directory
 from layers_core.config import ExperimentConfig
 from layers_core.raw_lens import (
@@ -377,13 +377,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         def decode_id(idx):
             return model.tokenizer.decode([idx.item() if hasattr(idx, 'item') else int(idx)])
 
-        # Helper: safe residual accessor (avoids brittle keying)
-        def get_residual_safely(cache: dict, layer: int) -> torch.Tensor:
-            key = f"blocks.{layer}.hook_resid_post"
-            if key not in cache:
-                candidates = [k for k in cache.keys() if f"blocks.{layer}" in k]
-                raise KeyError(f"Missing '{key}' in residual cache. Available near layer {layer}: {candidates}")
-            return cache[key]
+        # Residual accessor now shared in layers_core.hooks.get_residual_safely
 
         # Helper: finite float coercion for JSON safety
         import math as _math
