@@ -1,6 +1,8 @@
 # Refactor Plan for 001_layers_baseline/run.py
 
-Goal: reduce `run.py` size and complexity without changing behavior. We will extract small, well‑scoped units with minimal coupling first, add tests when prudent, and verify via the existing CPU test suite. Each move should be reversible and low risk.
+Goal: reduce `run.py` size and complexity without changing behavior.
+We will extract well‑scoped units with minimal coupling first, add tests when prudent, and verify via the existing CPU test suite.
+Each move should be reversible and low risk.
 
 ## Instructions to the coding assistant
 
@@ -17,116 +19,123 @@ Goal: reduce `run.py` size and complexity without changing behavior. We will ext
 ## Principles
 
 - Preserve behavior and outputs byte‑for‑byte where feasible.
-- Prefer extracting leaf utilities/classes first; avoid deep orchestration changes early.
+- Prefer extracting leaf utilities/classes first; deep orchestration - later.
 - Keep interfaces explicit; pass dependencies instead of using module globals/closures.
 - Add or reuse unit tests to guard semantics before touching larger flows.
 
 ## Refactor steps (ranked by safety/impact)
 
-1) ✅ WindowManager (very low risk, small surface)
-- Status: completed
-- What: the small rolling window helper class for copy‑collapse detection inside `run.py`.
-- Why: self‑contained logic; used in three passes (orig, no_filler, control); easy to unit test; reduces duplication.
-- Target: `layers_core/windows.py` (new) and export via `layers_core/__init__.py`.
- Implementation:
-  - Added `layers_core/windows.py` with `WindowManager` (same API and behavior).
-  - Exported via `layers_core/__init__.py`.
-  - Removed inline class from `run.py` and imported `WindowManager`.
-  - Added unit test `001_layers_baseline/tests/test_windows.py`.
-  - Included the unit test in `scripts/run_cpu_tests.sh`.
-- Validation:
-  - Ran `bash scripts/test.sh` — CPU-only suite passed.
- Behavior change: none; only code relocation and test addition.
+The plan below is incremental and behavior-preserving. Each step is small, reversible, and adds or reuses tests. Only proceed to the next step after the previous is merged and tests are green.
 
-2) ✅ Head transforms detection (low risk)
-- Status: completed
-- What: `_detect_head_transforms()` local helper that probes `model`/`cfg` for scale/softcap.
-- Why: purely introspective, no side effects; makes `run.py` slimmer.
-- Target: `layers_core/head_transforms.py` (new) with a single `detect_head_transforms(model) -> tuple[Optional[float], Optional[float]]`.
- Implementation:
-  - Added `layers_core/head_transforms.py`.
-  - Exported via `layers_core/__init__.py`.
-  - Removed inline class from `run.py` and imported `head_transforms`.
-  - Added unit test `001_layers_baseline/tests/test_head_transforms.py`.
-  - Included the unit test in `scripts/run_cpu_tests.sh`.
-- Validation:
-  - Ran `bash scripts/test.sh` — CPU-only suite passed.
- Behavior change: none; only code relocation and test addition.
+Legend: [ ] pending · [x] completed
 
-3) ✅ Unembedding helper + fp32 shadow selection (low–medium risk)
-- Status: completed
-- What: extracted the fp32-shadow selection and the unembedding matmul into reusable helpers; replaced the inline `_unembed_mm` closure and ad‑hoc promotion logic in `run.py`.
-- Why: logic is reused across passes and in Prism sidecar; centralizing dtype/device handling reduces duplication and future drift.
-- Target: `layers_core/unembed.py` (new):
-  - `prepare_unembed_weights(W_U, b_U, force_fp32: bool) -> (W, b)`
-  - `unembed_mm(X, W, b, cache=None) -> logits`
-  - Per‑device tiny cache to avoid repeated host↔device transfers.
-  - No mutation of model parameters; helpers return analysis‑only tensors.
- Implementation:
-  - Added `layers_core/unembed.py` with the two helpers.
-  - Exported via `layers_core/__init__.py`.
-  - Refactored `run.py` to use `prepare_unembed_weights` and `unembed_mm`; preserved console messages and diagnostics (`unembed_dtype`, `use_fp32_unembed`).
-  - Kept `safe_cast_for_unembed` usage unchanged; maintained Prism paths.
-  - Added unit test `001_layers_baseline/tests/test_unembed.py` and wired it into `scripts/run_cpu_tests.sh`.
- Validation:
-  - User ran `scripts/run_cpu_tests.sh` — CPU-only suite passed.
-  - Behavior change: none; outputs and schemas unchanged.
+1) [ ] Consolidate Prism sidecar usage
+- Scope: Replace inline Prism record assembly in run.py with calls to prism_sidecar.append_prism_record and append_prism_pure_next_token everywhere they're duplicated.
+- Rationale: Remove obvious duplication and keep one implementation of sidecar logic.
+- Deliverables: run.py updated to use helpers; no behavior/schema change; zero numeric changes.
+- Tests: Add an equivalence unit test that compares inline vs helper outputs on deterministic tensors (no model/HF).
+- Rollback: Revert to previous inline blocks.
 
-4) ✅ Record construction (medium risk)
-- Status: completed
-- What: centralized record shaping into pure helpers and refactored `run.py`'s `print_summary` to delegate.
-- Why: consolidates duplicated schema logic; makes behavior easier to test and maintain.
-- Target: `layers_core/records.py` (new): `make_record(...) -> dict` and `make_pure_record(...) -> dict`.
- Implementation:
-  - Added `layers_core/records.py` with `_pack_topk`, `make_record`, and `make_pure_record` (preserve `[token, prob]` schema and `.item()` extraction).
-  - Exported via `layers_core/__init__.py`.
-  - Updated `run.py` `print_summary(...)` to call these helpers and append to `json_data`.
-  - Added unit test `001_layers_baseline/tests/test_records.py`; wired into `scripts/run_cpu_tests.sh`.
- Validation:
-  - User ran `scripts/run_cpu_tests.sh` — CPU-only suite passed.
-  - Behavior change: none; JSON/CSV schemas and console output unchanged.
+2) [ ] Extract get_residual_safely to layers_core.hooks
+- Scope: Move the inline helper from run.py into hooks.get_residual_safely(cache, layer) and reuse.
+- Rationale: Centralize residual lookup and uniform error messages.
+- Deliverables: New helper with docstring; run.py uses it; no behavior change.
+- Tests: Extend tests/test_hooks.py with success and failure cases.
+- Rollback: Inline the function again.
 
-5) ✅ Pure next‑token emission (medium–higher risk)
-- Status: completed
-- What: factored the pure next-token computation into a reusable helper and slimmed the local emitter in `run.py`.
-- Why: reduces complexity and duplication across passes; centralizes metric derivation and record shaping.
-- Target: `layers_core/pure_emit.py` (new): `compute_pure_next_token_info(...)` returns view/collected/dual_ctx dicts.
- Implementation:
-  - Added `compute_pure_next_token_info` that computes entropy, top‑k, copy/entropy collapse, rank metrics, cosine to final, and optional control margin.
-  - Updated `run.py` local `emit_pure_next_token_record` to call the helper, build a record via `make_pure_record`, append to JSON, push summary to `collected_records`, and optionally log a dual‑lens sample.
-  - Exported via `layers_core/__init__.py`.
-  - Added unit test `001_layers_baseline/tests/test_pure_emit.py`; wired into `scripts/run_cpu_tests.sh`.
- Validation:
-  - User ran `scripts/run_cpu_tests.sh` — CPU-only suite passed.
-  - Behavior change: none; schemas and console behavior unchanged.
+3) [ ] Extract last-layer consistency computation
+- Scope: Move temperature/KL and head-transform diagnostics into a new layers_core/consistency.py: compute_last_layer_consistency(...).
+- Rationale: Isolate numerics; easier unit testing and reuse across lenses later.
+- Deliverables: New module + run.py call site update; identical JSON fields.
+- Tests: New tests/test_consistency.py with deterministic tensors; assert keys and values.
+- Rollback: Inline the logic in run.py again.
 
-6) ✅ Prism sidecar emitters (higher risk)
-- Status: completed
-- What: extracted Prism per‑position and pure‑next‑token writers used across orig/no_filler/control passes.
-- Why: removed sizeable duplication; leverages shared compute and record helpers to keep schemas consistent.
-- Target: `layers_core/prism_sidecar.py` (new) with mirror interfaces to baseline emitters.
- Implementation:
-  - Added `append_prism_record(...)` for per‑position rows and `append_prism_pure_next_token(...)` for pure rows (calls `compute_pure_next_token_info`).
-  - Updated `run.py` to delegate all Prism appends to these helpers; preserved whitening/placement code.
-  - Exported via `layers_core/__init__.py`.
-  - Added unit test `001_layers_baseline/tests/test_prism_sidecar_helpers.py`; wired into `scripts/run_cpu_tests.sh`.
- Validation:
-  - User ran `scripts/run_cpu_tests.sh` — CPU-only suite passed.
-  - Behavior change: none; sidecar CSV schema and fields unchanged; control margin preserved on control rows.
+4) [ ] Introduce lens adapters and adopt NormLens immediately
+- Scope: Add layers_core/lenses/ with a minimal base interface and implement NormLensAdapter that exactly reproduces the current normalization + unembed path.
+- Rationale: Establish a pluggable lens boundary without duplication. The adapter replaces the inline path right away.
+- Deliverables: Base interface + NormLensAdapter; run.py calls the adapter instead of the inline path; no behavior/schema change.
+- Tests: New tests/test_lenses_basic.py to verify identical logits on deterministic tensors (adapter vs inline baseline snapshot).
+- Rollback: Revert this commit; no unused code left behind.
 
-7) ✅ CLI/launcher separation (low–medium risk)
-- Status: completed
-- What: `parse_cli()` + `main()` orchestration/rotation/launching.
-- Why: trims the file; reduces import‑time side effects by isolating the launcher.
-- Target: `001_layers_baseline/launcher.py` (later); keep `run.py` as the worker.
- Implementation:
-  - Added `launcher.py` with CLI parsing and multi‑model orchestration; forwards args into `run.CLI_ARGS`.
-  - `run.py` now exposes a default `CLI_ARGS` namespace for tests and programmatic use and defers to `launcher` when executed directly.
-  - `run.py --help` prints a small help block that mentions standalone `kl_sanity_test.py` usage required by tests.
+5) [ ] Create pass-level runner for a single prompt/variant
+- Scope: Add layers_core/passes.py with run_prompt_pass(...), encapsulating:
+  - layer-0 decode, post-block sweep, pure-next-token emission
+  - per-lens handling (baseline lens + optional sidecar lenses)
+  - optional raw-vs-norm sampling integration via existing raw_lens helpers
+- Adoption: Use only for the positive/orig pass in run.py.
+- Rationale: Reduce monolith; keep changes localized.
+- Deliverables: New module; run.py calls run_prompt_pass for orig; identical records/JSON.
+- Tests: Add tests/test_pass_runner_minimal.py with a mock model and deterministic tensors.
+- Rollback: Call sites revert to inlined loops.
 
-## Notes on Safety and Backward Compatibility
+6) [ ] Adopt pass runner for ablation and control
+- Scope: Replace duplicated loops for no_filler and control with run_prompt_pass.
+- Rationale: Eliminate repetition; unify code paths.
+- Deliverables: run.py simplified; identical ablation deltas and control summary (margin, first_pos).
+- Tests: Extend pass runner test to cover control margin wiring and ablation variant tagging.
+- Rollback: Reintroduce inline loops.
 
-- We will not change CLI, outputs, or schema in early steps; the JSON/CSV writers and file rotation stay untouched.
-- Each extraction will keep function/class names and signatures stable at call sites; only imports move.
-- Where behavior must remain byte‑identical (e.g., `rest_mass` rounding), we will reuse existing helpers.
-- We will avoid refactoring the multi‑pass orchestration until leaf utilities are stabilized and tested.
+7) [ ] Convert Prism path to a lens adapter and route through the pass runner
+- Scope: Implement PrismLensAdapter under the same lenses/ interface and switch run.py to use it via the pass runner.
+- Rationale: Unify all lenses behind one interface; reduce special-casing in run.py.
+- Deliverables: Adapter that wraps whitening + Q + unembed; sidecar writer invoked via the common lens flow; filenames remain unchanged (e.g., -records-prism.csv).
+- Tests: Extend tests/test_lenses_basic.py to cover Prism adapter on synthetic tensors and ensure sidecar CSV schemas match existing outputs.
+- Rollback: Revert adapter wiring; keep Prism via helpers.
+
+8) [ ] Extract lightweight probes
+- Scope: Move test prompt emission and temperature exploration to layers_core/probes.py:
+  - emit_test_prompts(model, prompts, decode_id)
+  - emit_temperature_exploration(model, prompt, decode_id)
+- Rationale: Reduce run.py size; keep probes orthogonal to main pass.
+- Deliverables: New module; run.py delegates; identical JSON lists.
+- Tests: tests/test_probes.py with fixed logits to assert shapes/keys.
+- Rollback: Inline back into run.py.
+
+9) [ ] Introduce small context objects to reduce closures
+- Scope: Add tiny dataclasses:
+  - UnembedContext: {W, b, force_fp32, cache}
+  - PrismContext: {stats, Q, active, placement}
+- Rationale: Replace hard-to-test closures with explicit dependencies.
+- Deliverables: Contexts passed into pass runner and lenses; no behavior change.
+- Tests: Type/shape sanity tests in existing modules (no new public API).
+- Rollback: Use local variables again.
+
+10) [ ] Optional cleanup (no behavior change)
+- Scope: Tidy decode_id into a tiny util; gate prints; minor docstrings.
+- Rationale: Readability improvements after structure is stable.
+- Deliverables: No schema change; logs preserved by default.
+- Tests: None beyond lint/format; keep behavior identical.
+- Rollback: N/A; keep minimal.
+
+---
+
+## Tuned Lens Readiness (no changes yet)
+
+Purpose: Ensure the refactor allows adding a Tuned Lens without touching core orchestration or changing baseline outputs.
+
+- Pluggable lenses: The lens adapters (Step 4) form a stable boundary. We will later add a TunedLensAdapter that consumes per-layer heads and produces logits.
+- Sidecar generalization: Keep baseline CSVs/JSON byte-identical. Additional lenses emit parallel sidecar CSVs with identical schemas (e.g., -records-tuned.csv), mirroring the current Prism flow.
+- Metrics semantics: KL-to-final and cos_to_final continue to reference the model’s final head. For Tuned Lens, additional lens-relative diagnostics can live in JSON sidecars without altering public CSV schemas.
+- Artifact management: Mirror Prism loaders with tuned_lens.load_tuned_lens_artifacts(art_dir) and provenance. Respect device/dtype and analysis-only weights.
+- QA hooks: The extracted “last-layer consistency” utility can compare any two logits (e.g., Norm vs Tuned). Raw-vs-norm sampling remains intact.
+
+No code is added for Tuned Lens in this plan; the refactor merely creates the seams where it fits cleanly later.
+
+---
+
+## Verification Matrix
+
+Existing tests to rely on:
+- numerics, metrics, collapse_rules, norm_utils, csv_io, raw_lens, prism modules
+- orchestrator smoke test (no network) to ensure outputs exist
+
+New tests to add as steps land:
+- Prism sidecar equivalence (Step 1)
+- hooks.get_residual_safely behavior (Step 2)
+- consistency.compute_last_layer_consistency (Step 3)
+- lenses basic shape/typing (Step 4)
+- pass runner minimal end-to-end (Step 5/6)
+- probes emitters (Step 8)
+- light sanity for context objects (Step 9)
+
+All tests are CPU-only and avoid network/HF; follow scripts/run_cpu_tests.sh.
