@@ -54,17 +54,27 @@ Legend: [ ] pending · [x] completed
    - run.py imports and uses the helper; removed inline closure.
    - tests/test_hooks.py covers success and failure; included in scripts/run_cpu_tests.sh already.
 
-3) [ ] Extract last-layer consistency computation
+3) [x] Extract last-layer consistency computation
 - Scope: Move temperature/KL and head-transform diagnostics into a new layers_core/consistency.py: compute_last_layer_consistency(...).
 - Rationale: Isolate numerics; easier unit testing and reuse across lenses later.
 - Deliverables: New module + run.py call site update; identical JSON fields.
 - Tests: New tests/test_consistency.py with deterministic tensors; assert keys and values.
 - Rollback: Inline the logic in run.py again.
+ - Status: completed 2025-09-06
+ - Notes:
+   - Added layers_core/consistency.py with compute_last_layer_consistency.
+   - Replaced inline block in run.py with call; preserved outputs and thresholds.
+   - Ensured lens_top1_id derives from logits via topk(1) to match original logic.
+   - Added tests/test_consistency.py; updated scripts/run_cpu_tests.sh.
 
 4) [ ] Introduce lens adapters and adopt NormLens immediately
 - Scope: Add layers_core/lenses/ with a minimal base interface and implement NormLensAdapter that exactly reproduces the current normalization + unembed path.
 - Rationale: Establish a pluggable lens boundary without duplication. The adapter replaces the inline path right away.
-- Deliverables: Base interface + NormLensAdapter; run.py calls the adapter instead of the inline path; no behavior/schema change.
+- Deliverables:
+  - base interface + NormLensAdapter;
+  - run.py calls the adapter instead of the inline path;
+  - no unused code left behind;
+  - no behavior/schema change.
 - Tests: New tests/test_lenses_basic.py to verify identical logits on deterministic tensors (adapter vs inline baseline snapshot).
 - Rollback: Revert this commit; no unused code left behind.
 
@@ -73,23 +83,34 @@ Legend: [ ] pending · [x] completed
   - layer-0 decode, post-block sweep, pure-next-token emission
   - per-lens handling (baseline lens + optional sidecar lenses)
   - optional raw-vs-norm sampling integration via existing raw_lens helpers
-- Adoption: Use only for the positive/orig pass in run.py.
+- Adoption in run.py: use the runner only for the positive/orig pass.
 - Rationale: Reduce monolith; keep changes localized.
-- Deliverables: New module; run.py calls run_prompt_pass for orig; identical records/JSON.
+- Deliverables:
+  - new module;
+  - run.py calls run_prompt_pass for orig;
+  - no unused code left behind;
+  - identical records/JSON.
 - Tests: Add tests/test_pass_runner_minimal.py with a mock model and deterministic tensors.
 - Rollback: Call sites revert to inlined loops.
 
 6) [ ] Adopt pass runner for ablation and control
 - Scope: Replace duplicated loops for no_filler and control with run_prompt_pass.
 - Rationale: Eliminate repetition; unify code paths.
-- Deliverables: run.py simplified; identical ablation deltas and control summary (margin, first_pos).
+- Deliverables:
+  - run.py simplified;
+  - identical ablation deltas and control summary (margin, first_pos);
+  - no unused code left behind.
 - Tests: Extend pass runner test to cover control margin wiring and ablation variant tagging.
 - Rollback: Reintroduce inline loops.
 
 7) [ ] Convert Prism path to a lens adapter and route through the pass runner
 - Scope: Implement PrismLensAdapter under the same lenses/ interface and switch run.py to use it via the pass runner.
 - Rationale: Unify all lenses behind one interface; reduce special-casing in run.py.
-- Deliverables: Adapter that wraps whitening + Q + unembed; sidecar writer invoked via the common lens flow; filenames remain unchanged (e.g., -records-prism.csv).
+- Deliverables:
+   - adapter that wraps whitening + Q + unembed;
+   - sidecar writer invoked via the common lens flow;
+   - filenames remain unchanged (e.g., -records-prism.csv);
+   - no unused code left behind.
 - Tests: Extend tests/test_lenses_basic.py to cover Prism adapter on synthetic tensors and ensure sidecar CSV schemas match existing outputs.
 - Rollback: Revert adapter wiring; keep Prism via helpers.
 
@@ -98,7 +119,11 @@ Legend: [ ] pending · [x] completed
   - emit_test_prompts(model, prompts, decode_id)
   - emit_temperature_exploration(model, prompt, decode_id)
 - Rationale: Reduce run.py size; keep probes orthogonal to main pass.
-- Deliverables: New module; run.py delegates; identical JSON lists.
+- Deliverables:
+  - new module;
+  - run.py delegates;
+  - identical JSON lists;
+  - no unused code left behind.
 - Tests: tests/test_probes.py with fixed logits to assert shapes/keys.
 - Rollback: Inline back into run.py.
 

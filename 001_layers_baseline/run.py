@@ -79,6 +79,7 @@ from layers_core.prism import load_prism_artifacts, whiten_apply
 from layers_core.head_transforms import detect_head_transforms
 from layers_core.unembed import prepare_unembed_weights, unembed_mm
 from layers_core.prism_sidecar import append_prism_record, append_prism_pure_next_token
+from layers_core.consistency import compute_last_layer_consistency
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -859,78 +860,17 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
 
                     # Record last-layer lens vs final-head consistency snapshot
                     if layer == (n_layers - 1):
-                        # Use the exact values we just computed for the last position
                         last_pos = tokens.shape[1] - 1
                         last_logits = logits_all[last_pos]
-                        last_full_probs = torch.softmax(last_logits, dim=0)
-                        _, last_top_indices = torch.topk(last_logits, TOP_K_RECORD, largest=True, sorted=True)
-                        lens_top1_id = int(last_top_indices[0].item())
-                        # metrics relative to final head
-                        m = compute_next_token_metrics(last_full_probs, lens_top1_id, final_probs, first_ans_id, topk_cum=5)
-                        # Estimate a scalar temperature s that best aligns lens to final
-                        try:
-                            zs = last_logits.float()
-                            # Search s ∈ [0.1, 10] (log-space) for minimal KL(P(z/s)||final)
-                            s_values = torch.logspace(-1, 1, steps=25, dtype=torch.float32).tolist()
-                            best_s = float('nan')
-                            best_kl = float('inf')
-                            for s in s_values:
-                                s_f = float(s)
-                                P = torch.softmax(zs / s_f, dim=0)
-                                kl = float(kl_bits(P, final_probs))
-                                if kl < best_kl:
-                                    best_kl = kl
-                                    best_s = s_f
-                        except Exception:
-                            best_s = None
-                            best_kl = None
-
-                        # KL after simple family-specific transforms (last layer only)
-                        kl_after_scale = None
-                        kl_after_softcap = None
-                        kl_after_scale_then_softcap = None
-                        cfg_transform = {"scale": head_scale_cfg, "softcap": head_softcap_cfg}
-
-                        try:
-                            zs = last_logits.float()
-                            if head_scale_cfg is not None and head_scale_cfg > 0:
-                                P = torch.softmax(zs / float(head_scale_cfg), dim=0)
-                                kl = float(kl_bits(P, final_probs))
-                                kl_after_scale = kl
-                            if head_softcap_cfg is not None and head_softcap_cfg > 0:
-                                c = float(head_softcap_cfg)
-                                zs_c = torch.tanh(zs / c) * c
-                                P = torch.softmax(zs_c, dim=0)
-                                kl_after_softcap = float(kl_bits(P, final_probs))
-                            if (head_scale_cfg is not None and head_scale_cfg > 0) and (head_softcap_cfg is not None and head_softcap_cfg > 0):
-                                c = float(head_softcap_cfg)
-                                s = float(head_scale_cfg)
-                                zs_sc = torch.tanh((zs / s) / c) * c
-                                P = torch.softmax(zs_sc, dim=0)
-                                kl_after_scale_then_softcap = float(kl_bits(P, final_probs))
-                        except Exception:
-                            pass
-
-                        last_layer_consistency = {
-                            "kl_to_final_bits": _to_finite_float(m.get("kl_to_final_bits")),
-                            "top1_agree": bool(lens_top1_id == final_top1_id),
-                            "p_top1_lens": _to_finite_float(m.get("p_top1")),
-                            "p_top1_model": _to_finite_float(final_probs[final_top1_id].item()),
-                            "p_answer_lens": _to_finite_float(m.get("p_answer")),
-                            "answer_rank_lens": m.get("answer_rank"),
-                            # Temperature probe: best scalar s and KL after rescale
-                            "temp_est": _to_finite_float(best_s),
-                            "kl_after_temp_bits": _to_finite_float(best_kl),
-                            # Config-reported head transforms and KL after applying them
-                            "cfg_transform": cfg_transform,
-                            "kl_after_transform_bits": {
-                                "scale": _to_finite_float(kl_after_scale),
-                                "softcap": _to_finite_float(kl_after_softcap),
-                                "scale_then_softcap": _to_finite_float(kl_after_scale_then_softcap),
-                            },
-                            # Advisory warning for family-agnostic visibility
-                            "warn_high_last_layer_kl": bool(m.get("kl_to_final_bits") is not None and m.get("kl_to_final_bits") > 0.5),
-                        }
+                        last_layer_consistency = compute_last_layer_consistency(
+                            last_logits=last_logits,
+                            final_probs=final_probs,
+                            final_top1_id=final_top1_id,
+                            first_ans_id=first_ans_id,
+                            head_scale_cfg=head_scale_cfg,
+                            head_softcap_cfg=head_softcap_cfg,
+                            topk_cum=5,
+                        )
                     
                     # --- free residual for this layer -----------------------------------
                     del resid

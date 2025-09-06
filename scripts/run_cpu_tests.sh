@@ -48,6 +48,7 @@ ${PY} 001_layers_baseline/tests/test_records.py
 ${PY} 001_layers_baseline/tests/test_pure_emit.py
 ${PY} 001_layers_baseline/tests/test_prism_sidecar_helpers.py
 ${PY} 001_layers_baseline/tests/test_prism_sidecar_equivalence.py
+${PY} 001_layers_baseline/tests/test_consistency.py
 
 # Prism unit tests (CPU-only)
 ${PY} 001_layers_baseline/tests/test_prism_whiten.py
