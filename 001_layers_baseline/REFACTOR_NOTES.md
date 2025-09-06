@@ -29,12 +29,18 @@ The plan below is incremental and behavior-preserving. Each step is small, rever
 
 Legend: [ ] pending · [x] completed
 
-1) [ ] Consolidate Prism sidecar usage
+1) [x] Consolidate Prism sidecar usage
 - Scope: Replace inline Prism record assembly in run.py with calls to prism_sidecar.append_prism_record and append_prism_pure_next_token everywhere they're duplicated.
 - Rationale: Remove obvious duplication and keep one implementation of sidecar logic.
 - Deliverables: run.py updated to use helpers; no behavior/schema change; zero numeric changes.
 - Tests: Add an equivalence unit test that compares inline vs helper outputs on deterministic tensors (no model/HF).
 - Rollback: Revert to previous inline blocks.
+- Status: completed 2025-09-06
+- Notes:
+  - Replaced manual Prism rows with helpers in orig/ablation/control paths (records and pure next-token).
+  - Fixed control-pass Prism variable/placement bugs (use prism_enabled_ctl, prism_Q_ctl; guard placement with try/except).
+  - prism_sidecar entropy now uses bits_entropy_from_logits to match baseline numerics.
+  - Added tests/test_prism_sidecar_equivalence.py and updated scripts/run_cpu_tests.sh.
 
 2) [ ] Extract get_residual_safely to layers_core.hooks
 - Scope: Move the inline helper from run.py into hooks.get_residual_safely(cache, layer) and reuse.
@@ -106,6 +112,16 @@ Legend: [ ] pending · [x] completed
 - Deliverables: No schema change; logs preserved by default.
 - Tests: None beyond lint/format; keep behavior identical.
 - Rollback: N/A; keep minimal.
+
+---
+
+## Polish / Backlog
+
+- Consolidate Prism placement pattern: add a tiny helper (e.g., `ensure_prism_Q_on(tensor_device) -> (Q_on_device, enabled_flag)`), used uniformly in orig/no_filler/control passes to:
+  - attempt device placement of `Q` once per pass (and optionally per layer if devices differ),
+  - capture placement errors into diagnostics,
+  - flip the per-pass `prism_enabled_*` flag consistently on failure.
+  This can be delivered during Step 7 (Prism lens adapter) or Step 10 (cleanup) with no behavior change.
 
 ---
 

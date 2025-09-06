@@ -5,6 +5,7 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 import torch
 
 from .records import make_record, make_pure_record
+from .numerics import bits_entropy_from_logits
 from .pure_emit import compute_pure_next_token_info
 
 
@@ -21,12 +22,8 @@ def append_prism_record(
     top_k: int,
 ) -> None:
     probs = torch.softmax(logits_pos, dim=0)
-    ent = float(-(probs * torch.log_softmax(logits_pos.float(), dim=0).exp().log()).sum().item())  # not used; replaced below
-    # Use shared bits entropy helper via compute_pure_next_token_info for consistency? Here we reconstruct with topk only.
-    # Simpler: mirror run.py behavior to build topk; entropy via bits_entropy_from_logits is used in run.py.
-    # To avoid circular import, compute entropy locally:
-    logp = torch.log_softmax(logits_pos.float(), dim=0)
-    ent_bits = float((-(logp.exp() * logp).sum() / torch.log(torch.tensor(2.0))).item())
+    # Use the shared helper for entropy in bits to match baseline numerics
+    ent_bits = bits_entropy_from_logits(logits_pos)
     _, idx = torch.topk(logits_pos, top_k, largest=True, sorted=True)
     top_probs = probs[idx]
     top_tokens = [decode_id_fn(i) for i in idx]
