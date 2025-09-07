@@ -85,7 +85,7 @@ Legend: [ ] pending · [x] completed
   - Standardized variable names to `resid_raw` and `resid_norm`; Prism whitening consistently uses `resid_norm`.
   - Added `tests/test_lenses_basic.py`; updated `scripts/run_cpu_tests.sh` to include it.
 
-5) [ ] Create pass-level runner for a single prompt/variant
+5) [x] Create pass-level runner for a single prompt/variant
 - Scope: Add layers_core/passes.py with run_prompt_pass(...), encapsulating:
   - layer-0 decode, post-block sweep, pure-next-token emission
   - per-lens handling (baseline lens + optional sidecar lenses)
@@ -99,6 +99,13 @@ Legend: [ ] pending · [x] completed
   - identical records/JSON.
 - Tests: Add tests/test_pass_runner_minimal.py with a mock model and deterministic tensors.
 - Rollback: Call sites revert to inlined loops.
+ - Status: completed 2025-09-07
+ - Notes:
+   - Added layers_core/passes.py with run_prompt_pass covering hooks, L0 and post-block decode via NormLensAdapter, per-position records, pure next-token, raw-vs-norm sampling, and last-layer consistency.
+   - run.py imports and delegates the positive/orig pass to run_prompt_pass; merges returned prism diag deltas into diagnostics.prism_summary.
+   - Restored keep_residuals parity: L0 and per-layer residuals saved with clean model name; used os.path.join; dtype fallback matches baseline.
+   - Prism parity: unembed path uses unembed_mm with cache; pass-wide enable flag decided at L0 and carried forward.
+   - Test added and strengthened (tests/test_pass_runner_minimal.py) and included in scripts/run_cpu_tests.sh.
 
 6) [ ] Adopt pass runner for ablation and control
 - Scope: Replace duplicated loops for no_filler and control with run_prompt_pass.

@@ -50,6 +50,7 @@ ${PY} 001_layers_baseline/tests/test_prism_sidecar_helpers.py
 ${PY} 001_layers_baseline/tests/test_prism_sidecar_equivalence.py
 ${PY} 001_layers_baseline/tests/test_consistency.py
 ${PY} 001_layers_baseline/tests/test_lenses_basic.py
+${PY} 001_layers_baseline/tests/test_pass_runner_minimal.py
 
 # Prism unit tests (CPU-only)
 ${PY} 001_layers_baseline/tests/test_prism_whiten.py
