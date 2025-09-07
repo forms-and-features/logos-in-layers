@@ -67,7 +67,7 @@ Legend: [ ] pending · [x] completed
    - Ensured lens_top1_id derives from logits via topk(1) to match original logic.
    - Added tests/test_consistency.py; updated scripts/run_cpu_tests.sh.
 
-4) [ ] Introduce lens adapters and adopt NormLens immediately
+4) [x] Introduce lens adapters and adopt NormLens immediately
 - Scope: Add layers_core/lenses/ with a minimal base interface and implement NormLensAdapter that exactly reproduces the current normalization + unembed path.
 - Rationale: Establish a pluggable lens boundary without duplication. The adapter replaces the inline path right away.
 - Deliverables:
@@ -77,6 +77,13 @@ Legend: [ ] pending · [x] completed
   - no behavior/schema change.
 - Tests: New tests/test_lenses_basic.py to verify identical logits on deterministic tensors (adapter vs inline baseline snapshot).
 - Rollback: Revert this commit; no unused code left behind.
+- Status: completed 2025-09-07
+- Notes:
+  - Added `layers_core/lenses/base.py` (LensAdapter) and `layers_core/lenses/norm.py` (NormLensAdapter), with `layers_core/lenses/__init__.py` re-export.
+  - Replaced inline normalization+unembed in `run.py` (orig/ablation/control; L0 and post-block) with NormLensAdapter calls.
+  - Adapter always receives the pre-normalization residual; explicit normalization retained only for Prism/diagnostics.
+  - Standardized variable names to `resid_raw` and `resid_norm`; Prism whitening consistently uses `resid_norm`.
+  - Added `tests/test_lenses_basic.py`; updated `scripts/run_cpu_tests.sh` to include it.
 
 5) [ ] Create pass-level runner for a single prompt/variant
 - Scope: Add layers_core/passes.py with run_prompt_pass(...), encapsulating:

@@ -80,6 +80,7 @@ from layers_core.head_transforms import detect_head_transforms
 from layers_core.unembed import prepare_unembed_weights, unembed_mm
 from layers_core.prism_sidecar import append_prism_record, append_prism_pure_next_token
 from layers_core.consistency import compute_last_layer_consistency
+from layers_core.lenses import NormLensAdapter
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -346,6 +347,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
 
         # Rolling window manager to isolate copy-detection state per lens and per variant
         window_mgr = WindowManager(getattr(config, "copy_window_k", 1))
+
+        # Baseline norm lens adapter (behavior-preserving)
+        norm_lens = NormLensAdapter()
 
         def print_summary(layer_idx, pos, token_str, entropy_bits, top_tokens, top_probs, is_pure_next_token=False, extra=None):
             if is_pure_next_token:
@@ -624,33 +628,36 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 # Layer 0: embeddings (+ positional embeddings if available)
                 print("Layer  0 (embeddings):")
                 if has_pos_embed:
-                    resid = (residual_cache['hook_embed'] +
-                             residual_cache['hook_pos_embed'])
+                    resid_raw = (residual_cache['hook_embed'] + residual_cache['hook_pos_embed'])
                 else:
-                    resid = residual_cache['hook_embed']
+                    resid_raw = residual_cache['hook_embed']
                     print("[diagnostic] No separate positional embedding hook found (as expected for rotary models).")
                     print("[diagnostic] Layer 0 contains TOKEN information only; positional info is injected inside attention layers.")
-                # Keep a raw copy before normalization for dual-lens sanity
-                resid_raw_L0 = resid
-                # FIXED: Apply first real normalizer to embeddings if using norm-lens
-                # This gives us the normalized embeddings that the model actually sees
+                # Prepare normalized residual for Prism/diagnostics
+                resid_norm = resid_raw
                 if USE_NORM_LENS:
-                    # Use the actual first normalization layer instead of synthetic γ=1
-                    print("[diagnostic] Applying real ln1 normalization to embeddings (not synthetic γ=1)")
+                    print("[diagnostic] Applying ln1 normalization to embeddings for Prism/diagnostics")
                     if 'detected_architecture' not in locals():
                         detected_architecture = detect_model_architecture(model)
                     norm_module = get_correct_norm_module(model, 0, probe_after_block=False)
-                    resid = apply_norm_or_skip(resid, norm_module)
-                
-                # Vectorized unembedding for all positions using analysis shadow weights
-                resid_cast = safe_cast_for_unembed(resid[0], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED))
-                logits_all = unembed_mm(resid_cast, analysis_W_U, analysis_b_U, cache=_unembed_cache)
-                logits_all = logits_all.float()  # downstream numerics in fp32
+                    resid_norm = apply_norm_or_skip(resid_norm, norm_module)
+
+                # Compute logits via the norm lens adapter (always fed raw residual)
+                logits_all = norm_lens.forward(
+                    model,
+                    0,
+                    resid_raw,
+                    probe_after_block=False,
+                    W_U=analysis_W_U,
+                    b_U=analysis_b_U,
+                    force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
+                    cache=_unembed_cache,
+                )
                 # Prism sidecar logits for all positions (if active)
                 prism_enabled = prism_active
                 prism_Q_use = prism_Q
                 if prism_active:
-                    Xw_L0 = whiten_apply(resid[0], prism_stats)
+                    Xw_L0 = whiten_apply(resid_norm[0], prism_stats)
                     try:
                         if hasattr(prism_Q_use, 'device') and prism_Q_use.device != Xw_L0.device:
                             prism_Q_use = prism_Q_use.to(Xw_L0.device)
@@ -676,7 +683,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     # Use configured output directory; meta_filepath is not available here
                     resid_path = os.path.join(config.out_dir or os.getcwd(), resid_filename)
                     # Save using the residual's current dtype to avoid relying on cfg dtype strings
-                    resid_cpu = resid.to(dtype=resid.dtype).cpu()
+                    resid_cpu = resid_norm.to(dtype=resid_norm.dtype).cpu()
                     torch.save(resid_cpu, resid_path)
                     del resid_cpu
                 
@@ -711,7 +718,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     final_dir_vec=final_dir,
                     collected_records=collected_pure_records,
                     do_raw_lens_sample=True,
-                    resid_raw_tensor=resid_raw_L0,
+                    resid_raw_tensor=resid_raw,
                 )
                 # Prism sidecar: pure next-token (layer 0)
                 if prism_enabled:
@@ -736,7 +743,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     )
                 
                 # --- free Layer-0 residual to keep host RAM flat ---------------------
-                del resid
+                del resid_norm
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                     torch.cuda.synchronize()
@@ -756,23 +763,27 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
 
                 for layer in range(n_layers):
                     print(f"Layer {layer + 1:2d} (after transformer block {layer}):")
-                    # Get residual stream after this layer's block
-                    resid = get_residual_safely(residual_cache, layer)
-                    resid_raw = resid  # keep pre-norm for raw lens
-                    
-                    # Apply normalization if requested
+                    # Pre- and post-norm residuals
+                    resid_raw = get_residual_safely(residual_cache, layer)
+                    resid_norm = resid_raw
                     if USE_NORM_LENS:
-                        # Use the correct normalization module based on probe timing and architecture
                         norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
-                        resid = apply_norm_or_skip(resid, norm_module)
-                    
-                    # Vectorized unembedding for all positions using analysis shadow weights
-                    resid_cast = safe_cast_for_unembed(resid[0], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED))
-                    logits_all = unembed_mm(resid_cast, analysis_W_U, analysis_b_U, cache=_unembed_cache)
-                    logits_all = logits_all.float()  # downstream numerics in fp32
+                        resid_norm = apply_norm_or_skip(resid_norm, norm_module)
+
+                    # Compute logits via the norm lens adapter (always fed raw residual)
+                    logits_all = norm_lens.forward(
+                        model,
+                        layer,
+                        resid_raw,
+                        probe_after_block=True,
+                        W_U=analysis_W_U,
+                        b_U=analysis_b_U,
+                        force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
+                        cache=_unembed_cache,
+                    )
                     # Prism sidecar logits (post-block) for all positions
                     if prism_enabled:
-                        Xw = whiten_apply(resid[0], prism_stats)
+                        Xw = whiten_apply(resid_norm[0], prism_stats)
                         Xp = Xw @ prism_Q_use
                         Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
                         bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
@@ -785,7 +796,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         resid_filename = f"{clean_name}_{layer+1:02d}_resid.pt"
                         # Use configured output directory; meta_filepath is not available here
                         resid_path = os.path.join(config.out_dir or os.getcwd(), resid_filename)
-                        resid_cpu = resid.to(dtype=model.cfg.dtype if hasattr(model.cfg, 'dtype') else torch.float32).cpu()
+                        resid_cpu = resid_norm.to(dtype=model.cfg.dtype if hasattr(model.cfg, 'dtype') else torch.float32).cpu()
                         torch.save(resid_cpu, resid_path)
                         del resid_cpu
                     
@@ -873,7 +884,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         )
                     
                     # --- free residual for this layer -----------------------------------
-                    del resid
+                    del resid_norm
                     del residual_cache[f'blocks.{layer}.hook_resid_post']
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
@@ -1063,21 +1074,29 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 final_dir_nf = (final_logits_nf / _final_norm_nf)
 
                 # Layer 0
-                resid0 = residual_cache['hook_embed']
+                resid_raw = residual_cache['hook_embed']
                 if 'hook_pos_embed' in residual_cache:
-                    resid0 = resid0 + residual_cache['hook_pos_embed']
-                resid = resid0
-                resid_raw_tensor = resid.detach().clone() if RAW_LENS_MODE != "off" else None
+                    resid_raw = resid_raw + residual_cache['hook_pos_embed']
+                resid_norm = resid_raw
+                resid_raw_tensor = resid_raw.detach().clone() if RAW_LENS_MODE != "off" else None
                 if USE_NORM_LENS:
                     norm_module = get_correct_norm_module(model, 0, probe_after_block=False)
-                    resid = apply_norm_or_skip(resid, norm_module)
-                casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED))
-                layer_logits = unembed_mm(casted, analysis_W_U, analysis_b_U, cache=_unembed_cache).float()
+                    resid_norm = apply_norm_or_skip(resid_norm, norm_module)
+                layer_logits = norm_lens.forward(
+                    model,
+                    0,
+                    resid_raw,
+                    probe_after_block=False,
+                    W_U=analysis_W_U,
+                    b_U=analysis_b_U,
+                    force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
+                    cache=_unembed_cache,
+                )
                 # Setup Prism state for no_filler variant
                 prism_enabled_nf = False
                 prism_Q_nf = prism_Q
                 if prism_active:
-                    Xw_nf0 = whiten_apply(resid[0, :, :], prism_stats)
+                    Xw_nf0 = whiten_apply(resid_norm[0, :, :], prism_stats)
                     # one-time placement per (NF) pass
                     prism_enabled_nf = True
                     try:
@@ -1132,15 +1151,24 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 # Post-block layers
                 n_layers = model.cfg.n_layers
                 for layer in range(n_layers):
-                    resid = get_residual_safely(residual_cache, layer)
-                    resid_raw_tensor = resid.detach().clone() if RAW_LENS_MODE != "off" else None
+                    resid_raw = get_residual_safely(residual_cache, layer)
+                    resid_norm = resid_raw
+                    resid_raw_tensor = resid_raw.detach().clone() if RAW_LENS_MODE != "off" else None
                     if USE_NORM_LENS:
                         norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
-                        resid = apply_norm_or_skip(resid, norm_module)
-                    casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED))
-                    layer_logits = unembed_mm(casted, analysis_W_U, analysis_b_U, cache=_unembed_cache).float()
+                        resid_norm = apply_norm_or_skip(resid_norm, norm_module)
+                    layer_logits = norm_lens.forward(
+                        model,
+                        layer,
+                        resid_raw,
+                        probe_after_block=True,
+                        W_U=analysis_W_U,
+                        b_U=analysis_b_U,
+                        force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
+                        cache=_unembed_cache,
+                    )
                     if prism_enabled_nf:
-                        Xw_nfl = whiten_apply(resid[0, :, :], prism_stats)
+                        Xw_nfl = whiten_apply(resid_norm[0, :, :], prism_stats)
                         Xp_nfl = Xw_nfl @ prism_Q_nf
                         Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
                         bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
@@ -1224,21 +1252,29 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 final_dir_ctl = (final_logits_ctl / _final_norm_ctl)
 
                 # Layer 0 (embedding-only)
-                resid0 = residual_cache['hook_embed']
+                resid_raw = residual_cache['hook_embed']
                 if 'hook_pos_embed' in residual_cache:
-                    resid0 = resid0 + residual_cache['hook_pos_embed']
-                resid = resid0
-                resid_raw_tensor = resid.detach().clone() if RAW_LENS_MODE != "off" else None
+                    resid_raw = resid_raw + residual_cache['hook_pos_embed']
+                resid_norm = resid_raw
+                resid_raw_tensor = resid_raw.detach().clone() if RAW_LENS_MODE != "off" else None
                 if USE_NORM_LENS:
                     norm_module = get_correct_norm_module(model, 0, probe_after_block=False)
-                    resid = apply_norm_or_skip(resid, norm_module)
-                casted = safe_cast_for_unembed(resid[0, :, :], analysis_W_U, force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED))
-                layer_logits = unembed_mm(casted, analysis_W_U, analysis_b_U, cache=_unembed_cache).float()
+                    resid_norm = apply_norm_or_skip(resid_norm, norm_module)
+                layer_logits = norm_lens.forward(
+                    model,
+                    0,
+                    resid_raw,
+                    probe_after_block=False,
+                    W_U=analysis_W_U,
+                    b_U=analysis_b_U,
+                    force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
+                    cache=_unembed_cache,
+                )
                 # Prepare Prism logits for control L0
                 prism_enabled_ctl = False
                 prism_Q_ctl = prism_Q
                 if prism_active:
-                    Xw_ctl0 = whiten_apply(resid[0, :, :], prism_stats)
+                    Xw_ctl0 = whiten_apply(resid_norm[0, :, :], prism_stats)
                     prism_enabled_ctl = True
                     try:
                         if hasattr(prism_Q_ctl, 'device') and prism_Q_ctl.device != Xw_ctl0.device:
@@ -1294,21 +1330,25 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 # Each block's post-residual layers
                 n_layers = model.cfg.n_layers
                 for layer in range(n_layers):
-                    resid = get_residual_safely(residual_cache, layer)
-                    resid_raw_tensor = resid.detach().clone() if RAW_LENS_MODE != "off" else None
+                    resid_raw = get_residual_safely(residual_cache, layer)
+                    resid_norm = resid_raw
+                    resid_raw_tensor = resid_raw.detach().clone() if RAW_LENS_MODE != "off" else None
                     if USE_NORM_LENS:
                         norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
-                        resid = apply_norm_or_skip(resid, norm_module)
-                    # FIX: compute logits inside the per-layer loop (was wrongly dedented)
-                    casted = safe_cast_for_unembed(
-                        resid[0, :, :],
-                        analysis_W_U,
+                        resid_norm = apply_norm_or_skip(resid_norm, norm_module)
+                    layer_logits = norm_lens.forward(
+                        model,
+                        layer,
+                        resid_raw,
+                        probe_after_block=True,
+                        W_U=analysis_W_U,
+                        b_U=analysis_b_U,
                         force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
+                        cache=_unembed_cache,
                     )
-                    layer_logits = unembed_mm(casted, analysis_W_U, analysis_b_U, cache=_unembed_cache).float()
                     # Prism sidecar logits (post-block) for this layer
                     if prism_enabled_ctl:
-                        Xw_ctll = whiten_apply(resid[0, :, :], prism_stats)
+                        Xw_ctll = whiten_apply(resid_norm[0, :, :], prism_stats)
                         Q_use_ctl = prism_Q_ctl
                         try:
                             if hasattr(Q_use_ctl, 'device') and Q_use_ctl.device != Xw_ctll.device:
