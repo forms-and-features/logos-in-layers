@@ -146,3 +146,55 @@ def test_run_prompt_pass_minimal():
     assert isinstance(summary, dict) and "L_copy" in summary and "L_semantic" in summary
     assert arch in ("pre_norm", "post_norm", "unknown")
     # last consistency may be None in stub; permissive
+
+
+def test_run_prompt_pass_control_margin():
+    model = _ModelStub()
+    norm_lens = NormLensAdapter()
+    W_U = torch.randn(model.cfg.d_model, 11, dtype=torch.float32)
+    b_U = torch.randn(11, dtype=torch.float32)
+    mm_cache = {}
+    window_mgr = WindowManager(1)
+    json_data = {"records": [], "pure_next_token_records": [], "raw_lens_check": {"mode": "off", "samples": [], "summary": None}}
+    json_data_prism = {"records": [], "pure_next_token_records": []}
+
+    # Provide control_ids to trigger control_margin computation
+    summary, _, arch, _diag = run_prompt_pass(
+        model=model,
+        context_prompt="dummy ctl",
+        ground_truth="Paris",
+        prompt_id="ctl",
+        prompt_variant="orig",
+        window_manager=window_mgr,
+        norm_lens=norm_lens,
+        analysis_W_U=W_U,
+        analysis_b_U=b_U,
+        force_fp32_unembed=True,
+        mm_cache=mm_cache,
+        copy_threshold=0.95,
+        copy_margin=0.10,
+        entropy_collapse_threshold=1.0,
+        top_k_record=5,
+        top_k_verbose=20,
+        keep_residuals=False,
+        out_dir=None,
+        RAW_LENS_MODE='off',
+        json_data=json_data,
+        json_data_prism=json_data_prism,
+        prism_active=False,
+        prism_stats=None,
+        prism_Q=None,
+        decode_id_fn=_decode_id,
+        ctx_ids_list=[1,2,3,4],
+        first_ans_token_id=42,
+        important_words=["France", "Paris"],
+        head_scale_cfg=None,
+        head_softcap_cfg=None,
+        clean_model_name="stub",
+        control_ids=(42, 7),
+    )
+
+    # Expect at least one control row with a control_margin field present (may be zero)
+    ctl_rows = [rec for rec in json_data["pure_next_token_records"] if rec.get("prompt_id") == "ctl"]
+    assert len(ctl_rows) > 0
+    assert any("control_margin" in rec for rec in ctl_rows)

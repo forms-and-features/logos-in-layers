@@ -107,7 +107,7 @@ Legend: [ ] pending · [x] completed
    - Prism parity: unembed path uses unembed_mm with cache; pass-wide enable flag decided at L0 and carried forward.
    - Test added and strengthened (tests/test_pass_runner_minimal.py) and included in scripts/run_cpu_tests.sh.
 
-6) [ ] Adopt pass runner for ablation and control
+6) [x] Adopt pass runner for ablation and control
 - Scope: Replace duplicated loops for no_filler and control with run_prompt_pass.
 - Rationale: Eliminate repetition; unify code paths.
 - Deliverables:
@@ -116,6 +116,14 @@ Legend: [ ] pending · [x] completed
   - no unused code left behind.
 - Tests: Extend pass runner test to cover control margin wiring and ablation variant tagging.
 - Rollback: Reintroduce inline loops.
+ - Status: completed 2025-09-07
+ - Notes:
+   - Migrated both no_filler (ablation) and control passes to layers_core/passes.run_prompt_pass.
+   - Added enable_raw_lens_sampling flag to the runner; sampling disabled for ablation/control to preserve orig-only QA summary.
+   - Restored parity for residual saving: control pass does not save residuals (avoid overwrite).
+   - Runner now emits Prism L0 per-position sidecar rows for parity with baseline coverage.
+   - Removed dead helpers and unused imports in run.py; redundant variant reset removed.
+   - Added control_ids threading in runner for control margin; tests cover control margin and runner returns.
 
 7) [ ] Convert Prism path to a lens adapter and route through the pass runner
 - Scope: Implement PrismLensAdapter under the same lenses/ interface and switch run.py to use it via the pass runner.

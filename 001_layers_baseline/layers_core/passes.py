@@ -60,6 +60,8 @@ def run_prompt_pass(
     head_scale_cfg: Optional[float],
     head_softcap_cfg: Optional[float],
     clean_model_name: Optional[str] = None,
+    control_ids: Optional[Tuple[Optional[int], Optional[int]]] = None,
+    enable_raw_lens_sampling: bool = True,
 ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], str, Dict[str, Any]]:
     """Run a single prompt pass and append outputs into json_data structures.
 
@@ -146,6 +148,19 @@ def run_prompt_pass(
                     top_probs=top_probs_k,
                 )
                 json_data["records"].append(rec)
+                # Emit Prism per-position record at L0 for sidecar parity
+                if prism_enabled:
+                    append_prism_record(
+                        json_data_prism,
+                        prompt_id=prompt_id,
+                        prompt_variant=prompt_variant,
+                        layer=0,
+                        pos=pos,
+                        token=token_str,
+                        logits_pos=prism_logits_all_L0[pos],
+                        decode_id_fn=decode_id_fn,
+                        top_k=k,
+                    )
 
             # Pure next-token (L0)
             collected_pure_records = []
@@ -167,6 +182,7 @@ def run_prompt_pass(
                 top_k_record=top_k_record,
                 prompt_id=prompt_id,
                 prompt_variant=prompt_variant,
+                control_ids=control_ids,
             )
             json_data["pure_next_token_records"].append(
                 make_pure_record(
@@ -184,7 +200,7 @@ def run_prompt_pass(
             collected_pure_records.append(collected)
 
             # Optional raw-vs-norm sample at L0
-            if RAW_LENS_MODE != "off":
+            if enable_raw_lens_sampling and RAW_LENS_MODE != "off":
                 record_dual_lens_sample(
                     json_data["raw_lens_check"],
                     layer_out_idx=dual_ctx["layer"],
@@ -218,6 +234,7 @@ def run_prompt_pass(
                     top_k_record=top_k_record,
                     prompt_id=prompt_id,
                     prompt_variant=prompt_variant,
+                    control_ids=control_ids,
                 )
 
             # Save normalized residual if requested
@@ -318,6 +335,7 @@ def run_prompt_pass(
                     top_k_record=top_k_record,
                     prompt_id=prompt_id,
                     prompt_variant=prompt_variant,
+                    control_ids=control_ids,
                 )
                 json_data["pure_next_token_records"].append(
                     make_pure_record(
@@ -335,7 +353,7 @@ def run_prompt_pass(
                 collected_pure_records.append(collected)
 
                 # Optional raw-vs-norm sample
-                if RAW_LENS_MODE != "off" and _should_sample(layer + 1):
+                if enable_raw_lens_sampling and RAW_LENS_MODE != "off" and _should_sample(layer + 1):
                     record_dual_lens_sample(
                         json_data["raw_lens_check"],
                         layer_out_idx=dual_ctx["layer"],

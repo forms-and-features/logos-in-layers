@@ -45,41 +45,26 @@ from layers_core.norm_utils import (
 )
 from layers_core.numerics import (
     bits_entropy_from_logits,
-    safe_cast_for_unembed,
-    kl_bits,
 )
-from layers_core.metrics import compute_next_token_metrics
 from layers_core.csv_io import write_csv_files
-from layers_core.collapse_rules import (
-    is_semantic_top1,
-    detect_copy_collapse_id_subseq,
-    is_pure_whitespace_or_punct,
-)
 from layers_core.device_policy import (
     choose_dtype,
     should_auto_promote_unembed,
     select_best_device,
 )
-from layers_core.hooks import build_cache_hook, attach_residual_hooks, detach_hooks, get_residual_safely
+from layers_core.hooks import build_cache_hook, attach_residual_hooks, detach_hooks
 from layers_core.run_dir import setup_run_latest_directory
 from layers_core.config import ExperimentConfig
 from layers_core.raw_lens import (
     get_raw_lens_mode,
     init_raw_lens_check,
-    should_sample_layer,
-    record_dual_lens_sample,
     summarize_raw_lens_check,
 )
-from layers_core.summaries import summarize_pure_records
-from layers_core.records import make_record, make_pure_record
-from layers_core.pure_emit import compute_pure_next_token_info
 from layers_core.windows import WindowManager
 from layers_core.gold import compute_gold_answer_info, compute_gold_answer_info_from_sequences
-from layers_core.prism import load_prism_artifacts, whiten_apply
+from layers_core.prism import load_prism_artifacts
 from layers_core.head_transforms import detect_head_transforms
-from layers_core.unembed import prepare_unembed_weights, unembed_mm
-from layers_core.prism_sidecar import append_prism_record, append_prism_pure_next_token
-from layers_core.consistency import compute_last_layer_consistency
+from layers_core.unembed import prepare_unembed_weights
 from layers_core.lenses import NormLensAdapter
 from layers_core.passes import run_prompt_pass
 
@@ -352,121 +337,12 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         # Baseline norm lens adapter (behavior-preserving)
         norm_lens = NormLensAdapter()
 
-        def print_summary(layer_idx, pos, token_str, entropy_bits, top_tokens, top_probs, is_pure_next_token=False, extra=None):
-            if is_pure_next_token:
-                rec = make_pure_record(
-                    prompt_id=current_prompt_id,
-                    prompt_variant=current_prompt_variant,
-                    layer=layer_idx,
-                    pos=pos,
-                    token=token_str,
-                    entropy=entropy_bits,
-                    top_tokens=top_tokens,
-                    top_probs=top_probs,
-                    extra=extra,
-                )
-                json_data["pure_next_token_records"].append(rec)
-            else:
-                rec = make_record(
-                    prompt_id=current_prompt_id,
-                    prompt_variant=current_prompt_variant,
-                    layer=layer_idx,
-                    pos=pos,
-                    token=token_str,
-                    entropy=entropy_bits,
-                    top_tokens=top_tokens,
-                    top_probs=top_probs,
-                )
-                json_data["records"].append(rec)
-
         # Helper: robust single-id decode (tensor or int)
         def decode_id(idx):
             return model.tokenizer.decode([idx.item() if hasattr(idx, 'item') else int(idx)])
 
         # Residual accessor now shared in layers_core.hooks.get_residual_safely
 
-        # Helper: finite float coercion for JSON safety
-        import math as _math
-        def _to_finite_float(x):
-            try:
-                v = float(x)
-            except Exception:
-                try:
-                    v = float(x.item())  # torch scalar
-                except Exception:
-                    return None
-            return v if _math.isfinite(v) else None
-
-        # Helper: compute pure next-token info and append records
-        def emit_pure_next_token_record(
-            layer_out_idx: int,
-            logits_all: torch.Tensor,
-            tokens_tensor: torch.Tensor,
-            ctx_ids_list,
-            window_manager: WindowManager,
-            lens_type: str,
-            final_probs_tensor: torch.Tensor,
-            first_ans_token_id,
-            final_dir_vec: torch.Tensor,
-            collected_records: list,
-            do_raw_lens_sample: bool,
-            resid_raw_tensor: torch.Tensor | None,
-            *,
-            control_ids: tuple[int | None, int | None] | None = None,
-        ):
-            view, collected, dual_ctx = compute_pure_next_token_info(
-                layer_out_idx=layer_out_idx,
-                logits_all=logits_all,
-                tokens_tensor=tokens_tensor,
-                ctx_ids_list=ctx_ids_list,
-                window_manager=window_manager,
-                lens_type=lens_type,
-                final_probs_tensor=final_probs_tensor,
-                first_ans_token_id=first_ans_token_id,
-                final_dir_vec=final_dir_vec,
-                copy_threshold=config.copy_threshold,
-                copy_margin=config.copy_margin,
-                entropy_collapse_threshold=getattr(config, 'entropy_collapse_threshold', 1.0),
-                decode_id_fn=decode_id,
-                ground_truth=ground_truth,
-                top_k_record=TOP_K_RECORD,
-                prompt_id=current_prompt_id,
-                prompt_variant=current_prompt_variant,
-                control_ids=control_ids,
-            )
-
-            # Build and append pure-next-token record
-            rec = make_pure_record(
-                prompt_id=current_prompt_id,
-                prompt_variant=current_prompt_variant,
-                layer=layer_out_idx,
-                pos=view["pos"],
-                token=view["token_str"],
-                entropy=view["entropy_bits"],
-                top_tokens=view["top_tokens"],
-                top_probs=view["top_probs"],
-                extra=view["record_extra"],
-            )
-            json_data["pure_next_token_records"].append(rec)
-
-            # Append to collected summary list
-            collected_records.append(collected)
-
-            # Optional: record dual-lens sample
-            if RAW_LENS_MODE != "off" and do_raw_lens_sample and resid_raw_tensor is not None:
-                record_dual_lens_sample(
-                    json_data["raw_lens_check"],
-                    layer_out_idx=dual_ctx["layer"],
-                    last_logits_norm=dual_ctx["last_logits_norm"],
-                    resid_raw_last_vec=resid_raw_tensor[0, int(dual_ctx["last_pos"]) , :],
-                    W_U=analysis_W_U,
-                    b_U=analysis_b_U,
-                    force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
-                    tokenizer=model.tokenizer,
-                    final_probs=dual_ctx["final_probs"],
-                    first_ans_id=dual_ctx["first_ans_id"],
-                    ground_truth=dual_ctx["ground_truth"],
-                )
         
         # Tokenize the context prompt (without "Answer:" to avoid teacher-forcing)
         tokens = model.to_tokens(context_prompt)      # let Accelerate move it
@@ -653,6 +529,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     head_scale_cfg=head_scale_cfg,
                     head_softcap_cfg=head_softcap_cfg,
                     clean_model_name=clean_model_name(model_id),
+                    enable_raw_lens_sampling=True,
                 )
                 diag.update(pass_summary)
                 diag["gold_alignment"] = "ok" if gold_info.get("status") == "ok" else "unresolved"
@@ -785,7 +662,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         # Run a separate forward pass on the positive prompt without the stylistic filler
         current_prompt_id = "pos"
         current_prompt_variant = "no_filler"
-        window_mgr.reset_variant(current_prompt_id, current_prompt_variant)
+        # Variant windows are reset inside the pass runner
         # Gold alignment for the ablated variant
         gold_info_nf = compute_gold_answer_info(getattr(model, 'tokenizer', None), context_prompt_nf, ground_truth, pieces_k=4)
         if gold_info_nf.get("status") != "ok":
@@ -813,362 +690,97 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 }
         ctx_ids_nf = gold_info_nf.get("ctx_ids", [])
         first_ans_id_nf = gold_info_nf.get("first_id", None)
-
-        # Per-variant rolling window and record collection
-        window_ids_nf: list[int] = []
-        collected_pure_records_nf = []
-
-        with torch.no_grad():
-            residual_cache = {}
-            cache_hook = build_cache_hook(residual_cache)
-            hooks, _ = attach_residual_hooks(model, cache_hook)
-            try:
-                tokens_nf = model.to_tokens(context_prompt_nf)
-                logits_nf = model(tokens_nf)
-                final_logits_nf = logits_nf[0, -1, :].float()
-                final_probs_nf = torch.softmax(final_logits_nf, dim=0)
-                _final_norm_nf = torch.norm(final_logits_nf) + 1e-12
-                final_dir_nf = (final_logits_nf / _final_norm_nf)
-
-                # Layer 0
-                resid_raw = residual_cache['hook_embed']
-                if 'hook_pos_embed' in residual_cache:
-                    resid_raw = resid_raw + residual_cache['hook_pos_embed']
-                resid_norm = resid_raw
-                resid_raw_tensor = resid_raw.detach().clone() if RAW_LENS_MODE != "off" else None
-                if USE_NORM_LENS:
-                    norm_module = get_correct_norm_module(model, 0, probe_after_block=False)
-                    resid_norm = apply_norm_or_skip(resid_norm, norm_module)
-                layer_logits = norm_lens.forward(
-                    model,
-                    0,
-                    resid_raw,
-                    probe_after_block=False,
-                    W_U=analysis_W_U,
-                    b_U=analysis_b_U,
-                    force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
-                    cache=_unembed_cache,
-                )
-                # Setup Prism state for no_filler variant
-                prism_enabled_nf = False
-                prism_Q_nf = prism_Q
-                if prism_active:
-                    Xw_nf0 = whiten_apply(resid_norm[0, :, :], prism_stats)
-                    # one-time placement per (NF) pass
-                    prism_enabled_nf = True
-                    try:
-                        if hasattr(prism_Q_nf, 'device') and prism_Q_nf.device != Xw_nf0.device:
-                            prism_Q_nf = prism_Q_nf.to(Xw_nf0.device)
-                    except RuntimeError as e:
-                        prism_enabled_nf = False
-                        try:
-                            if isinstance(diag.get("prism_summary"), dict):
-                                diag["prism_summary"]["placement_error_nf"] = str(e)
-                        except Exception:
-                            pass
-                    Xp_nf0 = Xw_nf0 @ (prism_Q_nf if prism_enabled_nf else torch.eye(Xw_nf0.shape[-1], device=Xw_nf0.device))
-                    Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
-                    bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
-                    prism_logits_all_nf0 = unembed_mm(Xp_nf0, Wp, bp, cache=_unembed_cache).float()
-                emit_pure_next_token_record(
-                    0,
-                    layer_logits,
-                    tokens_nf,
-                    ctx_ids_nf,
-                    window_manager=window_mgr,
-                    lens_type="norm",
-                    final_probs_tensor=final_probs_nf,
-                    first_ans_token_id=first_ans_id_nf,
-                    final_dir_vec=final_dir_nf,
-                    collected_records=collected_pure_records_nf,
-                    do_raw_lens_sample=False,
-                    resid_raw_tensor=resid_raw_tensor,
-                )
-                if prism_enabled_nf:
-                    append_prism_pure_next_token(
-                        json_data_prism,
-                        layer_out_idx=0,
-                        prism_logits_all=prism_logits_all_nf0,
-                        tokens_tensor=tokens_nf,
-                        ctx_ids_list=ctx_ids_nf,
-                        window_manager=window_mgr,
-                        final_probs_tensor=final_probs_nf,
-                        first_ans_token_id=first_ans_id_nf,
-                        final_dir_vec=final_dir_nf,
-                        copy_threshold=config.copy_threshold,
-                        copy_margin=config.copy_margin,
-                        entropy_collapse_threshold=getattr(config, 'entropy_collapse_threshold', 1.0),
-                        decode_id_fn=decode_id,
-                        ground_truth=ground_truth,
-                        top_k_record=TOP_K_RECORD,
-                        prompt_id=current_prompt_id,
-                        prompt_variant=current_prompt_variant,
-                    )
-
-                # Post-block layers
-                n_layers = model.cfg.n_layers
-                for layer in range(n_layers):
-                    resid_raw = get_residual_safely(residual_cache, layer)
-                    resid_norm = resid_raw
-                    resid_raw_tensor = resid_raw.detach().clone() if RAW_LENS_MODE != "off" else None
-                    if USE_NORM_LENS:
-                        norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
-                        resid_norm = apply_norm_or_skip(resid_norm, norm_module)
-                    layer_logits = norm_lens.forward(
-                        model,
-                        layer,
-                        resid_raw,
-                        probe_after_block=True,
-                        W_U=analysis_W_U,
-                        b_U=analysis_b_U,
-                        force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
-                        cache=_unembed_cache,
-                    )
-                    if prism_enabled_nf:
-                        Xw_nfl = whiten_apply(resid_norm[0, :, :], prism_stats)
-                        Xp_nfl = Xw_nfl @ prism_Q_nf
-                        Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
-                        bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
-                        prism_logits_all_nfl = unembed_mm(Xp_nfl, Wp, bp, cache=_unembed_cache).float()
-                    emit_pure_next_token_record(
-                        layer + 1,
-                        layer_logits,
-                        tokens_nf,
-                        ctx_ids_nf,
-                        window_manager=window_mgr,
-                        lens_type="norm",
-                        final_probs_tensor=final_probs_nf,
-                        first_ans_token_id=first_ans_id_nf,
-                        final_dir_vec=final_dir_nf,
-                        collected_records=collected_pure_records_nf,
-                        do_raw_lens_sample=False,
-                        resid_raw_tensor=resid_raw_tensor,
-                    )
-                    if prism_enabled_nf:
-                        append_prism_pure_next_token(
-                            json_data_prism,
-                            layer_out_idx=layer + 1,
-                            prism_logits_all=prism_logits_all_nfl,
-                            tokens_tensor=tokens_nf,
-                            ctx_ids_list=ctx_ids_nf,
-                            window_manager=window_mgr,
-                            final_probs_tensor=final_probs_nf,
-                            first_ans_token_id=first_ans_id_nf,
-                            final_dir_vec=final_dir_nf,
-                            copy_threshold=config.copy_threshold,
-                            copy_margin=config.copy_margin,
-                            entropy_collapse_threshold=getattr(config, 'entropy_collapse_threshold', 1.0),
-                            decode_id_fn=decode_id,
-                            ground_truth=ground_truth,
-                            top_k_record=TOP_K_RECORD,
-                            prompt_id=current_prompt_id,
-                            prompt_variant=current_prompt_variant,
-                        )
-
-                # Summarize ablation variant
-                diag_nf = summarize_pure_records(
-                    collected_pure_records_nf,
-                    copy_threshold=config.copy_threshold,
-                    copy_window_k=getattr(config, "copy_window_k", 1),
-                    copy_match_level="id_subsequence",
-                )
-                L_copy_nf = diag_nf.get("L_copy")
-                L_sem_nf = diag_nf.get("L_semantic")
-                json_data["ablation_summary"] = {
-                    "L_copy_orig": L_copy_orig,
-                    "L_sem_orig": L_sem_orig,
-                    "L_copy_nf": L_copy_nf,
-                    "L_sem_nf": L_sem_nf,
-                    "delta_L_copy": (None if (L_copy_orig is None or L_copy_nf is None) else (L_copy_nf - L_copy_orig)),
-                    "delta_L_sem": (None if (L_sem_orig is None or L_sem_nf is None) else (L_sem_nf - L_sem_orig)),
-                }
-            finally:
-                detach_hooks(hooks)
-                residual_cache.clear()
-                hooks.clear()
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+        pass_summary_nf, _, _, prism_diag_nf = run_prompt_pass(
+            model=model,
+            context_prompt=context_prompt_nf,
+            ground_truth=ground_truth,
+            prompt_id=current_prompt_id,
+            prompt_variant=current_prompt_variant,
+            window_manager=window_mgr,
+            norm_lens=norm_lens,
+            analysis_W_U=analysis_W_U,
+            analysis_b_U=analysis_b_U,
+            force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
+            mm_cache=_unembed_cache,
+            copy_threshold=config.copy_threshold,
+            copy_margin=config.copy_margin,
+            entropy_collapse_threshold=getattr(config, 'entropy_collapse_threshold', 1.0),
+            top_k_record=TOP_K_RECORD,
+            top_k_verbose=TOP_K_VERBOSE,
+            keep_residuals=False,
+            out_dir=config.out_dir,
+            RAW_LENS_MODE=RAW_LENS_MODE,
+            json_data=json_data,
+            json_data_prism=json_data_prism,
+            prism_active=prism_active,
+            prism_stats=prism_stats,
+            prism_Q=prism_Q,
+            decode_id_fn=decode_id,
+            ctx_ids_list=ctx_ids_nf,
+            first_ans_token_id=first_ans_id_nf,
+            important_words=IMPORTANT_WORDS,
+            head_scale_cfg=head_scale_cfg,
+            head_softcap_cfg=head_softcap_cfg,
+            clean_model_name=clean_model_name(model_id),
+            enable_raw_lens_sampling=False,
+        )
+        try:
+            if isinstance(diag.get("prism_summary"), dict) and isinstance(prism_diag_nf, dict) and prism_diag_nf.get("placement_error"):
+                diag["prism_summary"]["placement_error_nf"] = prism_diag_nf["placement_error"]
+        except Exception:
+            pass
+        L_copy_nf = pass_summary_nf.get("L_copy")
+        L_sem_nf = pass_summary_nf.get("L_semantic")
+        json_data["ablation_summary"] = {
+            "L_copy_orig": L_copy_orig,
+            "L_sem_orig": L_sem_orig,
+            "L_copy_nf": L_copy_nf,
+            "L_sem_nf": L_sem_nf,
+            "delta_L_copy": (None if (L_copy_orig is None or L_copy_nf is None) else (L_copy_nf - L_copy_orig)),
+            "delta_L_sem": (None if (L_sem_orig is None or L_sem_nf is None) else (L_sem_nf - L_sem_orig)),
+        }
 
         # ---------------- Control pass (PROJECT_NOTES §1.8) --------------------
-        # Run a separate forward pass on the control prompt (France → Paris)
-        current_prompt_id = "ctl"
-        current_prompt_variant = "orig"
-        window_mgr.reset_variant(current_prompt_id, current_prompt_variant)
-        with torch.no_grad():
-            residual_cache = {}
-            cache_hook = build_cache_hook(residual_cache)
-            hooks, _ = attach_residual_hooks(model, cache_hook)
-            try:
-                tokens_ctl = model.to_tokens(context_prompt_ctl)
-                logits_ctl = model(tokens_ctl)
-
-                final_logits_ctl = logits_ctl[0, -1, :].float()
-                final_probs_ctl = torch.softmax(final_logits_ctl, dim=0)
-                _final_norm_ctl = torch.norm(final_logits_ctl) + 1e-12
-                final_dir_ctl = (final_logits_ctl / _final_norm_ctl)
-
-                # Layer 0 (embedding-only)
-                resid_raw = residual_cache['hook_embed']
-                if 'hook_pos_embed' in residual_cache:
-                    resid_raw = resid_raw + residual_cache['hook_pos_embed']
-                resid_norm = resid_raw
-                resid_raw_tensor = resid_raw.detach().clone() if RAW_LENS_MODE != "off" else None
-                if USE_NORM_LENS:
-                    norm_module = get_correct_norm_module(model, 0, probe_after_block=False)
-                    resid_norm = apply_norm_or_skip(resid_norm, norm_module)
-                layer_logits = norm_lens.forward(
-                    model,
-                    0,
-                    resid_raw,
-                    probe_after_block=False,
-                    W_U=analysis_W_U,
-                    b_U=analysis_b_U,
-                    force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
-                    cache=_unembed_cache,
-                )
-                # Prepare Prism logits for control L0
-                prism_enabled_ctl = False
-                prism_Q_ctl = prism_Q
-                if prism_active:
-                    Xw_ctl0 = whiten_apply(resid_norm[0, :, :], prism_stats)
-                    prism_enabled_ctl = True
-                    try:
-                        if hasattr(prism_Q_ctl, 'device') and prism_Q_ctl.device != Xw_ctl0.device:
-                            prism_Q_ctl = prism_Q_ctl.to(Xw_ctl0.device)
-                    except RuntimeError as e:
-                        prism_enabled_ctl = False
-                        try:
-                            if isinstance(diag.get("prism_summary"), dict):
-                                diag["prism_summary"]["placement_error_ctl"] = str(e)
-                        except Exception:
-                            pass
-                    Xp_ctl0 = Xw_ctl0 @ (prism_Q_ctl if prism_enabled_ctl else torch.eye(Xw_ctl0.shape[-1], device=Xw_ctl0.device))
-                    Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
-                    bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
-                    prism_logits_all_ctl0 = unembed_mm(Xp_ctl0, Wp, bp, cache=_unembed_cache).float()
-                emit_pure_next_token_record(
-                    0,
-                    layer_logits,
-                    tokens_ctl,
-                    ctx_ids_ctl,
-                    window_manager=window_mgr,
-                    lens_type="norm",
-                    final_probs_tensor=final_probs_ctl,
-                    first_ans_token_id=first_ans_id_ctl,
-                    final_dir_vec=final_dir_ctl,
-                    collected_records=[],
-                    do_raw_lens_sample=False,
-                    resid_raw_tensor=resid_raw_tensor,
-                    control_ids=(first_ans_id_ctl, first_ans_id),
-                )
-                if prism_enabled_ctl:
-                    append_prism_pure_next_token(
-                        json_data_prism,
-                        layer_out_idx=0,
-                        prism_logits_all=prism_logits_all_ctl0,
-                        tokens_tensor=tokens_ctl,
-                        ctx_ids_list=ctx_ids_ctl,
-                        window_manager=window_mgr,
-                        final_probs_tensor=final_probs_ctl,
-                        first_ans_token_id=first_ans_id_ctl,
-                        final_dir_vec=final_dir_ctl,
-                        copy_threshold=config.copy_threshold,
-                        copy_margin=config.copy_margin,
-                        entropy_collapse_threshold=getattr(config, 'entropy_collapse_threshold', 1.0),
-                        decode_id_fn=decode_id,
-                        ground_truth=control_ground_truth,
-                        top_k_record=TOP_K_RECORD,
-                        prompt_id=current_prompt_id,
-                        prompt_variant=current_prompt_variant,
-                        control_ids=(first_ans_id_ctl, first_ans_id),
-                    )
-
-                # Each block's post-residual layers
-                n_layers = model.cfg.n_layers
-                for layer in range(n_layers):
-                    resid_raw = get_residual_safely(residual_cache, layer)
-                    resid_norm = resid_raw
-                    resid_raw_tensor = resid_raw.detach().clone() if RAW_LENS_MODE != "off" else None
-                    if USE_NORM_LENS:
-                        norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
-                        resid_norm = apply_norm_or_skip(resid_norm, norm_module)
-                    layer_logits = norm_lens.forward(
-                        model,
-                        layer,
-                        resid_raw,
-                        probe_after_block=True,
-                        W_U=analysis_W_U,
-                        b_U=analysis_b_U,
-                        force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
-                        cache=_unembed_cache,
-                    )
-                    # Prism sidecar logits (post-block) for this layer
-                    if prism_enabled_ctl:
-                        Xw_ctll = whiten_apply(resid_norm[0, :, :], prism_stats)
-                        Q_use_ctl = prism_Q_ctl
-                        try:
-                            if hasattr(Q_use_ctl, 'device') and Q_use_ctl.device != Xw_ctll.device:
-                                Q_use_ctl = Q_use_ctl.to(Xw_ctll.device)
-                        except RuntimeError as e:
-                            prism_enabled_ctl = False
-                            try:
-                                if isinstance(diag.get("prism_summary"), dict):
-                                    diag["prism_summary"]["placement_error_ctl_loop"] = str(e)
-                            except Exception:
-                                pass
-                        if prism_enabled_ctl:
-                            Xp_ctll = Xw_ctll @ Q_use_ctl
-                            Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
-                            bp = (
-                                analysis_b_U.float()
-                                if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32)
-                                else analysis_b_U
-                            )
-                            prism_logits_all_ctll = unembed_mm(Xp_ctll, Wp, bp, cache=_unembed_cache).float()
-                    emit_pure_next_token_record(
-                        layer + 1,
-                        layer_logits,
-                        tokens_ctl,
-                        ctx_ids_ctl,
-                        window_manager=window_mgr,
-                        lens_type="norm",
-                        final_probs_tensor=final_probs_ctl,
-                        first_ans_token_id=first_ans_id_ctl,
-                        final_dir_vec=final_dir_ctl,
-                        collected_records=[],
-                        do_raw_lens_sample=False,
-                        resid_raw_tensor=resid_raw_tensor,
-                        control_ids=(first_ans_id_ctl, first_ans_id),
-                    )
-                    if prism_enabled_ctl:
-                        append_prism_pure_next_token(
-                            json_data_prism,
-                            layer_out_idx=layer + 1,
-                            prism_logits_all=prism_logits_all_ctll,
-                            tokens_tensor=tokens_ctl,
-                            ctx_ids_list=ctx_ids_ctl,
-                            window_manager=window_mgr,
-                            final_probs_tensor=final_probs_ctl,
-                            first_ans_token_id=first_ans_id_ctl,
-                            final_dir_vec=final_dir_ctl,
-                            copy_threshold=config.copy_threshold,
-                            copy_margin=config.copy_margin,
-                            entropy_collapse_threshold=getattr(config, 'entropy_collapse_threshold', 1.0),
-                            decode_id_fn=decode_id,
-                            ground_truth=control_ground_truth,
-                            top_k_record=TOP_K_RECORD,
-                            prompt_id=current_prompt_id,
-                            prompt_variant=current_prompt_variant,
-                            control_ids=(first_ans_id_ctl, first_ans_id),
-                        )
-            finally:
-                detach_hooks(hooks)
-                residual_cache.clear()
-                hooks.clear()
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+        pass_summary_ctl, _, _, prism_diag_ctl = run_prompt_pass(
+            model=model,
+            context_prompt=context_prompt_ctl,
+            ground_truth=control_ground_truth,
+            prompt_id="ctl",
+            prompt_variant="orig",
+            window_manager=window_mgr,
+            norm_lens=norm_lens,
+            analysis_W_U=analysis_W_U,
+            analysis_b_U=analysis_b_U,
+            force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
+            mm_cache=_unembed_cache,
+            copy_threshold=config.copy_threshold,
+            copy_margin=config.copy_margin,
+            entropy_collapse_threshold=getattr(config, 'entropy_collapse_threshold', 1.0),
+            top_k_record=TOP_K_RECORD,
+            top_k_verbose=TOP_K_VERBOSE,
+            keep_residuals=False,
+            out_dir=config.out_dir,
+            RAW_LENS_MODE=RAW_LENS_MODE,
+            json_data=json_data,
+            json_data_prism=json_data_prism,
+            prism_active=prism_active,
+            prism_stats=prism_stats,
+            prism_Q=prism_Q,
+            decode_id_fn=decode_id,
+            ctx_ids_list=ctx_ids_ctl,
+            first_ans_token_id=first_ans_id_ctl,
+            important_words=IMPORTANT_WORDS,
+            head_scale_cfg=head_scale_cfg,
+            head_softcap_cfg=head_softcap_cfg,
+            clean_model_name=clean_model_name(model_id),
+            control_ids=(first_ans_id_ctl, first_ans_id),
+            enable_raw_lens_sampling=False,
+        )
+        try:
+            if isinstance(diag.get("prism_summary"), dict) and isinstance(prism_diag_ctl, dict) and prism_diag_ctl.get("placement_error"):
+                diag["prism_summary"]["placement_error_ctl"] = prism_diag_ctl["placement_error"]
+        except Exception:
+            pass
 
         # Compute and persist control prompt info and summary
         first_pos = None
