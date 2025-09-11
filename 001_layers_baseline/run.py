@@ -3,10 +3,8 @@ import torch
 import torch.nn as nn
 from datetime import datetime
 import os
-import subprocess
 import sys
 import json
-import argparse
 import gc  # For garbage collection
 
 # --- deterministic bootstrap -------------------------------------------------
@@ -39,9 +37,6 @@ CONFIRMED_MODELS = CANDIDATE_MODELS
 # --- helpers (extracted to norm_utils) --------------------------------------
 from layers_core.norm_utils import (
     _get_rms_scale,
-    apply_norm_or_skip,
-    detect_model_architecture,
-    get_correct_norm_module,
 )
 from layers_core.numerics import (
     bits_entropy_from_logits,
@@ -224,7 +219,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         has_ln2 = (hasattr(model, 'blocks') and len(model.blocks) > 0 and 
                    hasattr(model.blocks[0], 'ln2'))
         if has_ln2:
-            ln2_type = type(model.blocks[0].ln2).__name__
+            _ln2_type = type(model.blocks[0].ln2).__name__
             if isinstance(model.blocks[0].ln2, nn.LayerNorm):
                 norm_alignment_fix = "using_ln2_layernorm_for_post_block"
             else:
@@ -316,16 +311,6 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         # Sidecar record buffers for Prism (identical schemas to baseline CSVs)
         json_data_prism = {"records": [], "pure_next_token_records": []}
         IMPORTANT_WORDS = ["Germany", "Berlin", "capital", "Answer", "word", "simply"]
-
-        def is_verbose_position(pos, token_str, seq_len):
-            # Final position (predicting next token) always verbose
-            if pos == seq_len - 1:
-                return True
-            # Any prompt word in token string
-            for w in IMPORTANT_WORDS:
-                if w.lower() in token_str.lower().strip(".,!?;:"):
-                    return True
-            return False
 
         # prompt_id and prompt_variant for tagging records across passes
         current_prompt_id = "pos"
@@ -429,11 +414,6 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 raise
         ctx_ids_ctl = gold_info_ctl.get("ctx_ids", [])
         first_ans_id_ctl = gold_info_ctl.get("first_id", None)
-        # Rolling window of the last k top-1 IDs
-        window_ids: list[int] = []
-        
-        # Storage to collect pure_next_token_records for L_copy/L_semantic computation
-        collected_pure_records = []
         
         # Begin capturing residual streams
         with torch.no_grad():
@@ -445,7 +425,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             # Build hook closure
             cache_hook = build_cache_hook(residual_cache)
             # Attach hooks and record handles
-            hooks, has_pos_embed = attach_residual_hooks(model, cache_hook)
+            hooks, _has_pos_embed = attach_residual_hooks(model, cache_hook)
             
             try:
                 # Run forward pass with targeted hooks
@@ -456,12 +436,10 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 final_probs = torch.softmax(final_logits, dim=0)
                 # Representation-drift baseline direction (PROJECT_NOTES §1.5)
                 _final_norm = torch.norm(final_logits) + 1e-12
-                final_dir = (final_logits / _final_norm)
                 # Robust argmax with finite check
                 if not torch.isfinite(final_probs).all():
                     print("Warning: non-finite values in final_probs; argmax may be unreliable")
                 _arg = torch.argmax(final_probs)
-                final_top1_id = int(_arg.item())
                 
                 # Debug: print device placements of cached activations and tokens
                 for name, t in residual_cache.items():
@@ -741,7 +719,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         }
 
         # ---------------- Control pass (PROJECT_NOTES §1.8) --------------------
-        pass_summary_ctl, _, _, prism_diag_ctl = run_prompt_pass(
+        _pass_summary_ctl, _, _, prism_diag_ctl = run_prompt_pass(
             model=model,
             context_prompt=context_prompt_ctl,
             ground_truth=control_ground_truth,
@@ -965,7 +943,7 @@ def run_single_model(model_id):
             out_dir=out_dir,
             self_test=CLI_ARGS.self_test,
         )
-        data = run_experiment_for_model(model_id, (meta_filepath, csv_filepath, pure_csv_filepath), cfg)
+        _data = run_experiment_for_model(model_id, (meta_filepath, csv_filepath, pure_csv_filepath), cfg)
 
         if CLI_ARGS.self_test:
             print("✅ Self-test complete. No artifacts written (by design).")
