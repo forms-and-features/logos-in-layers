@@ -13,6 +13,7 @@ import torch.nn as nn
 from layers_core.passes import run_prompt_pass
 from layers_core.lenses import NormLensAdapter
 from layers_core.windows import WindowManager
+from layers_core.prism import WhitenStats
 
 
 class _Hookable:
@@ -24,12 +25,12 @@ class _Hookable:
         self._hooks.append(fn)
         return _Handle(fn, self._hooks)
 
-    def fire(self, tensor):
+    def fire(self, tensor, name: str | None = None):
         for fn in list(self._hooks):
             class H:  # minimal hook object
                 def __init__(self, name):
                     self.name = name
-            fn(tensor, H(self.name))
+            fn(tensor, H(name or self.name))
 
 
 class _Handle:
@@ -77,12 +78,12 @@ class _ModelStub(nn.Module):
         d = self.cfg.d_model
         # Fire embedding hook
         embed = torch.randn(b, seq, d)
-        self.hook_dict['hook_embed'].fire(embed)
+        self.hook_dict['hook_embed'].fire(embed, name='hook_embed')
         # Fire per-layer resid_post hooks with deterministic randoms
         torch.manual_seed(0)
         for i, blk in enumerate(self.blocks):
             resid = torch.randn(b, seq, d)
-            blk.hook_resid_post.fire(resid)
+            blk.hook_resid_post.fire(resid, name=f'blocks.{i}.hook_resid_post')
         # Return logits: simple linear projection of last residual
         logits = torch.randn(b, seq, self._vocab)
         return logits
@@ -146,6 +147,9 @@ def test_run_prompt_pass_minimal():
     assert isinstance(summary, dict) and "L_copy" in summary and "L_semantic" in summary
     assert arch in ("pre_norm", "post_norm", "unknown")
     # last consistency may be None in stub; permissive
+    # Prism disabled path should produce no sidecar rows
+    assert json_data_prism["records"] == []
+    assert json_data_prism["pure_next_token_records"] == []
 
 
 def test_run_prompt_pass_control_margin():
@@ -198,3 +202,181 @@ def test_run_prompt_pass_control_margin():
     ctl_rows = [rec for rec in json_data["pure_next_token_records"] if rec.get("prompt_id") == "ctl"]
     assert len(ctl_rows) > 0
     assert any("control_margin" in rec for rec in ctl_rows)
+
+
+def test_run_prompt_pass_with_prism_sidecar():
+    model = _ModelStub()
+    norm_lens = NormLensAdapter()
+    W_U = torch.randn(model.cfg.d_model, 11, dtype=torch.float32)
+    b_U = torch.randn(11, dtype=torch.float32)
+    mm_cache = {}
+    window_mgr = WindowManager(1)
+    json_data = {"records": [], "pure_next_token_records": [], "raw_lens_check": {"mode": "off", "samples": [], "summary": None}}
+    json_data_prism = {"records": [], "pure_next_token_records": []}
+
+    # Simple whitening stats and identity Q (on CPU)
+    stats = WhitenStats(mean=torch.zeros(model.cfg.d_model), var=torch.ones(model.cfg.d_model), eps=1e-8)
+    Q = torch.eye(model.cfg.d_model, dtype=torch.float32)
+
+    summary, _, arch, diag = run_prompt_pass(
+        model=model,
+        context_prompt="dummy",
+        ground_truth="Berlin",
+        prompt_id="pos",
+        prompt_variant="orig",
+        window_manager=window_mgr,
+        norm_lens=norm_lens,
+        analysis_W_U=W_U,
+        analysis_b_U=b_U,
+        force_fp32_unembed=True,
+        mm_cache=mm_cache,
+        copy_threshold=0.95,
+        copy_margin=0.10,
+        entropy_collapse_threshold=1.0,
+        top_k_record=5,
+        top_k_verbose=20,
+        keep_residuals=False,
+        out_dir=None,
+        RAW_LENS_MODE='off',
+        json_data=json_data,
+        json_data_prism=json_data_prism,
+        prism_active=True,
+        prism_stats=stats,
+        prism_Q=Q,
+        decode_id_fn=_decode_id,
+        ctx_ids_list=[1,2,3,4],
+        first_ans_token_id=None,
+        important_words=["Germany", "Berlin"],
+        head_scale_cfg=None,
+        head_softcap_cfg=None,
+    )
+
+    # Debug counts for visibility under plain python runner
+    rec_count = len(json_data_prism["records"]) 
+    pure_count = len(json_data_prism["pure_next_token_records"]) 
+    print(f"[DEBUG prism] records={rec_count} pure={pure_count} diag={diag}")
+    # Expect sidecar to have L0 rows and at least one post-block layer row
+    assert any(rec.get("layer") == 0 for rec in json_data_prism["records"]) , f"no L0 prism records; diag={diag}; counts={rec_count},{pure_count}"
+    assert any(rec.get("layer", -1) >= 1 for rec in json_data_prism["records"]) , f"no post-block prism records; diag={diag}; count={rec_count}"
+    assert any(rec.get("layer") == 0 for rec in json_data_prism["pure_next_token_records"]) , f"no L0 prism pure rows; diag={diag}; pure_count={pure_count}"
+    assert any(rec.get("layer", -1) >= 1 for rec in json_data_prism["pure_next_token_records"]) , f"no post-block prism pure rows; diag={diag}; pure_count={pure_count}"
+
+
+def test_keep_residuals_policy():
+    # Prism disabled → raw residuals saved; Prism enabled → normalized residuals saved
+    model = _ModelStub()
+    norm_lens = NormLensAdapter()
+    W_U = torch.randn(model.cfg.d_model, 11, dtype=torch.float32)
+    b_U = torch.randn(11, dtype=torch.float32)
+    mm_cache = {}
+    window_mgr = WindowManager(1)
+
+    # Disabled Prism: expect files saved, no exception
+    import tempfile, os, pathlib
+    tmpA = tempfile.TemporaryDirectory()
+    out_dir_raw = pathlib.Path(tmpA.name) / "raw"
+    out_dir_raw.mkdir(parents=True, exist_ok=True)
+    json_data = {"records": [], "pure_next_token_records": [], "raw_lens_check": {"mode": "off", "samples": [], "summary": None}}
+    json_data_prism = {"records": [], "pure_next_token_records": []}
+    run_prompt_pass(
+        model=model,
+        context_prompt="dummy",
+        ground_truth="X",
+        prompt_id="pos",
+        prompt_variant="orig",
+        window_manager=window_mgr,
+        norm_lens=norm_lens,
+        analysis_W_U=W_U,
+        analysis_b_U=b_U,
+        force_fp32_unembed=True,
+        mm_cache=mm_cache,
+        copy_threshold=0.95,
+        copy_margin=0.10,
+        entropy_collapse_threshold=1.0,
+        top_k_record=5,
+        top_k_verbose=20,
+        keep_residuals=True,
+        out_dir=str(out_dir_raw),
+        RAW_LENS_MODE='off',
+        json_data=json_data,
+        json_data_prism=json_data_prism,
+        prism_active=False,
+        prism_stats=None,
+        prism_Q=None,
+        decode_id_fn=_decode_id,
+        ctx_ids_list=[1,2,3,4],
+        first_ans_token_id=None,
+        important_words=["a"],
+        head_scale_cfg=None,
+        head_softcap_cfg=None,
+        clean_model_name="stubA",
+    )
+    # Files should exist for L0 and for two layers (n_layers=2)
+    for name in ["stubA_00_resid.pt", "stubA_01_resid.pt", "stubA_02_resid.pt"]:
+        p = out_dir_raw / name
+        assert p.exists(), f"missing {p}"
+
+    # Enabled Prism: expect files saved as well
+    tmpB = tempfile.TemporaryDirectory()
+    out_dir_norm = pathlib.Path(tmpB.name) / "norm"
+    out_dir_norm.mkdir(parents=True, exist_ok=True)
+    json_data = {"records": [], "pure_next_token_records": [], "raw_lens_check": {"mode": "off", "samples": [], "summary": None}}
+    json_data_prism = {"records": [], "pure_next_token_records": []}
+    stats = WhitenStats(mean=torch.zeros(model.cfg.d_model), var=torch.ones(model.cfg.d_model), eps=1e-8)
+    Q = torch.eye(model.cfg.d_model, dtype=torch.float32)
+    run_prompt_pass(
+        model=model,
+        context_prompt="dummy",
+        ground_truth="X",
+        prompt_id="pos",
+        prompt_variant="orig",
+        window_manager=window_mgr,
+        norm_lens=norm_lens,
+        analysis_W_U=W_U,
+        analysis_b_U=b_U,
+        force_fp32_unembed=True,
+        mm_cache=mm_cache,
+        copy_threshold=0.95,
+        copy_margin=0.10,
+        entropy_collapse_threshold=1.0,
+        top_k_record=5,
+        top_k_verbose=20,
+        keep_residuals=True,
+        out_dir=str(out_dir_norm),
+        RAW_LENS_MODE='off',
+        json_data=json_data,
+        json_data_prism=json_data_prism,
+        prism_active=True,
+        prism_stats=stats,
+        prism_Q=Q,
+        decode_id_fn=_decode_id,
+        ctx_ids_list=[1,2,3,4],
+        first_ans_token_id=None,
+        important_words=["a"],
+        head_scale_cfg=None,
+        head_softcap_cfg=None,
+        clean_model_name="stubB",
+    )
+    for name in ["stubB_00_resid.pt", "stubB_01_resid.pt", "stubB_02_resid.pt"]:
+        p = out_dir_norm / name
+        assert p.exists(), f"missing {p}"
+
+
+if __name__ == "__main__":
+    print("Running pass runner minimal tests…")
+    ok = True
+    import traceback
+    try:
+        test_run_prompt_pass_minimal(); print("✅ minimal path")
+        test_run_prompt_pass_control_margin(); print("✅ control margin path")
+        test_run_prompt_pass_with_prism_sidecar(); print("✅ prism sidecar path")
+        test_keep_residuals_policy(); print("✅ keep-residuals policy")
+    except AssertionError as e:
+        print("❌ assertion failed:", e)
+        traceback.print_exc()
+        ok = False
+    except Exception as e:
+        print("❌ test crashed:", e)
+        traceback.print_exc()
+        ok = False
+    raise SystemExit(0 if ok else 1)

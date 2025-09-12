@@ -6,7 +6,6 @@ import torch
 import os
 
 from .hooks import build_cache_hook, attach_residual_hooks, detach_hooks, get_residual_safely
-from .prism import whiten_apply
 from .prism_sidecar import append_prism_record, append_prism_pure_next_token
 from .records import make_record, make_pure_record
 from .pure_emit import compute_pure_next_token_info
@@ -15,7 +14,7 @@ from .norm_utils import detect_model_architecture, get_correct_norm_module, appl
 from .raw_lens import should_sample_layer, record_dual_lens_sample
 from .summaries import summarize_pure_records
 from .consistency import compute_last_layer_consistency
-from .unembed import unembed_mm
+from .lenses import PrismLensAdapter
 
 
 def _is_verbose_position(pos: int, token_str: str, seq_len: int, important_words: Sequence[str]) -> bool:
@@ -92,8 +91,7 @@ def run_prompt_pass(
             else:
                 resid_raw = residual_cache['hook_embed']
 
-            resid_norm = resid_raw
-            # Normalized residual only for Prism and optional saving
+            # Compute norm-lens logits for L0 from the raw residual
             norm_logits_all = norm_lens.forward(
                 model,
                 0,
@@ -106,25 +104,22 @@ def run_prompt_pass(
             )
             # Pass-wide Prism enablement is decided at L0 and carried forward
             # to match baseline behavior (no per-layer re-enabling attempts).
-            prism_enabled = prism_active
-            prism_Q_use = prism_Q
+            prism_lens = PrismLensAdapter(prism_stats, prism_Q, prism_active)
             diag_delta: Dict[str, Any] = {}
-            if prism_active:
-                # align with run.py behavior: normalize before Prism whitening for L0
-                norm_module = get_correct_norm_module(model, 0, probe_after_block=False)
-                resid_norm = apply_norm_or_skip(resid_norm, norm_module)
-                Xw_L0 = whiten_apply(resid_norm[0], prism_stats)
-                try:
-                    if hasattr(prism_Q_use, 'device') and prism_Q_use.device != Xw_L0.device:
-                        prism_Q_use = prism_Q_use.to(Xw_L0.device)
-                except RuntimeError:
-                    prism_enabled = False
-                    diag_delta["placement_error"] = "prism Q placement failed at L0"
-                if prism_enabled:
-                    Xp_L0 = Xw_L0 @ prism_Q_use
-                    Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
-                    bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
-                    prism_logits_all_L0 = unembed_mm(Xp_L0, Wp, bp, cache=mm_cache).float()
+            prism_logits_all_L0 = None
+            if prism_lens.enabled:
+                prism_logits_all_L0 = prism_lens.forward(
+                    model,
+                    0,
+                    resid_raw,
+                    probe_after_block=False,
+                    W_U=analysis_W_U,
+                    b_U=analysis_b_U,
+                    force_fp32_unembed=force_fp32_unembed,
+                    cache=mm_cache,
+                )
+                if prism_lens.diag.get("placement_error"):
+                    diag_delta["placement_error"] = prism_lens.diag["placement_error"]
 
             # Per-position records at L0
             for pos in range(tokens.shape[1]):
@@ -133,7 +128,8 @@ def run_prompt_pass(
                 token_str = str_tokens[pos]
                 verbose = _is_verbose_position(pos, token_str, tokens.shape[1], important_words)
                 k = top_k_verbose if verbose else top_k_record
-                _, top_indices_k = torch.topk(layer_logits, k, largest=True, sorted=True)
+                k_eff = min(int(k), int(layer_logits.shape[-1]))
+                _, top_indices_k = torch.topk(layer_logits, k_eff, largest=True, sorted=True)
                 full_probs = torch.softmax(layer_logits, dim=0)
                 top_probs_k = full_probs[top_indices_k]
                 top_tokens_k = [decode_id_fn(idx) for idx in top_indices_k]
@@ -149,7 +145,7 @@ def run_prompt_pass(
                 )
                 json_data["records"].append(rec)
                 # Emit Prism per-position record at L0 for sidecar parity
-                if prism_enabled:
+                if prism_logits_all_L0 is not None:
                     append_prism_record(
                         json_data_prism,
                         prompt_id=prompt_id,
@@ -159,7 +155,7 @@ def run_prompt_pass(
                         token=token_str,
                         logits_pos=prism_logits_all_L0[pos],
                         decode_id_fn=decode_id_fn,
-                        top_k=k,
+                        top_k=k_eff,
                     )
 
             # Pure next-token (L0)
@@ -215,7 +211,7 @@ def run_prompt_pass(
                     ground_truth=dual_ctx["ground_truth"],
                 )
 
-            if prism_enabled:
+            if prism_logits_all_L0 is not None:
                 append_prism_pure_next_token(
                     json_data_prism,
                     layer_out_idx=0,
@@ -237,12 +233,23 @@ def run_prompt_pass(
                     control_ids=control_ids,
                 )
 
-            # Save normalized residual if requested
+            # Save residual if requested. Behavior-preserving policy:
+            # - If Prism is enabled, save the normalized residual for this probe point
+            # - Otherwise, save the raw residual
             if keep_residuals:
                 name_root = clean_model_name or model.cfg.__dict__.get("model_name", "model")
                 resid_filename = f"{name_root}_00_resid.pt"
                 resid_path = os.path.join(out_dir or os.getcwd(), resid_filename)
-                torch.save(resid_norm.to(dtype=resid_norm.dtype).cpu(), resid_path)
+                try:
+                    if prism_lens.enabled:
+                        _nm = get_correct_norm_module(model, 0, probe_after_block=False)
+                        resid_to_save = apply_norm_or_skip(resid_raw, _nm)
+                    else:
+                        resid_to_save = resid_raw
+                    torch.save(resid_to_save.to(dtype=resid_to_save.dtype).cpu(), resid_path)
+                except Exception:
+                    # Best-effort save; do not fail the pass on save errors
+                    pass
 
             # ---- Post-block layers ----
             detected_architecture = detect_model_architecture(model)
@@ -253,13 +260,6 @@ def run_prompt_pass(
 
             for layer in range(n_layers):
                 resid_raw = get_residual_safely(residual_cache, layer)
-                resid_norm = resid_raw
-                # For Prism whitening, normalize post-block residual where applicable
-                # Carry the pass-wide Prism enable flag; do not retry per layer
-                prism_enabled_layer = prism_enabled
-                if prism_enabled_layer:
-                    norm_module = get_correct_norm_module(model, layer, probe_after_block=True)
-                    resid_norm = apply_norm_or_skip(resid_norm, norm_module)
 
                 logits_all = norm_lens.forward(
                     model,
@@ -272,13 +272,21 @@ def run_prompt_pass(
                     cache=mm_cache,
                 )
 
-                # Prism sidecar logits for per-position record emission
-                if prism_enabled_layer:
-                    Xw = whiten_apply(resid_norm[0], prism_stats)
-                    Xp = Xw @ prism_Q_use
-                    Wp = analysis_W_U.float() if analysis_W_U.dtype != torch.float32 else analysis_W_U
-                    bp = (analysis_b_U.float() if (analysis_b_U is not None and analysis_b_U.dtype != torch.float32) else analysis_b_U)
-                    prism_logits_all = unembed_mm(Xp, Wp, bp, cache=mm_cache).float()
+                # Prism sidecar logits via adapter for per-position record emission
+                prism_logits_all = None
+                if prism_lens.enabled:
+                    prism_logits_all = prism_lens.forward(
+                        model,
+                        layer,
+                        resid_raw,
+                        probe_after_block=True,
+                        W_U=analysis_W_U,
+                        b_U=analysis_b_U,
+                        force_fp32_unembed=force_fp32_unembed,
+                        cache=mm_cache,
+                    )
+                    if prism_lens.diag.get("placement_error"):
+                        diag_delta.setdefault("placement_error", prism_lens.diag["placement_error"])  # keep first occurrence
 
                 # Per-position records for this layer
                 for pos in range(tokens.shape[1]):
@@ -288,7 +296,8 @@ def run_prompt_pass(
                     token_str = str_tokens[pos]
                     verbose = _is_verbose_position(pos, token_str, tokens.shape[1], important_words)
                     k = top_k_verbose if verbose else top_k_record
-                    _, top_indices_k = torch.topk(layer_logits, k, largest=True, sorted=True)
+                    k_eff = min(int(k), int(layer_logits.shape[-1]))
+                    _, top_indices_k = torch.topk(layer_logits, k_eff, largest=True, sorted=True)
                     top_probs_k = full_probs[top_indices_k]
                     top_tokens_k = [decode_id_fn(idx) for idx in top_indices_k]
                     json_data["records"].append(
@@ -303,7 +312,7 @@ def run_prompt_pass(
                             top_probs=top_probs_k,
                         )
                     )
-                    if prism_enabled_layer:
+                    if prism_logits_all is not None:
                         append_prism_record(
                             json_data_prism,
                             prompt_id=prompt_id,
@@ -313,7 +322,7 @@ def run_prompt_pass(
                             token=token_str,
                             logits_pos=prism_logits_all[pos],
                             decode_id_fn=decode_id_fn,
-                            top_k=k,
+                            top_k=k_eff,
                         )
 
                 # Pure next-token for this layer
@@ -352,6 +361,29 @@ def run_prompt_pass(
                 )
                 collected_pure_records.append(collected)
 
+                # Prism pure next-token row for this layer, if available
+                if prism_logits_all is not None:
+                    append_prism_pure_next_token(
+                        json_data_prism,
+                        layer_out_idx=layer + 1,
+                        prism_logits_all=prism_logits_all,
+                        tokens_tensor=tokens,
+                        ctx_ids_list=ctx_ids_list,
+                        window_manager=window_manager,
+                        final_probs_tensor=final_probs,
+                        first_ans_token_id=first_ans_token_id,
+                        final_dir_vec=final_dir,
+                        copy_threshold=copy_threshold,
+                        copy_margin=copy_margin,
+                        entropy_collapse_threshold=entropy_collapse_threshold,
+                        decode_id_fn=decode_id_fn,
+                        ground_truth=ground_truth,
+                        top_k_record=top_k_record,
+                        prompt_id=prompt_id,
+                        prompt_variant=prompt_variant,
+                        control_ids=control_ids,
+                    )
+
                 # Optional raw-vs-norm sample
                 if enable_raw_lens_sampling and RAW_LENS_MODE != "off" and _should_sample(layer + 1):
                     record_dual_lens_sample(
@@ -383,18 +415,27 @@ def run_prompt_pass(
                         topk_cum=5,
                     )
 
-                # Save residual per layer if requested
+                # Save residual per layer if requested (policy mirrors L0)
                 if keep_residuals:
                     name_root = clean_model_name or model.cfg.__dict__.get("model_name", "model")
                     resid_filename = f"{name_root}_{layer+1:02d}_resid.pt"
-                    # Match original dtype behavior when available
                     save_dtype = getattr(getattr(model, 'cfg', object()), 'dtype', torch.float32)
-                    try:
-                        resid_to_save = resid_norm.to(dtype=save_dtype).cpu()
-                    except Exception:
-                        resid_to_save = resid_norm.float().cpu()
                     resid_path = os.path.join(out_dir or os.getcwd(), resid_filename)
-                    torch.save(resid_to_save, resid_path)
+                    try:
+                        if prism_lens.enabled:
+                            _nm = get_correct_norm_module(model, layer, probe_after_block=True)
+                            _normed = apply_norm_or_skip(resid_raw, _nm)
+                            resid_to_save = _normed
+                        else:
+                            resid_to_save = resid_raw
+                        try:
+                            resid_to_save_tensor = resid_to_save.to(dtype=save_dtype).cpu()
+                        except Exception:
+                            resid_to_save_tensor = resid_to_save.float().cpu()
+                        torch.save(resid_to_save_tensor, resid_path)
+                    except Exception:
+                        # Best-effort save
+                        pass
 
                 # Free layer residual and keep memory flat
                 try:

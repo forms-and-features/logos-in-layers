@@ -125,7 +125,7 @@ Legend: [ ] pending · [x] completed
    - Removed dead helpers and unused imports in run.py; redundant variant reset removed.
    - Added control_ids threading in runner for control margin; tests cover control margin and runner returns.
 
-7) [ ] Convert Prism path to a lens adapter and route through the pass runner
+7) [x] Convert Prism path to a lens adapter and route through the pass runner
 - Scope: Implement PrismLensAdapter under the same lenses/ interface and switch run.py to use it via the pass runner.
 - Rationale: Unify all lenses behind one interface; reduce special-casing in run.py.
 - Deliverables:
@@ -134,7 +134,15 @@ Legend: [ ] pending · [x] completed
    - filenames remain unchanged (e.g., -records-prism.csv);
    - no unused code left behind.
 - Tests: Extend tests/test_lenses_basic.py to cover Prism adapter on synthetic tensors and ensure sidecar CSV schemas match existing outputs.
-- Rollback: Revert adapter wiring; keep Prism via helpers.
+ - Rollback: Revert adapter wiring; keep Prism via helpers.
+ - Status: completed 2025-09-12
+ - Notes:
+   - Added lenses/prism.py (PrismLensAdapter) and exported via lenses/__init__.py.
+   - Refactored layers_core/passes.py to call the adapter for L0 and post‑block; sidecars emitted via helpers.
+   - Fixed residual saving bug; behavior‑preserving policy: normalized when Prism enabled, else raw (L0 and post‑block).
+   - Applied safe top‑k clamping in passes.py and run.py debug paths for small‑vocab stubs.
+   - Tests: extended test_lenses_basic (adapter parity), new test_prism_placement_failure (placement error disables adapter; no sidecars), extended test_pass_runner_minimal (Prism sidecar rows, keep‑residuals policy).
+   - Increased verbosity and added __main__ shims for Prism/lenses tests to run under plain‑python harness; adjusted prism sidecar smoke test to use TemporaryDirectory (no repo pollution).
 
 8) [ ] Extract lightweight probes
 - Scope: Move test prompt emission and temperature exploration to layers_core/probes.py:

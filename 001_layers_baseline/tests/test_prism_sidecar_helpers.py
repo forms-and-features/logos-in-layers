@@ -19,14 +19,14 @@ def test_append_prism_record_appends_row():
         decode_id_fn=lambda i: f"t{int(i)}",
         top_k=3,
     )
-    assert len(buf["records"]) == 1
+    assert len(buf["records"]) == 1, f"no record appended; buf={buf}"
     rec = buf["records"][0]
     assert rec["type"] == "record"
     assert rec["prompt_id"] == "pos"
     assert rec["prompt_variant"] == "orig"
     assert rec["layer"] == 3 and rec["pos"] == 1
     assert isinstance(rec["entropy"], float)
-    assert len(rec["topk"]) == 3
+    assert len(rec["topk"]) == 3, f"unexpected topk len: {len(rec['topk'])} rec={rec}"
 
 
 def test_append_prism_pure_next_token_builds_pure_record():
@@ -60,12 +60,25 @@ def test_append_prism_pure_next_token_builds_pure_record():
         prompt_id="pos",
         prompt_variant="orig",
     )
-    assert len(buf["pure_next_token_records"]) == 1
+    assert len(buf["pure_next_token_records"]) == 1, f"no pure record appended; buf={buf}"
     rec = buf["pure_next_token_records"][0]
     assert rec["type"] == "pure_next_token_record"
     assert rec["layer"] == 2 and rec["pos"] == seq_len - 1
     assert rec["prompt_id"] == "pos" and rec["prompt_variant"] == "orig"
     # has expected extra metrics
     for k in ("copy_collapse", "entropy_collapse", "p_top1", "kl_to_final_bits"):
-        assert k in rec
+        assert k in rec, f"missing key {k} in rec={rec}"
 
+
+if __name__ == "__main__":
+    import traceback
+    print("Running prism sidecar helper tests…")
+    ok = True
+    try:
+        test_append_prism_record_appends_row(); print("✅ append_prism_record")
+        test_append_prism_pure_next_token_builds_pure_record(); print("✅ append_prism_pure_next_token")
+    except AssertionError as e:
+        print("❌ assertion failed:", e); traceback.print_exc(); ok = False
+    except Exception as e:
+        print("❌ test crashed:", e); traceback.print_exc(); ok = False
+    raise SystemExit(0 if ok else 1)

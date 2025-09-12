@@ -115,36 +115,53 @@ def test_prism_sidecar_writes_outputs():
 
     # Prepare temp artifacts and outputs
     with tempfile.TemporaryDirectory() as td_out:
-        # Create prism artifacts under a temp subdir relative to run script
-        script_dir = os.path.dirname(run_path)
-        prism_dirname = f"tmp_prisms_sidecar"
-        prism_root = os.path.join(script_dir, prism_dirname)
-        os.makedirs(prism_root, exist_ok=True)
-        model_clean = 'Model'
-        art_dir = os.path.join(prism_root, model_clean)
-        os.makedirs(art_dir, exist_ok=True)
+        # Create prism artifacts under an absolute temp directory (no repo pollution)
+        with tempfile.TemporaryDirectory() as td_prism:
+            prism_root = td_prism  # absolute path; run.py join() will respect abs path
+            model_clean = 'Model'
+            art_dir = os.path.join(prism_root, model_clean)
+            os.makedirs(art_dir, exist_ok=True)
 
-        # Save simple identity Q and unit whiten stats for d_model=4
-        stats = WhitenStats(mean=torch.zeros(4), var=torch.ones(4), eps=1e-8)
-        Q = torch.eye(4, dtype=torch.float32)
-        prov = {"method": "procrustes", "k": 4, "layers": ["embed", 0, 1], "seed": 316}
-        save_prism_artifacts(art_dir, stats=stats, Q=Q, provenance=prov)
+            # Save simple identity Q and unit whiten stats for d_model=4
+            stats = WhitenStats(mean=torch.zeros(4), var=torch.ones(4), eps=1e-8)
+            Q = torch.eye(4, dtype=torch.float32)
+            prov = {"method": "procrustes", "k": 4, "layers": ["embed", 0, 1], "seed": 316}
+            save_prism_artifacts(art_dir, stats=stats, Q=Q, provenance=prov)
 
-        # Force prism=on and set prism_dir to our temp subdir
-        run.CLI_ARGS.prism = 'on'
-        run.CLI_ARGS.prism_dir = prism_dirname
+            # Force prism=on and set prism_dir to our temp absolute directory
+            old_prism = getattr(run.CLI_ARGS, 'prism', 'auto')
+            old_pdir = getattr(run.CLI_ARGS, 'prism_dir', 'prisms')
+            run.CLI_ARGS.prism = 'on'
+            run.CLI_ARGS.prism_dir = prism_root
 
-        # Run once using the mock model
-        meta = os.path.join(td_out, 'out.json')
-        recs = os.path.join(td_out, 'out-records.csv')
-        pure = os.path.join(td_out, 'out-pure.csv')
-        cfg = run.ExperimentConfig(device='cpu', fp32_unembed=False, keep_residuals=False,
-                                   copy_threshold=0.5, copy_margin=0.1, out_dir=td_out, self_test=False)
-        data = run.run_experiment_for_model('mock/Model', (meta, recs, pure), cfg)
+            # Run once using the mock model
+            meta = os.path.join(td_out, 'out.json')
+            recs = os.path.join(td_out, 'out-records.csv')
+            pure = os.path.join(td_out, 'out-pure.csv')
+            cfg = run.ExperimentConfig(device='cpu', fp32_unembed=False, keep_residuals=False,
+                                       copy_threshold=0.5, copy_margin=0.1, out_dir=td_out, self_test=False)
+            data = run.run_experiment_for_model('mock/Model', (meta, recs, pure), cfg)
 
-        # Sidecar CSVs should be present
-        recs_prism = os.path.join(td_out, 'output-Model-records-prism.csv')
-        pure_prism = os.path.join(td_out, 'output-Model-pure-next-token-prism.csv')
-        assert os.path.exists(recs_prism)
-        assert os.path.exists(pure_prism)
+            # Sidecar CSVs should be present
+            recs_prism = os.path.join(td_out, 'output-Model-records-prism.csv')
+            pure_prism = os.path.join(td_out, 'output-Model-pure-next-token-prism.csv')
+            assert os.path.exists(recs_prism), f"missing records sidecar: {recs_prism}"
+            assert os.path.exists(pure_prism), f"missing pure sidecar: {pure_prism}"
+            # Print file sizes for quick visibility
+            print(f"[DEBUG prism-sidecar] records_prism bytes={os.path.getsize(recs_prism)} pure_prism bytes={os.path.getsize(pure_prism)}")
 
+            # Restore CLI args (best-effort) before temp dir cleanup
+            run.CLI_ARGS.prism = old_prism
+            run.CLI_ARGS.prism_dir = old_pdir
+
+
+if __name__ == "__main__":
+    import traceback
+    print("Running prism sidecar smoke test…")
+    try:
+        test_prism_sidecar_writes_outputs(); print("✅ prism sidecar files exist")
+        raise SystemExit(0)
+    except AssertionError as e:
+        print("❌ assertion failed:", e); traceback.print_exc(); raise SystemExit(1)
+    except Exception as e:
+        print("❌ test crashed:", e); traceback.print_exc(); raise SystemExit(1)

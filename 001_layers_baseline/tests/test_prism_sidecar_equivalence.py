@@ -68,6 +68,10 @@ def test_prism_record_helper_matches_manual_block():
 
     assert buf["records"], "helper did not append a record"
     got = buf["records"][-1]
+    if got != manual:
+        print("[DEBUG prism-equivalence] record mismatch")
+        print(" got:", got)
+        print(" exp:", manual)
     assert got == manual
 
 
@@ -112,6 +116,7 @@ def test_prism_pure_next_token_helper_fields_match_manual_logic():
     _pn = torch.norm(pz) + 1e-12
     p_cos = torch.dot((pz / _pn), final_dir).item()
     manual = {
+        "type": "pure_next_token_record",
         "prompt_id": "pos",
         "prompt_variant": "orig",
         "layer": 7,  # arbitrary layer id passed below
@@ -154,4 +159,22 @@ def test_prism_pure_next_token_helper_fields_match_manual_logic():
 
     assert buf["pure_next_token_records"], "helper did not append a pure next token record"
     got = buf["pure_next_token_records"][-1]
+    if got != manual:
+        print("[DEBUG prism-equivalence] pure mismatch")
+        print(" got:", got)
+        print(" exp:", manual)
     assert got == manual
+
+
+if __name__ == "__main__":
+    import traceback
+    print("Running prism sidecar equivalence tests…")
+    ok = True
+    try:
+        test_prism_record_helper_matches_manual_block(); print("✅ record equivalence")
+        test_prism_pure_next_token_helper_fields_match_manual_logic(); print("✅ pure equivalence")
+    except AssertionError as e:
+        print("❌ assertion failed:", e); traceback.print_exc(); ok = False
+    except Exception as e:
+        print("❌ test crashed:", e); traceback.print_exc(); ok = False
+    raise SystemExit(0 if ok else 1)

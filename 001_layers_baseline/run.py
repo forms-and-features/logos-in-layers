@@ -37,6 +37,10 @@ CONFIRMED_MODELS = CANDIDATE_MODELS
 # --- helpers (extracted to norm_utils) --------------------------------------
 from layers_core.norm_utils import (
     _get_rms_scale,
+    # Re-exported for backward compatibility with tests/tools expecting these on run.py
+    detect_model_architecture,
+    get_correct_norm_module,
+    apply_norm_or_skip,
 )
 from layers_core.numerics import (
     bits_entropy_from_logits,
@@ -550,7 +554,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
 
             # final_logits already computed above; ensure float
             final_logits = final_logits.float()
-            _, final_top_indices = torch.topk(final_logits, 20, largest=True, sorted=True)
+            # Clamp top-k to vocab size to support small-vocab test stubs
+            _k_final = min(20, int(final_logits.shape[-1]))
+            _, final_top_indices = torch.topk(final_logits, _k_final, largest=True, sorted=True)
             final_full_probs = torch.softmax(final_logits, dim=0)
             final_top_probs = final_full_probs[final_top_indices]
             
@@ -590,7 +596,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 
                 test_logits = model(test_tokens)
                 last_slice = test_logits[0, -1, :]
-                _, test_top_indices = torch.topk(last_slice, 10, largest=True, sorted=True)
+                _k_test = min(10, int(last_slice.shape[-1]))
+                _, test_top_indices = torch.topk(last_slice, _k_test, largest=True, sorted=True)
                 test_full_probs = torch.softmax(last_slice, dim=0)
                 test_top_probs = test_full_probs[test_top_indices]
                 test_entropy_bits = bits_entropy_from_logits(last_slice)
@@ -615,7 +622,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 temperatures = [0.1, 2.0]
                 for temp in temperatures:
                     scaled_logits = (base_logits / temp).float()
-                    _, temp_top_indices = torch.topk(scaled_logits, 15, largest=True, sorted=True)
+                    _k_temp = min(15, int(scaled_logits.shape[-1]))
+                    _, temp_top_indices = torch.topk(scaled_logits, _k_temp, largest=True, sorted=True)
                     temp_full_probs = torch.softmax(scaled_logits, dim=0)
                     temp_top_probs = temp_full_probs[temp_top_indices]
                     temp_entropy_bits = bits_entropy_from_logits(scaled_logits)
