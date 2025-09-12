@@ -14,6 +14,7 @@ import layers_core.passes as passes_mod
 from layers_core.lenses import NormLensAdapter
 from layers_core.windows import WindowManager
 from layers_core.prism import WhitenStats
+from layers_core.contexts import UnembedContext, PrismContext
 
 
 class _FakePrismLensAdapter:
@@ -114,6 +115,8 @@ def test_prism_placement_failure_path():
         json_data_prism = {"records": [], "pure_next_token_records": []}
         stats = WhitenStats(mean=torch.zeros(model.cfg.d_model), var=torch.ones(model.cfg.d_model), eps=1e-8)
         Q = torch.eye(model.cfg.d_model, dtype=torch.float32)
+        unembed_ctx = UnembedContext(W=W_U, b=b_U, force_fp32=True, cache=mm_cache)
+        prism_ctx = PrismContext(stats=stats, Q=Q, active=True)
 
         summary, last_consistency, arch, diag = run_prompt_pass(
             model=model,
@@ -123,10 +126,7 @@ def test_prism_placement_failure_path():
             prompt_variant="orig",
             window_manager=window_mgr,
             norm_lens=norm_lens,
-            analysis_W_U=W_U,
-            analysis_b_U=b_U,
-            force_fp32_unembed=True,
-            mm_cache=mm_cache,
+            unembed_ctx=unembed_ctx,
             copy_threshold=0.95,
             copy_margin=0.10,
             entropy_collapse_threshold=1.0,
@@ -137,9 +137,7 @@ def test_prism_placement_failure_path():
             RAW_LENS_MODE='off',
             json_data=json_data,
             json_data_prism=json_data_prism,
-            prism_active=True,
-            prism_stats=stats,
-            prism_Q=Q,
+            prism_ctx=prism_ctx,
             decode_id_fn=_decode_id,
             ctx_ids_list=[1,2,3,4],
             first_ans_token_id=None,

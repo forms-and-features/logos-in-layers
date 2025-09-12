@@ -14,6 +14,7 @@ from layers_core.passes import run_prompt_pass
 from layers_core.lenses import NormLensAdapter
 from layers_core.windows import WindowManager
 from layers_core.prism import WhitenStats
+from layers_core.contexts import UnembedContext, PrismContext
 
 
 class _Hookable:
@@ -101,6 +102,8 @@ def test_run_prompt_pass_minimal():
     W_U = torch.randn(model.cfg.d_model, 11, dtype=torch.float32)
     b_U = torch.randn(11, dtype=torch.float32)
     mm_cache = {}
+    unembed_ctx = UnembedContext(W=W_U, b=b_U, force_fp32=True, cache=mm_cache)
+    prism_ctx = PrismContext(stats=None, Q=None, active=False)
     window_mgr = WindowManager(1)
     json_data = {"records": [], "pure_next_token_records": [], "raw_lens_check": {"mode": "off", "samples": [], "summary": None}}
     json_data_prism = {"records": [], "pure_next_token_records": []}
@@ -113,10 +116,7 @@ def test_run_prompt_pass_minimal():
         prompt_variant="orig",
         window_manager=window_mgr,
         norm_lens=norm_lens,
-        analysis_W_U=W_U,
-        analysis_b_U=b_U,
-        force_fp32_unembed=True,
-        mm_cache=mm_cache,
+        unembed_ctx=unembed_ctx,
         copy_threshold=0.95,
         copy_margin=0.10,
         entropy_collapse_threshold=1.0,
@@ -127,9 +127,7 @@ def test_run_prompt_pass_minimal():
         RAW_LENS_MODE='off',
         json_data=json_data,
         json_data_prism=json_data_prism,
-        prism_active=False,
-        prism_stats=None,
-        prism_Q=None,
+        prism_ctx=prism_ctx,
         decode_id_fn=_decode_id,
         ctx_ids_list=[1,2,3,4],
         first_ans_token_id=None,
@@ -158,6 +156,8 @@ def test_run_prompt_pass_control_margin():
     W_U = torch.randn(model.cfg.d_model, 11, dtype=torch.float32)
     b_U = torch.randn(11, dtype=torch.float32)
     mm_cache = {}
+    unembed_ctx = UnembedContext(W=W_U, b=b_U, force_fp32=True, cache=mm_cache)
+    prism_ctx = PrismContext(stats=None, Q=None, active=False)
     window_mgr = WindowManager(1)
     json_data = {"records": [], "pure_next_token_records": [], "raw_lens_check": {"mode": "off", "samples": [], "summary": None}}
     json_data_prism = {"records": [], "pure_next_token_records": []}
@@ -171,10 +171,7 @@ def test_run_prompt_pass_control_margin():
         prompt_variant="orig",
         window_manager=window_mgr,
         norm_lens=norm_lens,
-        analysis_W_U=W_U,
-        analysis_b_U=b_U,
-        force_fp32_unembed=True,
-        mm_cache=mm_cache,
+        unembed_ctx=unembed_ctx,
         copy_threshold=0.95,
         copy_margin=0.10,
         entropy_collapse_threshold=1.0,
@@ -185,9 +182,7 @@ def test_run_prompt_pass_control_margin():
         RAW_LENS_MODE='off',
         json_data=json_data,
         json_data_prism=json_data_prism,
-        prism_active=False,
-        prism_stats=None,
-        prism_Q=None,
+        prism_ctx=prism_ctx,
         decode_id_fn=_decode_id,
         ctx_ids_list=[1,2,3,4],
         first_ans_token_id=42,
@@ -210,6 +205,7 @@ def test_run_prompt_pass_with_prism_sidecar():
     W_U = torch.randn(model.cfg.d_model, 11, dtype=torch.float32)
     b_U = torch.randn(11, dtype=torch.float32)
     mm_cache = {}
+    unembed_ctx = UnembedContext(W=W_U, b=b_U, force_fp32=True, cache=mm_cache)
     window_mgr = WindowManager(1)
     json_data = {"records": [], "pure_next_token_records": [], "raw_lens_check": {"mode": "off", "samples": [], "summary": None}}
     json_data_prism = {"records": [], "pure_next_token_records": []}
@@ -218,6 +214,7 @@ def test_run_prompt_pass_with_prism_sidecar():
     stats = WhitenStats(mean=torch.zeros(model.cfg.d_model), var=torch.ones(model.cfg.d_model), eps=1e-8)
     Q = torch.eye(model.cfg.d_model, dtype=torch.float32)
 
+    prism_ctx = PrismContext(stats=stats, Q=Q, active=True)
     summary, _, arch, diag = run_prompt_pass(
         model=model,
         context_prompt="dummy",
@@ -226,10 +223,7 @@ def test_run_prompt_pass_with_prism_sidecar():
         prompt_variant="orig",
         window_manager=window_mgr,
         norm_lens=norm_lens,
-        analysis_W_U=W_U,
-        analysis_b_U=b_U,
-        force_fp32_unembed=True,
-        mm_cache=mm_cache,
+        unembed_ctx=unembed_ctx,
         copy_threshold=0.95,
         copy_margin=0.10,
         entropy_collapse_threshold=1.0,
@@ -240,9 +234,7 @@ def test_run_prompt_pass_with_prism_sidecar():
         RAW_LENS_MODE='off',
         json_data=json_data,
         json_data_prism=json_data_prism,
-        prism_active=True,
-        prism_stats=stats,
-        prism_Q=Q,
+        prism_ctx=prism_ctx,
         decode_id_fn=_decode_id,
         ctx_ids_list=[1,2,3,4],
         first_ans_token_id=None,
@@ -269,6 +261,7 @@ def test_keep_residuals_policy():
     W_U = torch.randn(model.cfg.d_model, 11, dtype=torch.float32)
     b_U = torch.randn(11, dtype=torch.float32)
     mm_cache = {}
+    unembed_ctx = UnembedContext(W=W_U, b=b_U, force_fp32=True, cache=mm_cache)
     window_mgr = WindowManager(1)
 
     # Disabled Prism: expect files saved, no exception
@@ -278,6 +271,7 @@ def test_keep_residuals_policy():
     out_dir_raw.mkdir(parents=True, exist_ok=True)
     json_data = {"records": [], "pure_next_token_records": [], "raw_lens_check": {"mode": "off", "samples": [], "summary": None}}
     json_data_prism = {"records": [], "pure_next_token_records": []}
+    prism_ctx = PrismContext(stats=None, Q=None, active=False)
     run_prompt_pass(
         model=model,
         context_prompt="dummy",
@@ -286,10 +280,7 @@ def test_keep_residuals_policy():
         prompt_variant="orig",
         window_manager=window_mgr,
         norm_lens=norm_lens,
-        analysis_W_U=W_U,
-        analysis_b_U=b_U,
-        force_fp32_unembed=True,
-        mm_cache=mm_cache,
+        unembed_ctx=unembed_ctx,
         copy_threshold=0.95,
         copy_margin=0.10,
         entropy_collapse_threshold=1.0,
@@ -300,9 +291,7 @@ def test_keep_residuals_policy():
         RAW_LENS_MODE='off',
         json_data=json_data,
         json_data_prism=json_data_prism,
-        prism_active=False,
-        prism_stats=None,
-        prism_Q=None,
+        prism_ctx=prism_ctx,
         decode_id_fn=_decode_id,
         ctx_ids_list=[1,2,3,4],
         first_ans_token_id=None,
@@ -324,6 +313,7 @@ def test_keep_residuals_policy():
     json_data_prism = {"records": [], "pure_next_token_records": []}
     stats = WhitenStats(mean=torch.zeros(model.cfg.d_model), var=torch.ones(model.cfg.d_model), eps=1e-8)
     Q = torch.eye(model.cfg.d_model, dtype=torch.float32)
+    prism_ctx = PrismContext(stats=stats, Q=Q, active=True)
     run_prompt_pass(
         model=model,
         context_prompt="dummy",
@@ -332,10 +322,7 @@ def test_keep_residuals_policy():
         prompt_variant="orig",
         window_manager=window_mgr,
         norm_lens=norm_lens,
-        analysis_W_U=W_U,
-        analysis_b_U=b_U,
-        force_fp32_unembed=True,
-        mm_cache=mm_cache,
+        unembed_ctx=unembed_ctx,
         copy_threshold=0.95,
         copy_margin=0.10,
         entropy_collapse_threshold=1.0,
@@ -346,9 +333,7 @@ def test_keep_residuals_policy():
         RAW_LENS_MODE='off',
         json_data=json_data,
         json_data_prism=json_data_prism,
-        prism_active=True,
-        prism_stats=stats,
-        prism_Q=Q,
+        prism_ctx=prism_ctx,
         decode_id_fn=_decode_id,
         ctx_ids_list=[1,2,3,4],
         first_ans_token_id=None,

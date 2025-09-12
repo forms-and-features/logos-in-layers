@@ -162,14 +162,19 @@ Legend: [ ] pending · [x] completed
    - Added tests/test_probes.py and updated scripts/run_cpu_tests.sh; tests verified under the CPU suite.
    - Polish: wrapped emit_test_prompts in torch.no_grad() and widened decode_id type hints to accept tensor or int without mismatch.
 
-9) [ ] Introduce small context objects to reduce closures
+9) [x] Introduce small context objects to reduce closures
 - Scope: Add tiny dataclasses:
   - UnembedContext: {W, b, force_fp32, cache}
   - PrismContext: {stats, Q, active, placement}
 - Rationale: Replace hard-to-test closures with explicit dependencies.
-- Deliverables: Contexts passed into pass runner and lenses; no behavior change.
+- Deliverables: Contexts passed into pass runner and used by lenses; no behavior change.
 - Tests: Type/shape sanity tests in existing modules (no new public API).
 - Rollback: Use local variables again.
+ - Status: completed 2025-09-12
+ - Notes:
+   - Added layers_core/contexts.py with UnembedContext and PrismContext.
+   - Refactored layers_core/passes.run_prompt_pass to accept `unembed_ctx` and `prism_ctx` and to mirror any Prism placement errors into both `diag_delta` and `prism_ctx.placement_error`.
+   - Updated run.py to construct contexts once and pass them to all runs; updated tests (test_pass_runner_minimal.py, test_prism_placement_failure.py) accordingly. No output/schema changes.
 
 10) [ ] Optional cleanup (no behavior change)
 - Scope: Tidy decode_id into a tiny util; gate prints; minor docstrings.

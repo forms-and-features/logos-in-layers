@@ -15,6 +15,7 @@ from .raw_lens import should_sample_layer, record_dual_lens_sample
 from .summaries import summarize_pure_records
 from .consistency import compute_last_layer_consistency
 from .lenses import PrismLensAdapter
+from .contexts import UnembedContext, PrismContext
 
 
 def _is_verbose_position(pos: int, token_str: str, seq_len: int, important_words: Sequence[str]) -> bool:
@@ -35,10 +36,7 @@ def run_prompt_pass(
     prompt_variant: str,
     window_manager,
     norm_lens,
-    analysis_W_U: torch.Tensor,
-    analysis_b_U: Optional[torch.Tensor],
-    force_fp32_unembed: bool,
-    mm_cache: Dict[str, Any],
+    unembed_ctx: UnembedContext,
     copy_threshold: float,
     copy_margin: float,
     entropy_collapse_threshold: float,
@@ -49,9 +47,7 @@ def run_prompt_pass(
     RAW_LENS_MODE: str,
     json_data: Dict[str, Any],
     json_data_prism: Dict[str, Any],
-    prism_active: bool,
-    prism_stats: Any,
-    prism_Q: Any,
+    prism_ctx: PrismContext,
     decode_id_fn,
     ctx_ids_list: Sequence[int],
     first_ans_token_id: Optional[int],
@@ -64,7 +60,7 @@ def run_prompt_pass(
 ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], str, Dict[str, Any]]:
     """Run a single prompt pass and append outputs into json_data structures.
 
-    Returns (summary_diag, last_layer_consistency, detected_architecture).
+    Returns (summary_diag, last_layer_consistency, detected_architecture, diag_delta).
     """
     window_manager.reset_variant(prompt_id, prompt_variant)
 
@@ -97,14 +93,14 @@ def run_prompt_pass(
                 0,
                 resid_raw,
                 probe_after_block=False,
-                W_U=analysis_W_U,
-                b_U=analysis_b_U,
-                force_fp32_unembed=force_fp32_unembed,
-                cache=mm_cache,
+                W_U=unembed_ctx.W,
+                b_U=unembed_ctx.b,
+                force_fp32_unembed=unembed_ctx.force_fp32,
+                cache=unembed_ctx.cache,
             )
             # Pass-wide Prism enablement is decided at L0 and carried forward
             # to match baseline behavior (no per-layer re-enabling attempts).
-            prism_lens = PrismLensAdapter(prism_stats, prism_Q, prism_active)
+            prism_lens = PrismLensAdapter(prism_ctx.stats, prism_ctx.Q, prism_ctx.active)
             diag_delta: Dict[str, Any] = {}
             prism_logits_all_L0 = None
             if prism_lens.enabled:
@@ -113,13 +109,17 @@ def run_prompt_pass(
                     0,
                     resid_raw,
                     probe_after_block=False,
-                    W_U=analysis_W_U,
-                    b_U=analysis_b_U,
-                    force_fp32_unembed=force_fp32_unembed,
-                    cache=mm_cache,
+                    W_U=unembed_ctx.W,
+                    b_U=unembed_ctx.b,
+                    force_fp32_unembed=unembed_ctx.force_fp32,
+                    cache=unembed_ctx.cache,
                 )
                 if prism_lens.diag.get("placement_error"):
-                    diag_delta["placement_error"] = prism_lens.diag["placement_error"]
+                    err = prism_lens.diag["placement_error"]
+                    diag_delta["placement_error"] = err
+                    # Mirror into context once for completeness
+                    if getattr(prism_ctx, "placement_error", None) is None:
+                        prism_ctx.placement_error = err
 
             # Per-position records at L0
             for pos in range(tokens.shape[1]):
@@ -202,9 +202,9 @@ def run_prompt_pass(
                     layer_out_idx=dual_ctx["layer"],
                     last_logits_norm=dual_ctx["last_logits_norm"],
                     resid_raw_last_vec=resid_raw[0, int(dual_ctx["last_pos"]), :],
-                    W_U=analysis_W_U,
-                    b_U=analysis_b_U,
-                    force_fp32_unembed=force_fp32_unembed,
+                    W_U=unembed_ctx.W,
+                    b_U=unembed_ctx.b,
+                    force_fp32_unembed=unembed_ctx.force_fp32,
                     tokenizer=model.tokenizer,
                     final_probs=dual_ctx["final_probs"],
                     first_ans_id=dual_ctx["first_ans_id"],
@@ -266,10 +266,10 @@ def run_prompt_pass(
                     layer,
                     resid_raw,
                     probe_after_block=True,
-                    W_U=analysis_W_U,
-                    b_U=analysis_b_U,
-                    force_fp32_unembed=force_fp32_unembed,
-                    cache=mm_cache,
+                    W_U=unembed_ctx.W,
+                    b_U=unembed_ctx.b,
+                    force_fp32_unembed=unembed_ctx.force_fp32,
+                    cache=unembed_ctx.cache,
                 )
 
                 # Prism sidecar logits via adapter for per-position record emission
@@ -280,13 +280,16 @@ def run_prompt_pass(
                         layer,
                         resid_raw,
                         probe_after_block=True,
-                        W_U=analysis_W_U,
-                        b_U=analysis_b_U,
-                        force_fp32_unembed=force_fp32_unembed,
-                        cache=mm_cache,
+                        W_U=unembed_ctx.W,
+                        b_U=unembed_ctx.b,
+                        force_fp32_unembed=unembed_ctx.force_fp32,
+                        cache=unembed_ctx.cache,
                     )
                     if prism_lens.diag.get("placement_error"):
-                        diag_delta.setdefault("placement_error", prism_lens.diag["placement_error"])  # keep first occurrence
+                        err = prism_lens.diag["placement_error"]
+                        diag_delta.setdefault("placement_error", err)  # keep first occurrence
+                        if getattr(prism_ctx, "placement_error", None) is None:
+                            prism_ctx.placement_error = err
 
                 # Per-position records for this layer
                 for pos in range(tokens.shape[1]):
@@ -391,9 +394,9 @@ def run_prompt_pass(
                         layer_out_idx=dual_ctx["layer"],
                         last_logits_norm=dual_ctx["last_logits_norm"],
                         resid_raw_last_vec=resid_raw[0, int(dual_ctx["last_pos"]), :],
-                        W_U=analysis_W_U,
-                        b_U=analysis_b_U,
-                        force_fp32_unembed=force_fp32_unembed,
+                        W_U=unembed_ctx.W,
+                        b_U=unembed_ctx.b,
+                        force_fp32_unembed=unembed_ctx.force_fp32,
                         tokenizer=model.tokenizer,
                         final_probs=dual_ctx["final_probs"],
                         first_ans_id=dual_ctx["first_ans_id"],

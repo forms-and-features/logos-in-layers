@@ -66,6 +66,7 @@ from layers_core.head_transforms import detect_head_transforms
 from layers_core.unembed import prepare_unembed_weights
 from layers_core.lenses import NormLensAdapter
 from layers_core.passes import run_prompt_pass
+from layers_core.contexts import UnembedContext, PrismContext
 from layers_core.probes import emit_test_prompts, emit_temperature_exploration
 
 def clean_model_name(model_id):
@@ -203,6 +204,12 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
 
         # Per-device cache for unembedding matmul
         _unembed_cache = {"device": None, "W": None, "b": None}
+        unembed_ctx = UnembedContext(
+            W=analysis_W_U,
+            b=analysis_b_U,
+            force_fp32=(config.fp32_unembed or AUTO_FP32_UNEMBED),
+            cache=_unembed_cache,
+        )
         
         context_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
         ground_truth = "Berlin"  # For display/comparison
@@ -480,6 +487,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 print("-" * 60)
                 
                 # Use pass runner for the positive/orig prompt
+                prism_ctx = PrismContext(stats=prism_stats, Q=prism_Q, active=prism_active)
                 pass_summary, last_layer_consistency, detected_architecture, prism_diag = run_prompt_pass(
                     model=model,
                     context_prompt=context_prompt,
@@ -488,10 +496,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     prompt_variant=current_prompt_variant,
                     window_manager=window_mgr,
                     norm_lens=norm_lens,
-                    analysis_W_U=analysis_W_U,
-                    analysis_b_U=analysis_b_U,
-                    force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
-                    mm_cache=_unembed_cache,
+                    unembed_ctx=unembed_ctx,
                     copy_threshold=config.copy_threshold,
                     copy_margin=config.copy_margin,
                     entropy_collapse_threshold=getattr(config, 'entropy_collapse_threshold', 1.0),
@@ -502,9 +507,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     RAW_LENS_MODE=RAW_LENS_MODE,
                     json_data=json_data,
                     json_data_prism=json_data_prism,
-                    prism_active=prism_active,
-                    prism_stats=prism_stats,
-                    prism_Q=prism_Q,
+                    prism_ctx=prism_ctx,
                     decode_id_fn=decode_id,
                     ctx_ids_list=ctx_ids,
                     first_ans_token_id=first_ans_id,
@@ -629,6 +632,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 }
         ctx_ids_nf = gold_info_nf.get("ctx_ids", [])
         first_ans_id_nf = gold_info_nf.get("first_id", None)
+        prism_ctx = PrismContext(stats=prism_stats, Q=prism_Q, active=prism_active)
         pass_summary_nf, _, _, prism_diag_nf = run_prompt_pass(
             model=model,
             context_prompt=context_prompt_nf,
@@ -637,10 +641,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             prompt_variant=current_prompt_variant,
             window_manager=window_mgr,
             norm_lens=norm_lens,
-            analysis_W_U=analysis_W_U,
-            analysis_b_U=analysis_b_U,
-            force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
-            mm_cache=_unembed_cache,
+            unembed_ctx=unembed_ctx,
             copy_threshold=config.copy_threshold,
             copy_margin=config.copy_margin,
             entropy_collapse_threshold=getattr(config, 'entropy_collapse_threshold', 1.0),
@@ -651,9 +652,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             RAW_LENS_MODE=RAW_LENS_MODE,
             json_data=json_data,
             json_data_prism=json_data_prism,
-            prism_active=prism_active,
-            prism_stats=prism_stats,
-            prism_Q=prism_Q,
+            prism_ctx=prism_ctx,
             decode_id_fn=decode_id,
             ctx_ids_list=ctx_ids_nf,
             first_ans_token_id=first_ans_id_nf,
@@ -680,6 +679,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         }
 
         # ---------------- Control pass (PROJECT_NOTES §1.8) --------------------
+        prism_ctx = PrismContext(stats=prism_stats, Q=prism_Q, active=prism_active)
         _pass_summary_ctl, _, _, prism_diag_ctl = run_prompt_pass(
             model=model,
             context_prompt=context_prompt_ctl,
@@ -688,10 +688,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             prompt_variant="orig",
             window_manager=window_mgr,
             norm_lens=norm_lens,
-            analysis_W_U=analysis_W_U,
-            analysis_b_U=analysis_b_U,
-            force_fp32_unembed=(config.fp32_unembed or AUTO_FP32_UNEMBED),
-            mm_cache=_unembed_cache,
+            unembed_ctx=unembed_ctx,
             copy_threshold=config.copy_threshold,
             copy_margin=config.copy_margin,
             entropy_collapse_threshold=getattr(config, 'entropy_collapse_threshold', 1.0),
@@ -702,9 +699,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             RAW_LENS_MODE=RAW_LENS_MODE,
             json_data=json_data,
             json_data_prism=json_data_prism,
-            prism_active=prism_active,
-            prism_stats=prism_stats,
-            prism_Q=prism_Q,
+            prism_ctx=prism_ctx,
             decode_id_fn=decode_id,
             ctx_ids_list=ctx_ids_ctl,
             first_ans_token_id=first_ans_id_ctl,
