@@ -66,6 +66,7 @@ from layers_core.head_transforms import detect_head_transforms
 from layers_core.unembed import prepare_unembed_weights
 from layers_core.lenses import NormLensAdapter
 from layers_core.passes import run_prompt_pass
+from layers_core.probes import emit_test_prompts, emit_temperature_exploration
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -571,14 +572,13 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             }
             json_data["final_prediction"] = final_record
             
-            # Emit additional probing records for test prompts
-            # Process test prompts in smaller batches to reduce memory usage
+            # Emit additional probing records for test prompts via probes module
             test_prompts = [
                 "Berlin is the capital of",
                 "Germany's capital city is called simply",
                 "The capital city of Germany is named simply",
                 "Germany has its capital at the city called simply",
-                "In Germany the capital city is simply",            
+                "In Germany the capital city is simply",
                 "Germany's capital city is called",
                 "The capital city of Germany is named",
                 "Germany has its capital at",
@@ -589,58 +589,11 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 "Give the city name only, plain text. Germany has its capital at",
                 "Give the city name only, plain text. In Germany, the capital city is known as",
             ]
-            
-            # Process test prompts one at a time to minimize memory usage
-            for test_prompt in test_prompts:
-                test_tokens = model.to_tokens(test_prompt)      # let Accelerate move it
-                
-                test_logits = model(test_tokens)
-                last_slice = test_logits[0, -1, :]
-                _k_test = min(10, int(last_slice.shape[-1]))
-                _, test_top_indices = torch.topk(last_slice, _k_test, largest=True, sorted=True)
-                test_full_probs = torch.softmax(last_slice, dim=0)
-                test_top_probs = test_full_probs[test_top_indices]
-                test_entropy_bits = bits_entropy_from_logits(last_slice)
-                # Collect test prompt data
-                probe_record = {
-                    "type": "test_prompt",
-                    "prompt": test_prompt,
-                    "entropy": test_entropy_bits,
-                    "topk": [[decode_id(idx), prob.item()] for prob, idx in zip(test_top_probs, test_top_indices)]
-                }
-                json_data["test_prompts"].append(probe_record)
-                
-                # Clean up tensors immediately
-                del test_tokens, test_logits, test_top_indices, test_full_probs, test_top_probs
-            
-            # Emit temperature exploration records (memory-safe)
-            # Note: Using consistent prompt for temperature exploration to maintain comparability
-            with torch.no_grad():
-                temp_test_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
-                temp_tokens = model.to_tokens(temp_test_prompt)
-                base_logits = model(temp_tokens)[0, -1, :]
-                temperatures = [0.1, 2.0]
-                for temp in temperatures:
-                    scaled_logits = (base_logits / temp).float()
-                    _k_temp = min(15, int(scaled_logits.shape[-1]))
-                    _, temp_top_indices = torch.topk(scaled_logits, _k_temp, largest=True, sorted=True)
-                    temp_full_probs = torch.softmax(scaled_logits, dim=0)
-                    temp_top_probs = temp_full_probs[temp_top_indices]
-                    temp_entropy_bits = bits_entropy_from_logits(scaled_logits)
-                    temp_record = {
-                        "type": "temperature_exploration",
-                        "temperature": float(temp),
-                        "entropy": float(temp_entropy_bits),
-                        "topk": [[decode_id(idx), prob.item()] for prob, idx in zip(temp_top_probs, temp_top_indices)]
-                    }
-                    json_data["temperature_exploration"].append(temp_record)
-                    # Cleanup loop temps
-                    del scaled_logits, temp_top_indices, temp_full_probs, temp_top_probs
-                # Cleanup tensors
-                del temp_tokens, base_logits
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                    torch.cuda.synchronize()
+            json_data["test_prompts"] = emit_test_prompts(model, test_prompts, decode_id)
+
+            # Emit temperature exploration via probes module (memory-safe)
+            temp_test_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
+            json_data["temperature_exploration"] = emit_temperature_exploration(model, temp_test_prompt, decode_id)
         
         print("=== END OF INSPECTING ==============\n")
 

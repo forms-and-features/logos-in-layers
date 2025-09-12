@@ -144,7 +144,7 @@ Legend: [ ] pending · [x] completed
    - Tests: extended test_lenses_basic (adapter parity), new test_prism_placement_failure (placement error disables adapter; no sidecars), extended test_pass_runner_minimal (Prism sidecar rows, keep‑residuals policy).
    - Increased verbosity and added __main__ shims for Prism/lenses tests to run under plain‑python harness; adjusted prism sidecar smoke test to use TemporaryDirectory (no repo pollution).
 
-8) [ ] Extract lightweight probes
+8) [x] Extract lightweight probes
 - Scope: Move test prompt emission and temperature exploration to layers_core/probes.py:
   - emit_test_prompts(model, prompts, decode_id)
   - emit_temperature_exploration(model, prompt, decode_id)
@@ -156,6 +156,11 @@ Legend: [ ] pending · [x] completed
   - no unused code left behind.
 - Tests: tests/test_probes.py with fixed logits to assert shapes/keys.
 - Rollback: Inline back into run.py.
+ - Status: completed 2025-09-12
+ - Notes:
+   - Added layers_core/probes.py with emit_test_prompts and emit_temperature_exploration; wired run.py to delegate; outputs and schemas unchanged.
+   - Added tests/test_probes.py and updated scripts/run_cpu_tests.sh; tests verified under the CPU suite.
+   - Polish: wrapped emit_test_prompts in torch.no_grad() and widened decode_id type hints to accept tensor or int without mismatch.
 
 9) [ ] Introduce small context objects to reduce closures
 - Scope: Add tiny dataclasses:
