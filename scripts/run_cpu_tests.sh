@@ -59,6 +59,7 @@ ${PY} 001_layers_baseline/tests/test_prism_placement_failure.py
 ${PY} 001_layers_baseline/tests/test_prism_whiten.py
 ${PY} 001_layers_baseline/tests/test_prism_procrustes.py
 ${PY} 001_layers_baseline/tests/test_prism_artifacts.py
+${PY} 001_layers_baseline/tests/test_prism_utils.py
 
 (
   cd 001_layers_baseline/tests

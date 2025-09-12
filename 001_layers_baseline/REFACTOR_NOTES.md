@@ -193,11 +193,9 @@ Legend: [ ] pending · [x] completed
 
 ## Polish / Backlog
 
-- Consolidate Prism placement pattern: add a tiny helper (e.g., `ensure_prism_Q_on(tensor_device) -> (Q_on_device, enabled_flag)`), used uniformly in orig/no_filler/control passes to:
-  - attempt device placement of `Q` once per pass (and optionally per layer if devices differ),
-  - capture placement errors into diagnostics,
-  - flip the per-pass `prism_enabled_*` flag consistently on failure.
-  This can be delivered during Step 7 (Prism lens adapter) or Step 10 (cleanup) with no behavior change.
+- [x] Prism placement helper (completed 2025-09-12)
+  - Implemented as layers_core/prism_utils.ensure_prism_Q_on and used by PrismLensAdapter._ensure_Q_on.
+  - Consolidates placement behavior in one utility, surfaces a consistent error string, and keeps per-pass enablement unchanged. No external API or behavior change.
 
 ---
 

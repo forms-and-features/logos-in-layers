@@ -7,6 +7,7 @@ import torch
 from ..norm_utils import get_correct_norm_module, apply_norm_or_skip
 from ..unembed import unembed_mm
 from ..prism import whiten_apply, WhitenStats
+from ..prism_utils import ensure_prism_Q_on
 from .base import LensAdapter
 
 
@@ -40,14 +41,14 @@ class PrismLensAdapter(LensAdapter):
             return False
         if self._placed and self._Q.device == device:
             return True
-        try:
-            self._Q = self._Q.to(device)
-            self._placed = True
-            return True
-        except Exception as e:  # placement failed
-            self.diag["placement_error"] = f"prism Q placement failed: {type(e).__name__}"
+        q_on, err = ensure_prism_Q_on(self._Q, device)
+        if err is not None or q_on is None:
+            self.diag["placement_error"] = err
             self.enabled = False
             return False
+        self._Q = q_on
+        self._placed = True
+        return True
 
     def forward(
         self,
