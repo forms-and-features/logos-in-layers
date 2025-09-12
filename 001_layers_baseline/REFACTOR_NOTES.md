@@ -176,12 +176,18 @@ Legend: [ ] pending · [x] completed
    - Refactored layers_core/passes.run_prompt_pass to accept `unembed_ctx` and `prism_ctx` and to mirror any Prism placement errors into both `diag_delta` and `prism_ctx.placement_error`.
    - Updated run.py to construct contexts once and pass them to all runs; updated tests (test_pass_runner_minimal.py, test_prism_placement_failure.py) accordingly. No output/schema changes.
 
-10) [ ] Optional cleanup (no behavior change)
+10) [x] Optional cleanup (no behavior change)
 - Scope: Tidy decode_id into a tiny util; gate prints; minor docstrings.
 - Rationale: Readability improvements after structure is stable.
 - Deliverables: No schema change; logs preserved by default.
 - Tests: None beyond lint/format; keep behavior identical.
 - Rollback: N/A; keep minimal.
+ - Status: completed 2025-09-12
+ - Notes:
+   - Added layers_core/token_utils.make_decode_id and switched run.py to use it everywhere (removed ad‑hoc lambdas in gold-alignment fallbacks).
+   - Introduced _vprint and CLI_ARGS.quiet to gate info/debug prints; default remains verbose; errors/warnings unchanged.
+   - Added tests/test_token_utils.py and wired into scripts/run_cpu_tests.sh; all tests pass.
+   - Probes annotations aligned with decode helper (Callable[[Any], str]).
 
 ---
 

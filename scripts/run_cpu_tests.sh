@@ -44,6 +44,7 @@ ${PY} 001_layers_baseline/tests/test_head_transforms.py
 ${PY} 001_layers_baseline/tests/test_windows.py
 ${PY} 001_layers_baseline/tests/test_raw_lens.py
 ${PY} 001_layers_baseline/tests/test_unembed.py
+${PY} 001_layers_baseline/tests/test_token_utils.py
 ${PY} 001_layers_baseline/tests/test_records.py
 ${PY} 001_layers_baseline/tests/test_pure_emit.py
 ${PY} 001_layers_baseline/tests/test_probes.py

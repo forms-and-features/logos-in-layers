@@ -68,6 +68,7 @@ from layers_core.lenses import NormLensAdapter
 from layers_core.passes import run_prompt_pass
 from layers_core.contexts import UnembedContext, PrismContext
 from layers_core.probes import emit_test_prompts, emit_temperature_exploration
+from layers_core.token_utils import make_decode_id
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -75,7 +76,15 @@ def clean_model_name(model_id):
     clean_name = model_id.split('/')[-1]
     return clean_name
 
- 
+def _vprint(*args, **kwargs):
+    """Verbose print controlled by CLI_ARGS.quiet (defaults to verbose)."""
+    cli = globals().get('CLI_ARGS', None)
+    try:
+        if not (hasattr(cli, 'quiet') and getattr(cli, 'quiet')):
+            print(*args, **kwargs)
+    except Exception:
+        print(*args, **kwargs)
+
 
 
 def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
@@ -83,9 +92,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
     
     def evaluate_model():
         """The actual experiment code - all prints go to console"""
-        print(f"\n{'='*60}")
-        print(f"EVALUATING MODEL: {model_id}")
-        print(f"{'='*60}")
+        _vprint(f"\n{'='*60}")
+        _vprint(f"EVALUATING MODEL: {model_id}")
+        _vprint(f"{'='*60}")
         
         # Variable to store detected architecture
         detected_architecture = None
@@ -102,7 +111,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         dtype = choose_dtype(device, model_id)
 
         # ---- load model -------------------------------------------------------
-        print(f"Loading model on [{device}] ...")
+        _vprint(f"Loading model on [{device}] ...")
         
         # Clear any existing CUDA cache before loading
         if torch.cuda.is_available():
@@ -113,7 +122,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             
         # Load model
         try:
-            print("Loading directly to target device…")
+            _vprint("Loading directly to target device…")
             if device == "cpu":
                 # Explicitly keep all weights on CPU – avoids Accelerate placing them on MPS
                 model = HookedTransformer.from_pretrained_no_processing(
@@ -147,7 +156,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 try:
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
-                    print(f"Moving model to {device}...")
+                    _vprint(f"Moving model to {device}...")
                     model = model.to(device)
                 except Exception as move_e:
                     print(f"Move to {device} failed: {move_e}. Staying on CPU for this run.")
@@ -169,7 +178,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         print("❌ Self-test failed - normalization scaling is incorrect!")
                         print("❌ ABORTING: Cannot trust analysis results with incorrect scaling!")
                         return {"error": "Self-test failed"}
-                    print("✅ Self-test passed - continuing with normal evaluation...\n")
+                    _vprint("✅ Self-test passed - continuing with normal evaluation...\n")
             except ImportError as e:
                 print(f"❌ Could not import KL sanity test: {e}")
                 return {"error": "Self-test import failed"}
@@ -180,7 +189,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         
         # Debug: inspect model parameter devices
         unique_param_devices = {p.device for p in model.parameters()}
-        print(f"[DEBUG MODEL] Unique parameter devices: {unique_param_devices}")
+        _vprint(f"[DEBUG MODEL] Unique parameter devices: {unique_param_devices}")
         
         # Toggle for using normalized lens (recommended for accurate interpretation)
         USE_NORM_LENS = True
@@ -192,9 +201,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         # Prepare analysis-only unembedding weights (no mutation of model params)
         orig_unembed_dtype = model.unembed.W_U.dtype
         if config.fp32_unembed and orig_unembed_dtype != torch.float32:
-            print(f"🔬 CLI: Forcing FP32 shadow unembed weights for analysis (was {orig_unembed_dtype})")
+            _vprint(f"🔬 CLI: Forcing FP32 shadow unembed weights for analysis (was {orig_unembed_dtype})")
         elif AUTO_FP32_UNEMBED and orig_unembed_dtype != torch.float32:
-            print(f"🔬 Using FP32 shadow unembed weights for analysis (was {orig_unembed_dtype})")
+            _vprint(f"🔬 Using FP32 shadow unembed weights for analysis (was {orig_unembed_dtype})")
         analysis_W_U, analysis_b_U = prepare_unembed_weights(
             model.unembed.W_U,
             getattr(model.unembed, 'b_U', None),
@@ -334,9 +343,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         # Baseline norm lens adapter (behavior-preserving)
         norm_lens = NormLensAdapter()
 
-        # Helper: robust single-id decode (tensor or int)
-        def decode_id(idx):
-            return model.tokenizer.decode([idx.item() if hasattr(idx, 'item') else int(idx)])
+        # Robust single-id decode (tensor or int)
+        decode_id = make_decode_id(model.tokenizer)
 
         # Residual accessor now shared in layers_core.hooks.get_residual_safely
 
@@ -358,7 +366,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     ctx_ids_try, ctx_ans_ws_try, ctx_ans_ns_try,
                     pieces_k=4,
                     convert_ids_to_tokens=convert,
-                    decode_id=(lambda i: model.tokenizer.decode([i])),
+                    decode_id=decode_id,
                     answer_str=ground_truth,
                 )
             except (KeyError, AttributeError, ValueError, TypeError) as e:
@@ -367,7 +375,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     ctx_ids_try = model.to_tokens(context_prompt)[0].tolist()
                     ctx_ans_ws_try = model.to_tokens(context_prompt + " " + ground_truth)[0].tolist()
                     ctx_ans_ns_try = model.to_tokens(context_prompt + ground_truth)[0].tolist()
-                    dec = (lambda i: model.tokenizer.decode([i])) if hasattr(model, 'tokenizer') else None
+                    dec = decode_id if hasattr(model, 'tokenizer') else None
                     gold_info = compute_gold_answer_info_from_sequences(
                         ctx_ids_try, ctx_ans_ws_try, ctx_ans_ns_try,
                         pieces_k=4,
@@ -406,7 +414,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     c_ctx, c_ws, c_ns,
                     pieces_k=4,
                     convert_ids_to_tokens=getattr(model.tokenizer, 'convert_ids_to_tokens', None),
-                    decode_id=(lambda i: model.tokenizer.decode([i])),
+                    decode_id=decode_id,
                     answer_str=control_ground_truth,
                 )
             except (KeyError, AttributeError, ValueError, TypeError) as e:
@@ -455,12 +463,12 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 
                 # Debug: print device placements of cached activations and tokens
                 for name, t in residual_cache.items():
-                    print(f"[DEBUG CACHE] {name} device: {t.device}")
-                print(f"[DEBUG TOKENS] tokens device: {tokens.device}")
+                    _vprint(f"[DEBUG CACHE] {name} device: {t.device}")
+                _vprint(f"[DEBUG TOKENS] tokens device: {tokens.device}")
                 
                 # Show top predictions at different layers
-                print(f"\nLayer-by-layer analysis of context: '{context_prompt}'")
-                print("→ Predicting the first unseen token (what comes after the context)")
+                _vprint(f"\nLayer-by-layer analysis of context: '{context_prompt}'")
+                _vprint("→ Predicting the first unseen token (what comes after the context)")
                 if USE_NORM_LENS:
                     # Check if we'll actually be applying norms
                     if hasattr(model, 'blocks') and len(model.blocks) > 0:
@@ -468,23 +476,23 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         norm_type = type(first_norm).__name__
                         
                         if isinstance(first_norm, nn.LayerNorm):
-                            print("Using NORMALIZED residual stream (LayerNorm applied - more accurate)")
+                            _vprint("Using NORMALIZED residual stream (LayerNorm applied - more accurate)")
                         elif 'RMS' in norm_type:
                             if _get_rms_scale(first_norm) is None:
-                                print("Using NORMALIZED residual stream (RMS, no learnable scale)")
+                                _vprint("Using NORMALIZED residual stream (RMS, no learnable scale)")
                             else:
-                                print("Using NORMALIZED residual stream (RMS + learned scale)")
+                                _vprint("Using NORMALIZED residual stream (RMS + learned scale)")
                         else:
-                            print("Using RAW residual stream (unsupported normalization, skipping to avoid distortion)")
+                            _vprint("Using RAW residual stream (unsupported normalization, skipping to avoid distortion)")
                     else:
-                        print("Using RAW residual stream (no normalization layers found)")
+                        _vprint("Using RAW residual stream (no normalization layers found)")
                 else:
-                    print("Using RAW residual stream (normalization disabled)")
-                print("Note: Shown probabilities are from full softmax (calibrated and comparable)")
-                print(f"copy-collapse: top-1 ID-window in prompt & p>{config.copy_threshold}")
+                    _vprint("Using RAW residual stream (normalization disabled)")
+                _vprint("Note: Shown probabilities are from full softmax (calibrated and comparable)")
+                _vprint(f"copy-collapse: top-1 ID-window in prompt & p>{config.copy_threshold}")
                 if config.keep_residuals:
-                    print("💾 Saving residual tensors to disk (--keep-residuals enabled)")
-                print("-" * 60)
+                    _vprint("💾 Saving residual tensors to disk (--keep-residuals enabled)")
+                _vprint("-" * 60)
                 
                 # Use pass runner for the positive/orig prompt
                 prism_ctx = PrismContext(stats=prism_stats, Q=prism_Q, active=prism_active)
@@ -553,8 +561,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
 
 
             # Let's also see what the actual model would predict (final layer)
-            print("=" * 60)
-            print("ACTUAL MODEL PREDICTION (for comparison):")
+            _vprint("=" * 60)
+            _vprint("ACTUAL MODEL PREDICTION (for comparison):")
 
             # final_logits already computed above; ensure float
             final_logits = final_logits.float()
@@ -598,7 +606,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             temp_test_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
             json_data["temperature_exploration"] = emit_temperature_exploration(model, temp_test_prompt, decode_id)
         
-        print("=== END OF INSPECTING ==============\n")
+        _vprint("=== END OF INSPECTING ==============\n")
 
         # ---------------- Ablation pass: no-filler (PROJECT_NOTES §1.9) --------
         # Run a separate forward pass on the positive prompt without the stylistic filler
@@ -616,7 +624,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     n_ctx, n_ws, n_ns,
                     pieces_k=4,
                     convert_ids_to_tokens=getattr(model.tokenizer, 'convert_ids_to_tokens', None),
-                    decode_id=(lambda i: model.tokenizer.decode([i])),
+                    decode_id=decode_id,
                     answer_str=ground_truth,
                 )
             except Exception:
@@ -802,15 +810,15 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 csv_prism = os.path.join(out_dir, f"output-{clean_name}-records-prism.csv")
                 pure_prism = os.path.join(out_dir, f"output-{clean_name}-pure-next-token-prism.csv")
                 write_csv_files(prism_buf, csv_prism, pure_prism, TOP_K_VERBOSE)
-                print(f"✅ Prism Records CSV saved to: {csv_prism}")
-                print(f"✅ Prism Pure next-token CSV saved to: {pure_prism}")
+                _vprint(f"✅ Prism Records CSV saved to: {csv_prism}")
+                _vprint(f"✅ Prism Pure next-token CSV saved to: {pure_prism}")
             elif getattr(CLI_ARGS, "prism", "auto") != "off":
                 # Single-line notice in auto mode when missing/incompatible
                 err = prism_summary.get("error")
                 if err:
-                    print(f"ℹ️ Prism sidecar disabled: {err}")
+                    _vprint(f"ℹ️ Prism sidecar disabled: {err}")
                 else:
-                    print("ℹ️ Prism sidecar not written (no artifacts or empty buffers)")
+                    _vprint("ℹ️ Prism sidecar not written (no artifacts or empty buffers)")
         except Exception as e:
             print(f"⚠️ Failed to write Prism sidecar CSVs: {e}")
 
@@ -833,9 +841,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
 
 def run_single_model(model_id):
     """Run experiment for a single model - used when called as subprocess"""
-    print(f"\n{'='*80}")
-    print(f"🚀 Starting subprocess for model: {model_id}")
-    print(f"{'='*80}")
+    _vprint(f"\n{'='*80}")
+    _vprint(f"🚀 Starting subprocess for model: {model_id}")
+    _vprint(f"{'='*80}")
     
     # Set memory limits BEFORE any CUDA operations
     if torch.cuda.is_available():
@@ -886,8 +894,8 @@ def run_single_model(model_id):
                 return False
             dev, dtype, debug_info = sel
             chosen_device = dev
-            print("📐 Device decision:")
-            print(f"   device={dev} dtype={dtype} est_peak={debug_info.get('est_peak')}B available={debug_info.get('available')}B")
+            _vprint("📐 Device decision:")
+            _vprint(f"   device={dev} dtype={dtype} est_peak={debug_info.get('est_peak')}B available={debug_info.get('available')}B")
 
         # Run the experiment
         cfg = ExperimentConfig(
@@ -902,11 +910,11 @@ def run_single_model(model_id):
         _data = run_experiment_for_model(model_id, (meta_filepath, csv_filepath, pure_csv_filepath), cfg)
 
         if CLI_ARGS.self_test:
-            print("✅ Self-test complete. No artifacts written (by design).")
+            _vprint("✅ Self-test complete. No artifacts written (by design).")
         else:
-            print(f"✅ Experiment complete. JSON metadata saved to: {meta_filepath}")
-            print(f"✅ Records CSV saved to: {csv_filepath}")
-            print(f"✅ Pure next-token CSV saved to: {pure_csv_filepath}")
+            _vprint(f"✅ Experiment complete. JSON metadata saved to: {meta_filepath}")
+            _vprint(f"✅ Records CSV saved to: {csv_filepath}")
+            _vprint(f"✅ Pure next-token CSV saved to: {pure_csv_filepath}")
         return True
         
     except Exception as e:
@@ -932,6 +940,7 @@ CLI_ARGS = SimpleNamespace(
     model_id=None,
     out_dir=None,
     self_test=False,
+    quiet=False,
     prism=os.environ.get("LOGOS_PRISM", "auto"),
     prism_dir="prisms",
 )
