@@ -199,19 +199,33 @@ Legend: [ ] pending · [x] completed
 
 ---
 
-## Tuned Lens Readiness (no changes yet)
+## Tuned Lens Readiness (minimal adapter seam) ✅
 
-Purpose: Ensure the refactor allows adding a Tuned Lens without touching core orchestration or changing baseline outputs.
+Purpose: provide a safe, tested seam for a future Tuned Lens without touching orchestration or changing baseline outputs.
 
-- Pluggable lenses: The lens adapters (Step 4) form a stable boundary. We will later add a TunedLensAdapter that consumes per-layer heads and produces logits.
-- Sidecar generalization: Keep baseline CSVs/JSON byte-identical. Additional lenses emit parallel sidecar CSVs with identical schemas (e.g., -records-tuned.csv), mirroring the current Prism flow.
-- Metrics semantics: KL-to-final and cos_to_final continue to reference the model’s final head. For Tuned Lens, additional lens-relative diagnostics can live in JSON sidecars without altering public CSV schemas.
-- Artifact management: Mirror Prism loaders with tuned_lens.load_tuned_lens_artifacts(art_dir) and provenance. Respect device/dtype and analysis-only weights.
-- QA hooks: The extracted “last-layer consistency” utility can compare any two logits (e.g., Norm vs Tuned). Raw-vs-norm sampling remains intact.
+Status: completed 2025-09-13
 
-No code is added for Tuned Lens in this plan; the refactor merely creates the seams where it fits cleanly later.
+Scope implemented (behavior-neutral):
+- Added `layers_core/lenses/tuned.py` with `TunedLensAdapter` implementing the standard lens interface.
+  - Uses architecture‑aware normalization (`get_correct_norm_module` + `apply_norm_or_skip`).
+  - Decodes via supplied per‑layer tuned heads `(W, b)`; returns logits as float32.
+  - Strict vs non‑strict missing‑head behavior: `strict=True` raises; `strict=False` returns `None` and records `diag.missing_layers`.
+  - Explicit guards: floating dtypes only (rejects quantized integer weights), shape checks for `W`/`b` vs `d_model`/`vocab`.
+  - Notes in docstring to use a distinct cache per lens to avoid collisions.
+- Exposed the adapter from `layers_core/lenses/__init__.py`.
+- Tests extended in `tests/test_lenses_basic.py`:
+  - Deterministic parity vs inline reference for pre‑norm/post‑norm and pre/post‑block cases.
+  - Edge cases: missing head (non‑strict → None), integer weights rejected, shape mismatch rejected.
 
----
+Intentionally deferred (to avoid scope creep and preserve byte‑identical outputs):
+- No artifact loader (`load_tuned_lens_artifacts`), no provenance or device/dtype placement policies.
+- No pass‑runner integration, no tuned sidecar buffers/CSVs, no diagnostics.
+- No CLI flags in launcher/worker.
+
+Rationale:
+- Keep baseline outputs and orchestration untouched while establishing the extension point.
+- Address reviewer concerns early (shape/dtype guards, missing‑head behavior) without committing to artifact formats.
+- Enable incremental adoption later (loader, sidecar, CLI) with minimal surface area change.
 
 ## Verification Matrix
 
