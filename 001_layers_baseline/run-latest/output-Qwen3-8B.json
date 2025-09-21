@@ -816,6 +816,20 @@
     "layer0_position_info": "token_only_rotary_model",
     "context_prompt": "Give the city name only, plain text. The capital of Germany is called simply",
     "target_prediction": "first unseen token (likely 'Berlin')",
+    "prism_summary": {
+      "mode": "auto",
+      "artifact_path": "/home/kkonstant/logos-in-layers/001_layers_baseline/prisms/Qwen3-8B",
+      "present": true,
+      "compatible": true,
+      "k": 512,
+      "layers": [
+        "embed",
+        8,
+        17,
+        26
+      ],
+      "error": null
+    },
     "L_copy": null,
     "L_copy_H": 31,
     "L_semantic": 31,
