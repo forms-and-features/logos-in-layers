@@ -352,7 +352,7 @@ Benefits.
 - Reduced probe freedom: one decoder for all layers (vs per‑layer heads) minimizes overfitting to layer idiosyncrasies.
 - Cross‑layer comparability: statements like “rotation → alignment, then amplification” are cleaner when the basis is fixed.
 - Better calibration than raw logit‑lens with low complexity; KL/rank milestones tend to be more stable early.
-- Synergy with Tuned Lens: Prism can initialize or regularize TL heads and serve as a regression guardrail.
+- Synergy with Tuned Lens: Prism can initialize or regularize TL translators (A_ℓ) and serve as a regression guardrail.
 
 What. Fit a single linear map that (i) whitens pooled residuals, then (ii) applies an orthogonal rotation into the model’s unembedding basis (or a low‑rank subspace of it). At run time, we decode every layer with both lenses: keep the norm‑lens sweep as primary, and in the same run also decode a Prism sweep from the cached residuals (no second forward).
 
@@ -386,7 +386,7 @@ Lift (engineering).
 
 Trade‑offs / scope.
 - Prism is not a tuned lens; it won’t perfectly match the final head. Its value is robustness and comparability, not exact replication. Keep CSV unchanged and treat Prism as a diagnostic/baseline mode.
-- When TL is added (see §1.12), initialize TL heads from Prism and/or add a “shared‑head” ablation to emulate Prism for QA. Keep Prism available to catch lens‑induced regressions.
+- When TL is added (see §1.12), initialize TL translators from Prism and/or add a “shared‑decoder” ablation to emulate Prism for QA. Keep Prism available to catch lens‑induced regressions.
 
 ### 1.11. Soft copy indices (strict + soft; windowed)
 
@@ -445,23 +445,23 @@ def collapse_soft_k(k):
 
 ---
 
-### 1.12. Integrate a Tuned Lens
+### 1.12. Integrate a Tuned Lens (translator‑in‑d)
 
-**Why.** The raw logit lens (even with correct normalization) can be mis‑calibrated and sensitive to depth‑dependent basis drift. A **Tuned Lens** learns a **per‑layer affine translator** that maps each layer’s residual to a distribution **close to the model’s final output**, yielding earlier and more faithful rank/KL milestones and clearer “rotation → amplification” narratives (\[2]).
+**Why.** The raw logit lens (even with correct normalization) can be mis‑calibrated and sensitive to depth‑dependent basis drift. A **Tuned Lens** learns a **per‑layer affine translator in the residual space** that maps each layer’s residual to a representation whose decoded distribution (via the model’s own unembedding) is **close to the model’s final output**, yielding earlier and more faithful rank/KL milestones and clearer “rotation → amplification” narratives (\[2]).
 
 **Benefits.**
 
 * **Per‑layer fidelity:** Lower **KL(P\_layer‖P\_final)** and earlier **`first_rank_le_{10,5,1}`** than the raw lens.
 * **Robustness:** Less brittle to tokenizer quirks and family‑specific head transforms; easier cross‑model comparisons via rank/KL thresholds.
-* **Interpretability discipline:** With light regularization toward a shared preconditioner (e.g., ZCA/Prism rotation), heads remain comparable across depth while retaining necessary flexibility.
+* **Interpretability discipline and compact artifacts:** By keeping the decoder tied to the model (`W_U`) and learning only small **translator‑in‑d** parameters, the tuned lens cannot “invent a new decoder,” and artifacts remain small (sub‑GiB–few‑GiB per model; hundreds of MiB with low rank).
 
-**What.** Train, per model, a set of **affine translators** `{W_ℓ, b_ℓ}` (one per post‑block layer ℓ), keeping the model and the tied unembedding `W_U` **frozen**. Each translator produces logits
+**What.** Train, per model, a set of **per‑layer residual translators** `{A_ℓ, c_ℓ}` (one per post‑block layer ℓ), keeping the model and the tied unembedding `W_U` **frozen**. Each translator adjusts the normalized residual and decodes with `W_U`:
 
 $$
-z^{(ℓ)} = h^{(ℓ)} W_ℓ + b_ℓ,\quad P^{(ℓ)}=\text{softmax}(z^{(ℓ)}),
+\tilde h^{(ℓ)} = h^{(ℓ)} A_ℓ + c_ℓ,\quad z^{(ℓ)} = \tilde h^{(ℓ)} W_U + b_U,\quad P^{(ℓ)}=\text{softmax}(z^{(ℓ)}),
 $$
 
-and is trained to match the model’s **final** next‑token distribution `P_final` at the same position.
+and is trained to match the model’s **final** next‑token distribution `P_final` at the same position. Optionally parameterize in a whitened space (e.g., Prism/ZCA) for stability.
 
 **How (minimal, reproducible).**
 
@@ -473,18 +473,18 @@ and is trained to match the model’s **final** next‑token distribution `P_fin
 
 2. **Model & objective.**
 
-* **Heads.** For each ℓ, an independent linear head `W_ℓ ∈ ℝ^{d_model×vocab}`, `b_ℓ ∈ ℝ^{vocab}`.
-  *Optional low‑rank:* factor `W_ℓ = A_ℓ R_k W_U,k^⊤` with global preconditioner `R_k` (e.g., Prism rotation or ZCA), top‑k unembed `W_U,k`, and small `A_ℓ ∈ ℝ^{d_model×k}` for parameter economy.
+* **Translators (in‑d).** For each ℓ, learn `A_ℓ ∈ ℝ^{d×d}` and `c_ℓ ∈ ℝ^d` (optionally low‑rank, LoRA‑style), while keeping `W_U, b_U` fixed. Optionally work in a preconditioned space `R` (Prism/ZCA): parameterize `A_ℓ` and `c_ℓ` in whitened coordinates and map back.
+  *Optional low‑rank:* `A_ℓ = B_ℓ C_ℓ^⊤` with `B_ℓ, C_ℓ ∈ ℝ^{d×k}` for small k (e.g., 512–1024), or near‑identity updates.
 * **Loss.** Minimize `CE(P_final, P^{(ℓ)})` (equivalently KL), with regularizers:
 
-  * **Layer‑wise L2:** `λ ||W_ℓ R^{-1}||²` to keep heads near a **shared** rotation `R` (Prism or ZCA).
-  * **Smoothness:** `μ ||W_ℓ − W_{ℓ−1}||²` (optional) to discourage abrupt depth jumps.
-  * **Bias centering:** small `||b_ℓ||²` to avoid temperature drift.
+  * **Layer‑wise L2 (to shared basis):** `λ ||A_ℓ R^{-1} − I||²` to keep translators near a **shared** preconditioner/basis `R` (Prism/ZCA) or near‑identity.
+  * **Smoothness across depth:** `μ ||A_ℓ − A_{ℓ−1}||²` (optional) to discourage abrupt depth jumps.
+  * **Bias centering:** small `||c_ℓ||²` to avoid temperature drift.
 * **Optimizer.** AdamW (`lr=1e−3`, `β=(0.9,0.999)`, `wd=1e−4`) with cosine decay and warm‑up (e.g., 1–2k steps). Mixed precision **off** for stability.
 
 3. **Training loop.**
 
-* Iterate mini‑batches of `(h^{(ℓ)}, P_final)`; compute logits via `W_ℓ, b_ℓ`; minimize loss; update only the selected layer’s head per batch (others untouched).
+* Iterate mini‑batches of `(h^{(ℓ)}, P_final)`; compute tuned logits via `\tilde h^{(ℓ)} = h^{(ℓ)} A_ℓ + c_ℓ` then `z^{(ℓ)} = \tilde h^{(ℓ)} W_U + b_U`; minimize loss; update only the selected layer’s translator per batch (others untouched).
 * **Early stopping** on a held‑out stream using average `KL(P^{(ℓ)}‖P_final)` across a fixed set of depths (e.g., 25/50/75%).
 
 4. **Validation (held‑out prompts; report to JSON).**
@@ -501,6 +501,7 @@ and is trained to match the model’s **final** next‑token distribution `P_fin
 * Run the standard norm‑lens sweep (write canonical CSVs). If a tuned lens is available, **also** decode a TL sweep from cached residuals (no second forward) and write TL sidecars:
   `*-records-tuned.csv`, `*-pure-next-token-tuned.csv` (schemas identical; add `lens ∈ {norm,tuned}` if a single file is preferred).
 * Add `--use-tuned-lens` to *prefer* tuned metrics in summaries/plots while still writing norm‑lens outputs for comparability.
+* Tuned‑lens adapter path: normalize residual → apply translator `A_ℓ, c_ℓ` → unembed with the model’s `W_U, b_U` (same numerics as baseline).
 
 6. **Provenance (persisted to artifacts and mirrored into run JSON).**
 
@@ -513,8 +514,13 @@ and is trained to match the model’s **final** next‑token distribution `P_fin
   "train_tokens": 2000000,
   "depth_sampling": "uniform",
   "loss": "CE_to_final",
-  "regularizers": {"l2_to_R": 1e-3, "smooth_W": 1e-4, "bias_l2": 1e-5},
+  "regularizers": {"l2_to_R": 1e-3, "smooth_A": 1e-4, "bias_l2": 1e-5},
   "preconditioner": {"type": "ZCA|Prism", "rank_k": 512},
+  "translator": {
+    "form": "in_d",
+    "low_rank_k": 512,
+    "param_bytes": 12345678
+  },
   "val_kl_bits@{25,50,75}%": [..,..,..],
   "acceptance": {"gate_A": true, "gate_B": true, "gate_C": true, "gate_D": true}
 }
@@ -524,27 +530,27 @@ and is trained to match the model’s **final** next‑token distribution `P_fin
 
 * Save per‑model artifacts under: `001_layers_baseline/tuned_lenses/<clean_model_name>/`
 
-  * `weights.pt` (list of `{W_ℓ, b_ℓ}`), `precond.pt` (optional `R_k`/ZCA stats), `provenance.json`.
+  * `weights.pt` (list of `{A_ℓ, c_ℓ}`), `precond.pt` (optional `R` / ZCA stats), `provenance.json`.
 * Mirror a short `tuned_lens` block into each run’s JSON for auditability.
 
 8. **Numerics & defaults.**
 
 * Compute losses and softmaxes in **fp32**; clamp logits to avoid infs in KL/CE.
-* Default `rank_k = 512` if using preconditioned low‑rank; otherwise full `d_model×vocab` for small models.
+* Default `rank_k = 512` if using preconditioned low‑rank; otherwise full `d×d` translators for small models.
 * Default regularization `λ=1e−3`, `μ=1e−4`; expose via CLI: `--tl-l2-to-R`, `--tl-smooth`, `--tl-bias-l2`.
 
 9. **Trade‑offs / scope.**
 
 * **Primary decoder for claims.** Use TL metrics for semantic‑depth claims and cross‑model rank/KL thresholds; keep norm‑lens for continuity checks.
 * **Regularization toward a shared basis** (Prism/ZCA) preserves cross‑layer comparability without repeating Prism’s rigidity.
-* Avoid per‑position heads or non‑linear translators in this iteration to keep provenance simple and overfitting risk low.
+* Avoid per‑position translators or non‑linear translators in this iteration to keep provenance simple and overfitting risk low.
 
 10. **Analysis hooks.**
 
 * Write `cos_to_tuned` alongside `cos_to_final`; plot TL vs norm **KL** and **rank** curves; log `first_rank_le_{10,5,1}` under both lenses.
 * Keep negative‑control and ablation summaries identical across lenses for apples‑to‑apples comparisons.
 
-**Lift (engineering).** Moderate: simple linear heads, uniform depth sampling, single‑GPU training in minutes to hours per model; minimal runtime overhead in sweeps (one extra matmul/softmax per layer).
+**Lift (engineering).** Moderate: simple linear translators in‑d, uniform depth sampling, single‑GPU training in minutes to hours per model; minimal runtime overhead in sweeps (one extra `d×d` (or low‑rank) matmul + softmax per layer).
 
 ### 1.13. *(Optional)* Metadata completeness
 
