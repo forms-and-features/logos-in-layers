@@ -235,7 +235,7 @@ cos = torch.dot(curr_dir, final_dir).item()
 
 3. Write `cos_to_final` column; included in pure next‑token CSV. (Plots to be added in analysis notebooks.)
 
-**Note.** Cosine is computed on **logit directions** (not residuals). With a Tuned Lens (§1.11), `cos_to_final` measures closeness to the **tuned** head—still interpretable as “distance to the model’s decision boundary”.
+**Note.** Cosine is computed on **logit directions** (not residuals). With a Tuned Lens (§1.12), `cos_to_final` measures closeness to the **tuned** head—still interpretable as “distance to the model’s decision boundary”.
 
 ---
 
@@ -386,32 +386,165 @@ Lift (engineering).
 
 Trade‑offs / scope.
 - Prism is not a tuned lens; it won’t perfectly match the final head. Its value is robustness and comparability, not exact replication. Keep CSV unchanged and treat Prism as a diagnostic/baseline mode.
-- When TL is added (see §1.11), initialize TL heads from Prism and/or add a “shared‑head” ablation to emulate Prism for QA. Keep Prism available to catch lens‑induced regressions.
+- When TL is added (see §1.12), initialize TL heads from Prism and/or add a “shared‑head” ablation to emulate Prism for QA. Keep Prism available to catch lens‑induced regressions.
 
-### 1.11. Integrate a Tuned Lens
+### 1.11. Soft copy indices (strict + soft; windowed)
 
-Why. Tuned Lens compensates for scaling and basis rotation, lowering KL to final and stabilising early‑layer read‑outs (cf. arXiv:2303.08112). Reproducible provenance is required.
+**Why.** The strict copy rule (`p_top1 > 0.95`, `k=1`) rarely fires outside specific families (e.g., Gemma‑2), which leaves `Δ‑collapse = L_sem − L_copy` undefined and weakens across‑model comparisons. Adding a *soft* copy index and a *windowed* variant preserves the strict detector for high‑precision claims while providing robust, comparable baselines everywhere.
 
-What. Train once per model; load with `--use-tuned-lens`; record full training provenance.
+**What.** Detect prompt‑echo at two sensitivities and multiple window sizes, and report both *per‑layer booleans* and *first‑hit layer indices*:
 
-How.
+* **Strict copy (unchanged):** first layer `L_copy_strict` where the last **k=1** top‑1 token ID is a contiguous subsequence of the prompt IDs with `p_top1 > τ_strict` (default **0.95**).
+* **Soft copy (new):** first layer `L_copy_soft[k]` where a window of the last **k ∈ {1,2,3}** top‑1 IDs forms a contiguous subsequence with `p_top1 > τ_soft` (default **0.50**).
+* **Derived summaries:** `Δ_sem_minus_copy_strict = L_sem − L_copy_strict` (nullable) and `Δ_sem_minus_copy_soft[k] = L_sem − L_copy_soft[k]`.
 
-1. Train and save a lens per model (seeded): see prior plan.
-2. Load in the sweep; replace raw unembed with tuned logits when enabled.
-3. Provenance. Persist a `tuned_lens.json` (version/sha/corpus/steps/seed) and mirror into run meta.
-4. CI (see §1.12) asserts presence of the full `tuned_lens.*` block when `--use_tuned_lens` is set.
+**How.**
 
-### 1.12. *(Optional)* Lightweight CI / regression harness
+1. **Detection (pure next‑token path, per layer).**
 
-Why. Top‑1 flips are brittle; KL thresholds are more stable. CI should guard metrics and provenance.
+```python
+# rolling top-1 window (maintained elsewhere)
+collapse_strict = is_id_subseq([top1_id], ctx_ids) and (p_top1 > τ_strict)
 
-What. A GitHub Actions workflow that executes a dry‑run and asserts schema/provenance keys and threshold stability.
+def collapse_soft_k(k):
+    return is_id_subseq(window_ids[-k:], ctx_ids) and (p_top1 > τ_soft)
+```
 
-How.
+2. **CSV additions (pure next‑token).**
 
-1. Add `--dry-run` to load the model and decode first 5 layers.
-2. Commit `expected_meta.json` with `first_kl_below_1.0` and `schema_version`.
-3. Fail CI on missing keys or drift; print guarded fields for audit.
+* Booleans: `copy_strict@0.95`, `copy_soft_k1@0.50`, `copy_soft_k2@0.50`, `copy_soft_k3@0.50`.
+* (Optional) If `--copy-soft-thresh-list τ1,τ2` is set, emit additional columns `copy_soft_k{K}@{τi}` for each τ in the list.
+
+3. **JSON meta (summary).**
+
+```json
+"copy_detector": {
+  "strict": {"thresh": 0.95, "k": 1, "L_copy_strict": <int|null>},
+  "soft": {
+    "thresh": 0.50,
+    "window_ks": [1,2,3],
+    "L_copy_soft": {"k1": <int|null>, "k2": <int|null>, "k3": <int|null>}
+  },
+  "deltas": {
+    "Δ_sem_minus_copy_strict": <int|null>,
+    "Δ_sem_minus_copy_soft": {"k1": <int|null>, "k2": <int|null>, "k3": <int|null>}
+  }
+}
+```
+
+4. **CLI & defaults.**
+
+* `--copy-thresh` (strict; default **0.95**), `--copy-window-k` (strict; default **1**)
+* **New:** `--copy-soft-thresh` (default **0.50**), `--copy-soft-window-ks` (default **1,2,3**)
+* **New (optional):** `--copy-soft-thresh-list` (comma‑sep; overrides single `--copy-soft-thresh`).
+
+**Notes.**
+
+* Keep **strict** `L_copy_strict` as the headline metric for conservatism; use **soft/windowed** indices to compute `Δ‑collapse` when strict is null and to stabilize cross‑model comparisons.
+* Maintain existing whitespace/punctuation filtering and ID‑level contiguous matching for all variants.
+
+---
+
+### 1.12. Integrate a Tuned Lens
+
+**Why.** The raw logit lens (even with correct normalization) can be mis‑calibrated and sensitive to depth‑dependent basis drift. A **Tuned Lens** learns a **per‑layer affine translator** that maps each layer’s residual to a distribution **close to the model’s final output**, yielding earlier and more faithful rank/KL milestones and clearer “rotation → amplification” narratives (\[2]).
+
+**Benefits.**
+
+* **Per‑layer fidelity:** Lower **KL(P\_layer‖P\_final)** and earlier **`first_rank_le_{10,5,1}`** than the raw lens.
+* **Robustness:** Less brittle to tokenizer quirks and family‑specific head transforms; easier cross‑model comparisons via rank/KL thresholds.
+* **Interpretability discipline:** With light regularization toward a shared preconditioner (e.g., ZCA/Prism rotation), heads remain comparable across depth while retaining necessary flexibility.
+
+**What.** Train, per model, a set of **affine translators** `{W_ℓ, b_ℓ}` (one per post‑block layer ℓ), keeping the model and the tied unembedding `W_U` **frozen**. Each translator produces logits
+
+$$
+z^{(ℓ)} = h^{(ℓ)} W_ℓ + b_ℓ,\quad P^{(ℓ)}=\text{softmax}(z^{(ℓ)}),
+$$
+
+and is trained to match the model’s **final** next‑token distribution `P_final` at the same position.
+
+**How (minimal, reproducible).**
+
+1. **Data sampling (per model).**
+
+* **Source.** Stream \~1–5M tokens from a small, license‑clean corpus (or reuse cached activations from existing sweeps); ensure diversity of contexts.
+* **Depth & position coverage.** For each batch, pick a random layer ℓ and the **last position** (pure next‑token) to collect `(h^{(ℓ)}, P_final)`. Uniformly sample ℓ over post‑block layers.
+* **Numerics.** Compute targets once per sequence: `P_final = softmax(z_final)` in **fp32**; store as logits if memory is tight (convert on the fly).
+
+2. **Model & objective.**
+
+* **Heads.** For each ℓ, an independent linear head `W_ℓ ∈ ℝ^{d_model×vocab}`, `b_ℓ ∈ ℝ^{vocab}`.
+  *Optional low‑rank:* factor `W_ℓ = A_ℓ R_k W_U,k^⊤` with global preconditioner `R_k` (e.g., Prism rotation or ZCA), top‑k unembed `W_U,k`, and small `A_ℓ ∈ ℝ^{d_model×k}` for parameter economy.
+* **Loss.** Minimize `CE(P_final, P^{(ℓ)})` (equivalently KL), with regularizers:
+
+  * **Layer‑wise L2:** `λ ||W_ℓ R^{-1}||²` to keep heads near a **shared** rotation `R` (Prism or ZCA).
+  * **Smoothness:** `μ ||W_ℓ − W_{ℓ−1}||²` (optional) to discourage abrupt depth jumps.
+  * **Bias centering:** small `||b_ℓ||²` to avoid temperature drift.
+* **Optimizer.** AdamW (`lr=1e−3`, `β=(0.9,0.999)`, `wd=1e−4`) with cosine decay and warm‑up (e.g., 1–2k steps). Mixed precision **off** for stability.
+
+3. **Training loop.**
+
+* Iterate mini‑batches of `(h^{(ℓ)}, P_final)`; compute logits via `W_ℓ, b_ℓ`; minimize loss; update only the selected layer’s head per batch (others untouched).
+* **Early stopping** on a held‑out stream using average `KL(P^{(ℓ)}‖P_final)` across a fixed set of depths (e.g., 25/50/75%).
+
+4. **Validation (held‑out prompts; report to JSON).**
+
+* **Primary gates (go/no‑go).**
+  **A.** At depths ≈25/50/75%, `KL_TL ≤ KL_raw − 0.5` bits (margin configurable).
+  **B.** `first_rank_le_10` (and ideally `≤5, ≤1`) occurs **no later** than with the raw lens.
+  **C.** **Last‑layer agreement:** `KL(P_TL_last‖P_final) ≈ 0` and `top1_agree = true`.
+  **D.** **QA:** the baked‑in Raw‑vs‑Norm sanity (§1.4) does **not** regress when TL is enabled.
+* **Supporting.** Cosine‑to‑tuned (`cos_to_tuned`) rises with depth; negative‑control margin (France→Paris) remains clean or improves.
+
+5. **Integration in `run.py` (dual decode; primary remains norm‑lens).**
+
+* Run the standard norm‑lens sweep (write canonical CSVs). If a tuned lens is available, **also** decode a TL sweep from cached residuals (no second forward) and write TL sidecars:
+  `*-records-tuned.csv`, `*-pure-next-token-tuned.csv` (schemas identical; add `lens ∈ {norm,tuned}` if a single file is preferred).
+* Add `--use-tuned-lens` to *prefer* tuned metrics in summaries/plots while still writing norm‑lens outputs for comparability.
+
+6. **Provenance (persisted to artifacts and mirrored into run JSON).**
+
+```json
+"tuned_lens": {
+  "enabled": true,
+  "path": "001_layers_baseline/tuned_lenses/<model>/",
+  "sha": "<git_sha>",
+  "seed": 316,
+  "train_tokens": 2000000,
+  "depth_sampling": "uniform",
+  "loss": "CE_to_final",
+  "regularizers": {"l2_to_R": 1e-3, "smooth_W": 1e-4, "bias_l2": 1e-5},
+  "preconditioner": {"type": "ZCA|Prism", "rank_k": 512},
+  "val_kl_bits@{25,50,75}%": [..,..,..],
+  "acceptance": {"gate_A": true, "gate_B": true, "gate_C": true, "gate_D": true}
+}
+```
+
+7. **Storage & layout.**
+
+* Save per‑model artifacts under: `001_layers_baseline/tuned_lenses/<clean_model_name>/`
+
+  * `weights.pt` (list of `{W_ℓ, b_ℓ}`), `precond.pt` (optional `R_k`/ZCA stats), `provenance.json`.
+* Mirror a short `tuned_lens` block into each run’s JSON for auditability.
+
+8. **Numerics & defaults.**
+
+* Compute losses and softmaxes in **fp32**; clamp logits to avoid infs in KL/CE.
+* Default `rank_k = 512` if using preconditioned low‑rank; otherwise full `d_model×vocab` for small models.
+* Default regularization `λ=1e−3`, `μ=1e−4`; expose via CLI: `--tl-l2-to-R`, `--tl-smooth`, `--tl-bias-l2`.
+
+9. **Trade‑offs / scope.**
+
+* **Primary decoder for claims.** Use TL metrics for semantic‑depth claims and cross‑model rank/KL thresholds; keep norm‑lens for continuity checks.
+* **Regularization toward a shared basis** (Prism/ZCA) preserves cross‑layer comparability without repeating Prism’s rigidity.
+* Avoid per‑position heads or non‑linear translators in this iteration to keep provenance simple and overfitting risk low.
+
+10. **Analysis hooks.**
+
+* Write `cos_to_tuned` alongside `cos_to_final`; plot TL vs norm **KL** and **rank** curves; log `first_rank_le_{10,5,1}` under both lenses.
+* Keep negative‑control and ablation summaries identical across lenses for apples‑to‑apples comparisons.
+
+**Lift (engineering).** Moderate: simple linear heads, uniform depth sampling, single‑GPU training in minutes to hours per model; minimal runtime overhead in sweeps (one extra matmul/softmax per layer).
 
 ### 1.13. *(Optional)* Metadata completeness
 
@@ -539,7 +672,7 @@ These variations are diagnostic, not decisive. Their job is to show which intern
 ### Caution on metrics
 
 Raw “semantic‑collapse depth” (the layer where the gold token first becomes top‑1) is a correlational signal. Before drawing philosophical conclusions, validate any depth‑based claim with at least one causal or representational check (activation patching, tuned‑lens KL, concept‑vector alignment). See Group 3 & 4 tasks.
-**Cross‑model caveat.** Absolute probabilities/entropies under a norm‑based lens are **not** comparable across models using different normalisers; use Tuned Lens (§1.11) or Logit Prism (§1.10) for cross‑model comparisons, or prefer rank/KL‑threshold metrics.
+**Cross‑model caveat.** Absolute probabilities/entropies under a norm‑based lens are **not** comparable across models using different normalisers; use Tuned Lens (§1.12) or Logit Prism (§1.10) for cross‑model comparisons, or prefer rank/KL‑threshold metrics.
 
 [4]: https://plato.stanford.edu/entries/properties/ "Properties — Stanford Encyclopedia of Philosophy"
 [5]: https://plato.stanford.edu/entries/nominalism-metaphysics/ "Nominalism in Metaphysics — Stanford Encyclopedia of Philosophy"
