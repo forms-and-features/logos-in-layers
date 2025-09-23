@@ -18,7 +18,7 @@ from layers_core.contexts import UnembedContext, PrismContext
 from layers_core.collapse_rules import format_copy_strict_label, format_copy_soft_label
 
 COPY_SOFT_WINDOW_KS = (1, 2, 3)
-COPY_SOFT_THRESHOLD = 0.5
+COPY_SOFT_THRESHOLD = 0.33
 COPY_STRICT_LABEL = format_copy_strict_label(0.95)
 COPY_SOFT_LABELS = {k: format_copy_soft_label(k, COPY_SOFT_THRESHOLD) for k in COPY_SOFT_WINDOW_KS}
 

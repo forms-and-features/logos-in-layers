@@ -397,7 +397,7 @@ Trade‑offs / scope.
 **What.** Detect prompt‑echo at two sensitivities and multiple window sizes, and report both *per‑layer booleans* and *first‑hit layer indices*:
 
 * **Strict copy (baseline default continues):** first layer `L_copy_strict` where the last **k=1** top‑1 token ID is a contiguous subsequence of the prompt IDs with `p_top1 > τ_strict` (default **0.95**).
-* **Soft copy (baseline default emits alongside strict):** first layer `L_copy_soft[k]` where a window of the last **k ∈ {1,2,3}** top‑1 IDs forms a contiguous subsequence with `p_top1 > τ_soft` (default **0.50**).
+* **Soft copy (baseline default emits alongside strict):** first layer `L_copy_soft[k]` where a window of the last **k ∈ {1,2,3}** top‑1 IDs forms a contiguous subsequence with `p_top1 > τ_soft` (default **0.33**).
 * **Derived summaries:** `Δ_sem_minus_copy_strict = L_sem − L_copy_strict` (nullable) and `Δ_sem_minus_copy_soft[k] = L_sem − L_copy_soft[k]`.
 
 **How.**
@@ -414,7 +414,7 @@ def collapse_soft_k(k):
 
 2. **CSV additions (pure next‑token).**
 
-* Booleans: `copy_strict@0.95`, `copy_soft_k1@0.5`, `copy_soft_k2@0.5`, `copy_soft_k3@0.5`.
+* Booleans: `copy_strict@0.95`, `copy_soft_k1@0.33`, `copy_soft_k2@0.33`, `copy_soft_k3@0.33`.
 * (Optional) If `--copy-soft-thresh-list τ1,τ2` is set, emit additional columns `copy_soft_k{K}@{τi}` for each τ in the list.
 
 3. **JSON meta (summary).**
@@ -423,7 +423,7 @@ def collapse_soft_k(k):
 "copy_detector": {
   "strict": {"thresh": 0.95, "k": 1, "L_copy_strict": <int|null>},
   "soft": {
-    "thresh": 0.50,
+    "thresh": 0.33,
     "window_ks": [1,2,3],
     "L_copy_soft": {"k1": <int|null>, "k2": <int|null>, "k3": <int|null>}
   },
@@ -437,7 +437,7 @@ def collapse_soft_k(k):
 4. **CLI & defaults.**
 
 * `--copy-thresh` (strict; default **0.95**), `--copy-window-k` (strict; default **1**)
-* `--copy-soft-thresh` (default **0.50**), `--copy-soft-window-ks` (default **1,2,3**) — both applied by default so that strict + soft detections are always produced.
+* `--copy-soft-thresh` (default **0.33**), `--copy-soft-window-ks` (default **1,2,3**) — both applied by default so that strict + soft detections are always produced.
 * Optional override: `--copy-soft-thresh-list` (comma‑sep) to emit additional soft detectors.
 
 **Notes.**

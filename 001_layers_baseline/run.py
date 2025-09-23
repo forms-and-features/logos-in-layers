@@ -343,7 +343,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         copy_soft_window_ks = tuple(sorted({int(k) for k in raw_soft_ks if int(k) > 0}))
         if not copy_soft_window_ks:
             copy_soft_window_ks = (max(1, int(getattr(config, "copy_window_k", 1))),)
-        copy_soft_threshold = float(getattr(config, "copy_soft_threshold", 0.50))
+        copy_soft_threshold = float(getattr(config, "copy_soft_threshold", 0.33))
         raw_soft_extra = getattr(config, "copy_soft_thresholds_extra", ())
         copy_soft_thresholds_extra = tuple(sorted({float(th) for th in raw_soft_extra}))
         copy_soft_thresholds_extra_filtered = tuple(
@@ -965,7 +965,7 @@ def run_single_model(model_id):
             copy_threshold=CLI_ARGS.copy_threshold,
             copy_margin=CLI_ARGS.copy_margin,
             copy_window_k=int(getattr(CLI_ARGS, "copy_window_k", 1)),
-            copy_soft_threshold=float(getattr(CLI_ARGS, "copy_soft_thresh", 0.50)),
+            copy_soft_threshold=float(getattr(CLI_ARGS, "copy_soft_thresh", 0.33)),
             copy_soft_window_ks=soft_window_ks_tuple,
             copy_soft_thresholds_extra=soft_thresh_extra_tuple,
             out_dir=out_dir,
@@ -1007,7 +1007,7 @@ CLI_ARGS = SimpleNamespace(
     quiet=False,
     prism=os.environ.get("LOGOS_PRISM", "auto"),
     prism_dir="prisms",
-    copy_soft_thresh=0.50,
+    copy_soft_thresh=0.33,
     copy_soft_window_ks=[1, 2, 3],
     copy_soft_thresh_list=[],
 )

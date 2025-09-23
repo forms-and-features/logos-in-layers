@@ -10,7 +10,7 @@ class ExperimentConfig:
     copy_threshold: float = 0.95
     copy_margin: float = 0.10
     copy_window_k: int = 1
-    copy_soft_threshold: float = 0.50
+    copy_soft_threshold: float = 0.33
     copy_soft_window_ks: tuple[int, ...] = (1, 2, 3)
     copy_soft_thresholds_extra: tuple[float, ...] = ()
     entropy_collapse_threshold: float = 1.0

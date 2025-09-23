@@ -18,7 +18,7 @@ def test_summarize_pure_records():
         recs,
         copy_threshold=0.95,
         copy_window_k=1,
-        copy_soft_threshold=0.5,
+        copy_soft_threshold=0.33,
         copy_soft_window_ks=(1, 2),
         copy_match_level="id_subsequence",
     )
