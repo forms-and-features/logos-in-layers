@@ -830,6 +830,15 @@
       ],
       "error": null
     },
+    "copy_soft_config": {
+      "threshold": 0.5,
+      "window_ks": [
+        1,
+        2,
+        3
+      ],
+      "extra_thresholds": []
+    },
     "L_copy": null,
     "L_copy_H": null,
     "L_semantic": 44,
@@ -842,6 +851,50 @@
     "first_rank_le_1": 44,
     "first_rank_le_5": 44,
     "first_rank_le_10": 43,
+    "copy_soft_threshold": 0.5,
+    "copy_soft_window_ks": [
+      1,
+      2,
+      3
+    ],
+    "L_copy_soft": {
+      "1": null,
+      "2": null,
+      "3": null
+    },
+    "delta_layers_soft": {
+      "1": null,
+      "2": null,
+      "3": null
+    },
+    "copy_detector": {
+      "strict": {
+        "thresh": 0.95,
+        "k": 1,
+        "L_copy_strict": null
+      },
+      "soft": {
+        "thresh": 0.5,
+        "window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "k1": null,
+          "k2": null,
+          "k3": null
+        }
+      },
+      "deltas": {
+        "Δ_sem_minus_copy_strict": null,
+        "Δ_sem_minus_copy_soft": {
+          "k1": null,
+          "k2": null,
+          "k3": null
+        }
+      }
+    },
     "gold_alignment": "ok",
     "last_layer_consistency": {
       "kl_to_final_bits": 0.0002783696239154555,
@@ -1021,6 +1074,12 @@
       "lens_artifact_risk": "high"
     }
   },
+  "copy_flag_columns": [
+    "copy_strict@0.95",
+    "copy_soft_k1@0.5",
+    "copy_soft_k2@0.5",
+    "copy_soft_k3@0.5"
+  ],
   "ablation_summary": {
     "L_copy_orig": null,
     "L_sem_orig": 44,
