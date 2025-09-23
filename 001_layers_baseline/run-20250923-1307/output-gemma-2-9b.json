@@ -1,0 +1,1121 @@
+{
+  "prompt": {
+    "type": "prompt",
+    "context_prompt": "Give the city name only, plain text. The capital of Germany is called simply",
+    "ground_truth": "Berlin"
+  },
+  "test_prompts": [
+    {
+      "type": "test_prompt",
+      "prompt": "Berlin is the capital of",
+      "entropy": 0.9620513319969177,
+      "topk": [
+        [
+          " Germany",
+          0.8765770792961121
+        ],
+        [
+          " the",
+          0.06993505358695984
+        ],
+        [
+          " modern",
+          0.00770152872428298
+        ],
+        [
+          " a",
+          0.005294622387737036
+        ],
+        [
+          " ",
+          0.0033933506347239017
+        ],
+        [
+          " Europe",
+          0.0030800546519458294
+        ],
+        [
+          " German",
+          0.002838751534000039
+        ],
+        [
+          " both",
+          0.00242762197740376
+        ],
+        [
+          " Berlin",
+          0.001870379550382495
+        ],
+        [
+          " germany",
+          0.0015240863431245089
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Germany's capital city is called simply",
+      "entropy": 2.447896718978882,
+      "topk": [
+        [
+          " Berlin",
+          0.5512092113494873
+        ],
+        [
+          " \"",
+          0.18800614774227142
+        ],
+        [
+          ",",
+          0.06121515855193138
+        ],
+        [
+          " '",
+          0.05240565910935402
+        ],
+        [
+          " ",
+          0.033778633922338486
+        ],
+        [
+          " “",
+          0.015429305844008923
+        ],
+        [
+          " by",
+          0.015068294480443
+        ],
+        [
+          ":",
+          0.01500224880874157
+        ],
+        [
+          " and",
+          0.010529723018407822
+        ],
+        [
+          " the",
+          0.006633277982473373
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "The capital city of Germany is named simply",
+      "entropy": 3.2694265842437744,
+      "topk": [
+        [
+          " Berlin",
+          0.43671825528144836
+        ],
+        [
+          " as",
+          0.0986732468008995
+        ],
+        [
+          " “",
+          0.08626499772071838
+        ],
+        [
+          " after",
+          0.06995619833469391
+        ],
+        [
+          ",",
+          0.06669514626264572
+        ],
+        [
+          " ‘",
+          0.0314888134598732
+        ],
+        [
+          " \"",
+          0.028410250321030617
+        ],
+        [
+          ":",
+          0.02332848496735096
+        ],
+        [
+          " ",
+          0.022949906066060066
+        ],
+        [
+          " for",
+          0.01791965775191784
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Germany has its capital at the city called simply",
+      "entropy": 2.6224286556243896,
+      "topk": [
+        [
+          " Berlin",
+          0.5747531652450562
+        ],
+        [
+          " “",
+          0.10203640162944794
+        ],
+        [
+          " \"",
+          0.08041993528604507
+        ],
+        [
+          ",",
+          0.05430421605706215
+        ],
+        [
+          " ",
+          0.030597291886806488
+        ],
+        [
+          " ‘",
+          0.02733537182211876
+        ],
+        [
+          " as",
+          0.026822512969374657
+        ],
+        [
+          " '",
+          0.020002074539661407
+        ],
+        [
+          " Germany",
+          0.009822364896535873
+        ],
+        [
+          ":",
+          0.009499376639723778
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "In Germany the capital city is simply",
+      "entropy": 2.8540258407592773,
+      "topk": [
+        [
+          " called",
+          0.39519986510276794
+        ],
+        [
+          " known",
+          0.24014060199260712
+        ],
+        [
+          " Berlin",
+          0.11895487457513809
+        ],
+        [
+          " referred",
+          0.10493126511573792
+        ],
+        [
+          " named",
+          0.0211928877979517
+        ],
+        [
+          " “",
+          0.01813405007123947
+        ],
+        [
+          " the",
+          0.016080839559435844
+        ],
+        [
+          " ",
+          0.009764466434717178
+        ],
+        [
+          " \"",
+          0.009118095971643925
+        ],
+        [
+          " ‘",
+          0.0066072456538677216
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Germany's capital city is called",
+      "entropy": 2.676170587539673,
+      "topk": [
+        [
+          " Berlin",
+          0.6645193099975586
+        ],
+        [
+          " the",
+          0.04546577110886574
+        ],
+        [
+          " ",
+          0.04273102432489395
+        ],
+        [
+          " \"",
+          0.034145817160606384
+        ],
+        [
+          "...",
+          0.02094266749918461
+        ],
+        [
+          ":",
+          0.01793057657778263
+        ],
+        [
+          "\n\n",
+          0.015544043853878975
+        ],
+        [
+          " a",
+          0.01242078747600317
+        ],
+        [
+          " by",
+          0.010814733803272247
+        ],
+        [
+          " ...",
+          0.007649073842912912
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "The capital city of Germany is named",
+      "entropy": 2.4965364933013916,
+      "topk": [
+        [
+          " Berlin",
+          0.43033161759376526
+        ],
+        [
+          " after",
+          0.3381417989730835
+        ],
+        [
+          " as",
+          0.06390564888715744
+        ],
+        [
+          " for",
+          0.03723021596670151
+        ],
+        [
+          " ",
+          0.017808040603995323
+        ],
+        [
+          " “",
+          0.01698697730898857
+        ],
+        [
+          " the",
+          0.013166287913918495
+        ],
+        [
+          " in",
+          0.013061833567917347
+        ],
+        [
+          " by",
+          0.0071564484387636185
+        ],
+        [
+          " ‘",
+          0.006200079340487719
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Germany has its capital at",
+      "entropy": 1.6043713092803955,
+      "topk": [
+        [
+          " Berlin",
+          0.8048974275588989
+        ],
+        [
+          " the",
+          0.06322084367275238
+        ],
+        [
+          " Bonn",
+          0.025339385494589806
+        ],
+        [
+          " ",
+          0.017819272354245186
+        ],
+        [
+          " Frankfurt",
+          0.009331445209681988
+        ],
+        [
+          " a",
+          0.007633540313690901
+        ],
+        [
+          " berlin",
+          0.005241819657385349
+        ],
+        [
+          "\n\n",
+          0.004926046822220087
+        ],
+        [
+          ":",
+          0.004345720633864403
+        ],
+        [
+          " Munich",
+          0.003760936437174678
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "In Germany the capital city is known as",
+      "entropy": 2.9931907653808594,
+      "topk": [
+        [
+          " Berlin",
+          0.4264983832836151
+        ],
+        [
+          " the",
+          0.24033333361148834
+        ],
+        [
+          " “",
+          0.07151060551404953
+        ],
+        [
+          " ",
+          0.05543075501918793
+        ],
+        [
+          " \"",
+          0.039643220603466034
+        ],
+        [
+          " a",
+          0.033512894064188004
+        ],
+        [
+          " ‘",
+          0.024396337568759918
+        ],
+        [
+          " Hauptstadt",
+          0.015254933387041092
+        ],
+        [
+          " '",
+          0.011867123655974865
+        ],
+        [
+          " Bonn",
+          0.004929509479552507
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Give the country name only, plain text. Berlin is the capital of",
+      "entropy": 2.221545934677124,
+      "topk": [
+        [
+          " Germany",
+          0.7139855623245239
+        ],
+        [
+          " which",
+          0.07763862609863281
+        ],
+        [
+          " the",
+          0.04477764666080475
+        ],
+        [
+          " what",
+          0.018608691170811653
+        ],
+        [
+          " ",
+          0.01549503207206726
+        ],
+        [
+          " germany",
+          0.012269603088498116
+        ],
+        [
+          " this",
+          0.006326459813863039
+        ],
+        [
+          " .",
+          0.0056176260113716125
+        ],
+        [
+          " ________",
+          0.00545288622379303
+        ],
+        [
+          "...",
+          0.004933653399348259
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Give the city name only, plain text. Germany's capital city is called",
+      "entropy": 2.405299663543701,
+      "topk": [
+        [
+          " Berlin",
+          0.6572471261024475
+        ],
+        [
+          " \"",
+          0.12840807437896729
+        ],
+        [
+          " ",
+          0.03272733837366104
+        ],
+        [
+          ":",
+          0.021342480555176735
+        ],
+        [
+          " '",
+          0.02083401195704937
+        ],
+        [
+          " BERLIN",
+          0.009586437605321407
+        ],
+        [
+          ",",
+          0.008529835380613804
+        ],
+        [
+          " simply",
+          0.008374479599297047
+        ],
+        [
+          "...",
+          0.008140700869262218
+        ],
+        [
+          " berlin",
+          0.007983824238181114
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Give the city name only, plain text. The capital city of Germany is named simply",
+      "entropy": 3.5361554622650146,
+      "topk": [
+        [
+          " Berlin",
+          0.36225053668022156
+        ],
+        [
+          " \"",
+          0.17539893090724945
+        ],
+        [
+          " as",
+          0.07972187548875809
+        ],
+        [
+          " “",
+          0.06356224417686462
+        ],
+        [
+          ",",
+          0.05878143012523651
+        ],
+        [
+          ":",
+          0.04538250342011452
+        ],
+        [
+          " '",
+          0.033046115189790726
+        ],
+        [
+          " ",
+          0.03045669011771679
+        ],
+        [
+          ".",
+          0.01922481134533882
+        ],
+        [
+          " by",
+          0.010970150120556355
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Give the city name only, plain text. Germany has its capital at",
+      "entropy": 1.4779179096221924,
+      "topk": [
+        [
+          " Berlin",
+          0.8346987366676331
+        ],
+        [
+          " the",
+          0.041243478655815125
+        ],
+        [
+          " Bonn",
+          0.015181774273514748
+        ],
+        [
+          " berlin",
+          0.015167216770350933
+        ],
+        [
+          " ",
+          0.014117110520601273
+        ],
+        [
+          " a",
+          0.009073409251868725
+        ],
+        [
+          ":",
+          0.005125454626977444
+        ],
+        [
+          " \"",
+          0.004519153386354446
+        ],
+        [
+          " Frankfurt",
+          0.0032497388310730457
+        ],
+        [
+          " (",
+          0.002648416440933943
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Give the city name only, plain text. In Germany, the capital city is known as",
+      "entropy": 3.196589231491089,
+      "topk": [
+        [
+          " Berlin",
+          0.4741755425930023
+        ],
+        [
+          " \"",
+          0.1630096733570099
+        ],
+        [
+          " ",
+          0.060080789029598236
+        ],
+        [
+          " the",
+          0.05907175689935684
+        ],
+        [
+          " “",
+          0.050763994455337524
+        ],
+        [
+          " '",
+          0.029649768024683
+        ],
+        [
+          " Hauptstadt",
+          0.01691330596804619
+        ],
+        [
+          " Bonn",
+          0.009871467016637325
+        ],
+        [
+          " simply",
+          0.009776206687092781
+        ],
+        [
+          " ‘",
+          0.008121766149997711
+        ]
+      ]
+    }
+  ],
+  "temperature_exploration": [
+    {
+      "type": "temperature_exploration",
+      "temperature": 0.1,
+      "entropy": 0.1366337537765503,
+      "topk": [
+        [
+          " Berlin",
+          0.9808526635169983
+        ],
+        [
+          " \"",
+          0.019146941602230072
+        ],
+        [
+          " “",
+          4.5018742866886896e-07
+        ],
+        [
+          " '",
+          3.4996838760292803e-10
+        ],
+        [
+          ",",
+          9.07198136057552e-11
+        ],
+        [
+          ":",
+          2.381056116163016e-11
+        ],
+        [
+          " ",
+          8.144392278641721e-12
+        ],
+        [
+          " ‘",
+          1.4478875209712814e-15
+        ],
+        [
+          " as",
+          4.2339590378106444e-16
+        ],
+        [
+          " by",
+          1.2408353561992594e-17
+        ],
+        [
+          " BERLIN",
+          1.4595521775376332e-19
+        ],
+        [
+          " berlin",
+          1.178887226914848e-20
+        ],
+        [
+          " and",
+          7.902968390656156e-21
+        ],
+        [
+          " the",
+          4.737403520275055e-21
+        ],
+        [
+          ".",
+          2.1549284317841067e-22
+        ]
+      ]
+    },
+    {
+      "type": "temperature_exploration",
+      "temperature": 2.0,
+      "entropy": 9.001362800598145,
+      "topk": [
+        [
+          " Berlin",
+          0.08934520930051804
+        ],
+        [
+          " \"",
+          0.07338313013315201
+        ],
+        [
+          " “",
+          0.043068598955869675
+        ],
+        [
+          " '",
+          0.030108708888292313
+        ],
+        [
+          ",",
+          0.02814335934817791
+        ],
+        [
+          ":",
+          0.026322638615965843
+        ],
+        [
+          " ",
+          0.0249478816986084
+        ],
+        [
+          " ‘",
+          0.01620047353208065
+        ],
+        [
+          " as",
+          0.015234503895044327
+        ],
+        [
+          " by",
+          0.012769575230777264
+        ],
+        [
+          " BERLIN",
+          0.010225905105471611
+        ],
+        [
+          " berlin",
+          0.009017051197588444
+        ],
+        [
+          " and",
+          0.008838539943099022
+        ],
+        [
+          " the",
+          0.008615247905254364
+        ],
+        [
+          ".",
+          0.007381805684417486
+        ]
+      ]
+    }
+  ],
+  "diagnostics": {
+    "type": "diagnostics",
+    "model": "google/gemma-2-9b",
+    "device": "cpu",
+    "use_norm_lens": true,
+    "use_fp32_unembed": false,
+    "unembed_dtype": "torch.float32",
+    "first_block_ln1_type": "RMSNorm",
+    "final_ln_type": "RMSNorm",
+    "layernorm_bias_fix": "not_needed_rms_model",
+    "norm_alignment_fix": "using_ln2_rmsnorm_for_post_block",
+    "layer0_norm_fix": "using_real_ln1_on_embeddings",
+    "mixed_precision_fix": "casting_to_fp32_before_unembed",
+    "layer0_position_info": "token_only_rotary_model",
+    "context_prompt": "Give the city name only, plain text. The capital of Germany is called simply",
+    "target_prediction": "first unseen token (likely 'Berlin')",
+    "prism_summary": {
+      "mode": "auto",
+      "artifact_path": "/home/kkonstant/logos-in-layers/001_layers_baseline/prisms/gemma-2-9b",
+      "present": true,
+      "compatible": true,
+      "k": 512,
+      "layers": [
+        "embed",
+        9,
+        20,
+        30
+      ],
+      "error": null
+    },
+    "copy_soft_config": {
+      "threshold": 0.5,
+      "window_ks": [
+        1,
+        2,
+        3
+      ],
+      "extra_thresholds": []
+    },
+    "L_copy": 0,
+    "L_copy_H": 0,
+    "L_semantic": 42,
+    "delta_layers": 42,
+    "copy_thresh": 0.95,
+    "copy_window_k": 1,
+    "copy_match_level": "id_subsequence",
+    "first_kl_below_0.5": null,
+    "first_kl_below_1.0": null,
+    "first_rank_le_1": 42,
+    "first_rank_le_5": 42,
+    "first_rank_le_10": 42,
+    "copy_soft_threshold": 0.5,
+    "copy_soft_window_ks": [
+      1,
+      2,
+      3
+    ],
+    "L_copy_soft": {
+      "1": 0,
+      "2": null,
+      "3": null
+    },
+    "delta_layers_soft": {
+      "1": 42,
+      "2": null,
+      "3": null
+    },
+    "copy_detector": {
+      "strict": {
+        "thresh": 0.95,
+        "k": 1,
+        "L_copy_strict": 0
+      },
+      "soft": {
+        "thresh": 0.5,
+        "window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "k1": 0,
+          "k2": null,
+          "k3": null
+        }
+      },
+      "deltas": {
+        "Δ_sem_minus_copy_strict": 42,
+        "Δ_sem_minus_copy_soft": {
+          "k1": 42,
+          "k2": null,
+          "k3": null
+        }
+      }
+    },
+    "gold_alignment": "ok",
+    "last_layer_consistency": {
+      "kl_to_final_bits": 1.0128875226902398,
+      "top1_agree": true,
+      "p_top1_lens": 0.9297690391540527,
+      "p_top1_model": 0.3943327069282532,
+      "p_answer_lens": 0.9297690391540527,
+      "answer_rank_lens": 1,
+      "temp_est": 2.6101572513580322,
+      "kl_after_temp_bits": 0.34989104995242076,
+      "cfg_transform": {
+        "scale": null,
+        "softcap": null
+      },
+      "kl_after_transform_bits": {
+        "scale": null,
+        "softcap": null,
+        "scale_then_softcap": null
+      },
+      "warn_high_last_layer_kl": true
+    }
+  },
+  "final_prediction": {
+    "type": "final_prediction",
+    "entropy": 2.936690330505371,
+    "topk": [
+      [
+        " Berlin",
+        0.3943327069282532
+      ],
+      [
+        " \"",
+        0.2660190463066101
+      ],
+      [
+        " “",
+        0.09163086116313934
+      ],
+      [
+        " '",
+        0.04478210210800171
+      ],
+      [
+        ",",
+        0.039126601070165634
+      ],
+      [
+        ":",
+        0.03422780707478523
+      ],
+      [
+        " ",
+        0.03074592910706997
+      ],
+      [
+        " ‘",
+        0.012965095229446888
+      ],
+      [
+        " as",
+        0.011465075425803661
+      ],
+      [
+        " by",
+        0.008055141195654869
+      ],
+      [
+        " BERLIN",
+        0.005165635142475367
+      ],
+      [
+        " berlin",
+        0.004016514401882887
+      ],
+      [
+        " and",
+        0.003859057556837797
+      ],
+      [
+        " the",
+        0.003666534787043929
+      ],
+      [
+        ".",
+        0.0026918170042335987
+      ],
+      [
+        " „",
+        0.0026887229178100824
+      ],
+      [
+        " -",
+        0.0022612791508436203
+      ],
+      [
+        " (",
+        0.0022305266465991735
+      ],
+      [
+        "\n\n",
+        0.0021014856174588203
+      ],
+      [
+        " Germany",
+        0.002055045682936907
+      ]
+    ]
+  },
+  "model_stats": {
+    "type": "model_stats",
+    "num_layers": 42,
+    "d_model": 3584,
+    "n_heads": 16,
+    "d_vocab": 256000,
+    "n_ctx": 8192,
+    "architecture": "pre_norm"
+  },
+  "raw_lens_check": {
+    "mode": "sample",
+    "samples": [
+      {
+        "layer": 0,
+        "kl_norm_vs_raw_bits": 1.0364568464488179e-05,
+        "top1_agree": true,
+        "p_top1_norm": 0.9999992847442627,
+        "p_top1_raw": 1.0,
+        "p_answer_norm": 0.0,
+        "p_answer_raw": 0.0,
+        "answer_rank_norm": 1468,
+        "answer_rank_raw": 22,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 11,
+        "kl_norm_vs_raw_bits": 0.12096477140628534,
+        "top1_agree": true,
+        "p_top1_norm": 0.9525399804115295,
+        "p_top1_raw": 0.9958969354629517,
+        "p_answer_norm": 7.563718345361204e-17,
+        "p_answer_raw": 2.833389894150121e-23,
+        "answer_rank_norm": 46591,
+        "answer_rank_raw": 54073,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 22,
+        "kl_norm_vs_raw_bits": 12.905567113855506,
+        "top1_agree": false,
+        "p_top1_norm": 0.7171284556388855,
+        "p_top1_raw": 0.999306321144104,
+        "p_answer_norm": 3.372888912611671e-10,
+        "p_answer_raw": 7.948921570490972e-23,
+        "answer_rank_norm": 31495,
+        "answer_rank_raw": 31241,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 32,
+        "kl_norm_vs_raw_bits": 0.10806888880748257,
+        "top1_agree": true,
+        "p_top1_norm": 0.9935976266860962,
+        "p_top1_raw": 0.9999876022338867,
+        "p_answer_norm": 7.602572419769982e-20,
+        "p_answer_raw": 0.0,
+        "answer_rank_norm": 1889,
+        "answer_rank_raw": 558,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      }
+    ],
+    "summary": {
+      "first_norm_only_semantic_layer": null,
+      "max_kl_norm_vs_raw_bits": 12.905567113855506,
+      "lens_artifact_risk": "high"
+    }
+  },
+  "copy_flag_columns": [
+    "copy_strict@0.95",
+    "copy_soft_k1@0.5",
+    "copy_soft_k2@0.5",
+    "copy_soft_k3@0.5"
+  ],
+  "ablation_summary": {
+    "L_copy_orig": 0,
+    "L_sem_orig": 42,
+    "L_copy_nf": 0,
+    "L_sem_nf": 42,
+    "delta_L_copy": 0,
+    "delta_L_sem": 0
+  },
+  "control_prompt": {
+    "context_prompt": "Give the city name only, plain text. The capital of France is called simply",
+    "gold_answer": {
+      "string": "Paris",
+      "pieces": [
+        "▁Paris"
+      ],
+      "first_id": 7127,
+      "answer_ids": [
+        7127
+      ],
+      "variant": "with_space"
+    },
+    "gold_alignment": "ok"
+  },
+  "control_summary": {
+    "first_control_margin_pos": 18,
+    "max_control_margin": 0.8677237033843427
+  },
+  "gold_answer": {
+    "string": "Berlin",
+    "pieces": [
+      "▁Berlin"
+    ],
+    "first_id": 12514,
+    "answer_ids": [
+      12514
+    ],
+    "variant": "with_space"
+  }
+}
