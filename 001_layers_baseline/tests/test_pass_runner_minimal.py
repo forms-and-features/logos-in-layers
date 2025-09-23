@@ -15,6 +15,12 @@ from layers_core.lenses import NormLensAdapter
 from layers_core.windows import WindowManager
 from layers_core.prism import WhitenStats
 from layers_core.contexts import UnembedContext, PrismContext
+from layers_core.collapse_rules import format_copy_strict_label, format_copy_soft_label
+
+COPY_SOFT_WINDOW_KS = (1, 2, 3)
+COPY_SOFT_THRESHOLD = 0.5
+COPY_STRICT_LABEL = format_copy_strict_label(0.95)
+COPY_SOFT_LABELS = {k: format_copy_soft_label(k, COPY_SOFT_THRESHOLD) for k in COPY_SOFT_WINDOW_KS}
 
 
 class _Hookable:
@@ -104,7 +110,7 @@ def test_run_prompt_pass_minimal():
     mm_cache = {}
     unembed_ctx = UnembedContext(W=W_U, b=b_U, force_fp32=True, cache=mm_cache)
     prism_ctx = PrismContext(stats=None, Q=None, active=False)
-    window_mgr = WindowManager(1)
+    window_mgr = WindowManager(1, extra_window_ks=COPY_SOFT_WINDOW_KS)
     json_data = {"records": [], "pure_next_token_records": [], "raw_lens_check": {"mode": "off", "samples": [], "summary": None}}
     json_data_prism = {"records": [], "pure_next_token_records": []}
 
@@ -119,6 +125,11 @@ def test_run_prompt_pass_minimal():
         unembed_ctx=unembed_ctx,
         copy_threshold=0.95,
         copy_margin=0.10,
+        copy_soft_threshold=COPY_SOFT_THRESHOLD,
+        copy_soft_window_ks=COPY_SOFT_WINDOW_KS,
+        copy_strict_label=COPY_STRICT_LABEL,
+        copy_soft_labels=COPY_SOFT_LABELS,
+        copy_soft_extra_labels={},
         entropy_collapse_threshold=1.0,
         top_k_record=5,
         top_k_verbose=20,
@@ -158,7 +169,7 @@ def test_run_prompt_pass_control_margin():
     mm_cache = {}
     unembed_ctx = UnembedContext(W=W_U, b=b_U, force_fp32=True, cache=mm_cache)
     prism_ctx = PrismContext(stats=None, Q=None, active=False)
-    window_mgr = WindowManager(1)
+    window_mgr = WindowManager(1, extra_window_ks=COPY_SOFT_WINDOW_KS)
     json_data = {"records": [], "pure_next_token_records": [], "raw_lens_check": {"mode": "off", "samples": [], "summary": None}}
     json_data_prism = {"records": [], "pure_next_token_records": []}
 
@@ -191,6 +202,11 @@ def test_run_prompt_pass_control_margin():
         head_softcap_cfg=None,
         clean_model_name="stub",
         control_ids=(42, 7),
+        copy_soft_threshold=COPY_SOFT_THRESHOLD,
+        copy_soft_window_ks=COPY_SOFT_WINDOW_KS,
+        copy_strict_label=COPY_STRICT_LABEL,
+        copy_soft_labels=COPY_SOFT_LABELS,
+        copy_soft_extra_labels={},
     )
 
     # Expect at least one control row with a control_margin field present (may be zero)
@@ -206,7 +222,7 @@ def test_run_prompt_pass_with_prism_sidecar():
     b_U = torch.randn(11, dtype=torch.float32)
     mm_cache = {}
     unembed_ctx = UnembedContext(W=W_U, b=b_U, force_fp32=True, cache=mm_cache)
-    window_mgr = WindowManager(1)
+    window_mgr = WindowManager(1, extra_window_ks=COPY_SOFT_WINDOW_KS)
     json_data = {"records": [], "pure_next_token_records": [], "raw_lens_check": {"mode": "off", "samples": [], "summary": None}}
     json_data_prism = {"records": [], "pure_next_token_records": []}
 
@@ -241,6 +257,11 @@ def test_run_prompt_pass_with_prism_sidecar():
         important_words=["Germany", "Berlin"],
         head_scale_cfg=None,
         head_softcap_cfg=None,
+        copy_soft_threshold=COPY_SOFT_THRESHOLD,
+        copy_soft_window_ks=COPY_SOFT_WINDOW_KS,
+        copy_strict_label=COPY_STRICT_LABEL,
+        copy_soft_labels=COPY_SOFT_LABELS,
+        copy_soft_extra_labels={},
     )
 
     # Debug counts for visibility under plain python runner
@@ -262,7 +283,7 @@ def test_keep_residuals_policy():
     b_U = torch.randn(11, dtype=torch.float32)
     mm_cache = {}
     unembed_ctx = UnembedContext(W=W_U, b=b_U, force_fp32=True, cache=mm_cache)
-    window_mgr = WindowManager(1)
+    window_mgr = WindowManager(1, extra_window_ks=COPY_SOFT_WINDOW_KS)
 
     # Disabled Prism: expect files saved, no exception
     import tempfile, os, pathlib
@@ -299,6 +320,11 @@ def test_keep_residuals_policy():
         head_scale_cfg=None,
         head_softcap_cfg=None,
         clean_model_name="stubA",
+        copy_soft_threshold=COPY_SOFT_THRESHOLD,
+        copy_soft_window_ks=COPY_SOFT_WINDOW_KS,
+        copy_strict_label=COPY_STRICT_LABEL,
+        copy_soft_labels=COPY_SOFT_LABELS,
+        copy_soft_extra_labels={},
     )
     # Files should exist for L0 and for two layers (n_layers=2)
     for name in ["stubA_00_resid.pt", "stubA_01_resid.pt", "stubA_02_resid.pt"]:
@@ -341,6 +367,11 @@ def test_keep_residuals_policy():
         head_scale_cfg=None,
         head_softcap_cfg=None,
         clean_model_name="stubB",
+        copy_soft_threshold=COPY_SOFT_THRESHOLD,
+        copy_soft_window_ks=COPY_SOFT_WINDOW_KS,
+        copy_strict_label=COPY_STRICT_LABEL,
+        copy_soft_labels=COPY_SOFT_LABELS,
+        copy_soft_extra_labels={},
     )
     for name in ["stubB_00_resid.pt", "stubB_01_resid.pt", "stubB_02_resid.pt"]:
         p = out_dir_norm / name

@@ -10,6 +10,7 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
     """
     records: List[Dict[str, Any]] = json_data["records"]
     pure_next_token_records: List[Dict[str, Any]] = json_data["pure_next_token_records"]
+    copy_flag_columns: List[str] = list(dict.fromkeys(json_data.get("copy_flag_columns", [])))
 
     # Save records to CSV
     with open(csv_filepath, 'w', newline='', encoding='utf-8') as f_csv:
@@ -59,6 +60,9 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
         header.extend([
             "rest_mass",
             "copy_collapse",
+        ])
+        header.extend(copy_flag_columns)
+        header.extend([
             "entropy_collapse",
             "is_answer",
             "p_top1",
@@ -91,6 +95,10 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
             row.extend([
                 rest_mass,
                 rec.get("copy_collapse", ""),
+            ])
+            for flag_col in copy_flag_columns:
+                row.append(_nz(rec.get(flag_col)))
+            row.extend([
                 rec.get("entropy_collapse", ""),
                 rec.get("is_answer", ""),
                 _nz(rec.get("p_top1")),

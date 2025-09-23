@@ -3,6 +3,12 @@ import torch
 
 from layers_core.windows import WindowManager
 from layers_core.prism_sidecar import append_prism_record, append_prism_pure_next_token
+from layers_core.collapse_rules import format_copy_strict_label, format_copy_soft_label
+
+COPY_SOFT_WINDOW_KS = (1, 2, 3)
+COPY_SOFT_THRESHOLD = 0.5
+COPY_STRICT_LABEL = format_copy_strict_label(0.0)
+COPY_SOFT_LABELS = {k: format_copy_soft_label(k, COPY_SOFT_THRESHOLD) for k in COPY_SOFT_WINDOW_KS}
 
 
 def test_append_prism_record_appends_row():
@@ -36,7 +42,7 @@ def test_append_prism_pure_next_token_builds_pure_record():
     vocab = 12
     prism_logits_all = torch.randn(seq_len, vocab)
     tokens = torch.zeros(1, seq_len, dtype=torch.long)
-    wm = WindowManager(window_k=1)
+    wm = WindowManager(window_k=1, extra_window_ks=COPY_SOFT_WINDOW_KS)
     final_logits = torch.randn(vocab)
     final_probs = torch.softmax(final_logits, dim=0)
     final_dir = final_logits / (final_logits.norm() + 1e-12)
@@ -53,6 +59,11 @@ def test_append_prism_pure_next_token_builds_pure_record():
         final_dir_vec=final_dir,
         copy_threshold=0.0,
         copy_margin=0.0,
+        copy_strict_label=COPY_STRICT_LABEL,
+        copy_soft_threshold=COPY_SOFT_THRESHOLD,
+        copy_soft_window_ks=COPY_SOFT_WINDOW_KS,
+        copy_soft_labels=COPY_SOFT_LABELS,
+        copy_soft_extra_labels={},
         entropy_collapse_threshold=10.0,
         decode_id_fn=lambda i: f"t{int(i)}",
         ground_truth="X",

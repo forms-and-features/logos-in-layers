@@ -15,6 +15,12 @@ from layers_core.lenses import NormLensAdapter
 from layers_core.windows import WindowManager
 from layers_core.prism import WhitenStats
 from layers_core.contexts import UnembedContext, PrismContext
+from layers_core.collapse_rules import format_copy_strict_label, format_copy_soft_label
+
+COPY_SOFT_WINDOW_KS = (1, 2, 3)
+COPY_SOFT_THRESHOLD = 0.5
+COPY_STRICT_LABEL = format_copy_strict_label(0.95)
+COPY_SOFT_LABELS = {k: format_copy_soft_label(k, COPY_SOFT_THRESHOLD) for k in COPY_SOFT_WINDOW_KS}
 
 
 class _FakePrismLensAdapter:
@@ -110,7 +116,7 @@ def test_prism_placement_failure_path():
         W_U = torch.randn(model.cfg.d_model, 11, dtype=torch.float32)
         b_U = torch.randn(11, dtype=torch.float32)
         mm_cache = {}
-        window_mgr = WindowManager(1)
+        window_mgr = WindowManager(1, extra_window_ks=COPY_SOFT_WINDOW_KS)
         json_data = {"records": [], "pure_next_token_records": [], "raw_lens_check": {"mode": "off", "samples": [], "summary": None}}
         json_data_prism = {"records": [], "pure_next_token_records": []}
         stats = WhitenStats(mean=torch.zeros(model.cfg.d_model), var=torch.ones(model.cfg.d_model), eps=1e-8)
@@ -144,6 +150,11 @@ def test_prism_placement_failure_path():
             important_words=["Germany", "Berlin"],
             head_scale_cfg=None,
             head_softcap_cfg=None,
+            copy_soft_threshold=COPY_SOFT_THRESHOLD,
+            copy_soft_window_ks=COPY_SOFT_WINDOW_KS,
+            copy_strict_label=COPY_STRICT_LABEL,
+            copy_soft_labels=COPY_SOFT_LABELS,
+            copy_soft_extra_labels={},
         )
 
         # Diagnostic surfaced once, no sidecar rows

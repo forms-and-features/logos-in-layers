@@ -12,11 +12,19 @@ from layers_core.prism_sidecar import (
     append_prism_record,
     append_prism_pure_next_token,
 )
+from layers_core.collapse_rules import format_copy_strict_label, format_copy_soft_label
+
+COPY_THRESH_STRICT = 0.95
+COPY_SOFT_THRESHOLD = 0.5
+COPY_SOFT_WINDOW_KS = (1, 2, 3)
+COPY_STRICT_LABEL = format_copy_strict_label(COPY_THRESH_STRICT)
+COPY_SOFT_LABELS = {k: format_copy_soft_label(k, COPY_SOFT_THRESHOLD) for k in COPY_SOFT_WINDOW_KS}
 from layers_core.numerics import bits_entropy_from_logits
 from layers_core.metrics import compute_next_token_metrics
 from layers_core.collapse_rules import (
     detect_copy_collapse_id_subseq,
     is_pure_whitespace_or_punct,
+    is_id_subseq,
 )
 from layers_core.windows import WindowManager
 
@@ -77,14 +85,15 @@ def test_prism_record_helper_matches_manual_block():
 
 def test_prism_pure_next_token_helper_fields_match_manual_logic():
     torch.manual_seed(0)
-    buf = {"pure_next_token_records": []}
+    buf = {"pure_next_token_records": [], "copy_flag_columns": [COPY_STRICT_LABEL, *[COPY_SOFT_LABELS[k] for k in COPY_SOFT_WINDOW_KS]]}
 
     # Setup synthetic tokens/logits (seq_len=5, vocab=9)
     S, V = 5, 9
     logits_all = torch.randn(S, V, dtype=torch.float32)
     tokens_tensor = torch.arange(S)[None, :]
     ctx_ids_list = list(range(S - 1))  # pretend context ids are 0..S-2
-    wm = WindowManager(window_k=1)
+    wm_manual = WindowManager(window_k=1, extra_window_ks=COPY_SOFT_WINDOW_KS)
+    wm_helper = WindowManager(window_k=1, extra_window_ks=COPY_SOFT_WINDOW_KS)
     final_logits = torch.randn(V, dtype=torch.float32)
     final_probs = torch.softmax(final_logits, dim=0)
     final_dir = final_logits / (torch.norm(final_logits) + 1e-12)
@@ -101,9 +110,10 @@ def test_prism_pure_next_token_helper_fields_match_manual_logic():
     p_top_probs = pprobs[p_top_idx]
     p_top_tokens = [_decode_id(i) for i in p_top_idx]
     p_top1_id = int(p_top_idx[0].item())
-    prism_window_ids = wm.append_and_trim("prism", "pos", "orig", int(p_top1_id))
+    prism_window_ids = wm_manual.append_and_trim("prism", "pos", "orig", int(p_top1_id))
+    strict_window = wm_manual.get_window("prism", "pos", "orig", wm_manual.window_k)
     p_copy = detect_copy_collapse_id_subseq(
-        pz, ctx_ids_list, prism_window_ids, copy_threshold=0.95, copy_margin=0.10
+        pz, ctx_ids_list, strict_window, copy_threshold=COPY_THRESH_STRICT, copy_margin=0.10
     )
     if p_copy and is_pure_whitespace_or_punct(p_top_tokens[0]):
         p_copy = False
@@ -115,6 +125,15 @@ def test_prism_pure_next_token_helper_fields_match_manual_logic():
     )
     _pn = torch.norm(pz) + 1e-12
     p_cos = torch.dot((pz / _pn), final_dir).item()
+    soft_hits = {}
+    for k_soft in COPY_SOFT_WINDOW_KS:
+        window_slice = wm_manual.get_window("prism", "pos", "orig", k_soft)
+        soft_hits[k_soft] = (
+            len(window_slice) >= k_soft
+            and is_id_subseq(window_slice, ctx_ids_list)
+            and p_metrics.get("p_top1", 0.0) > COPY_SOFT_THRESHOLD
+        )
+
     manual = {
         "type": "pure_next_token_record",
         "prompt_id": "pos",
@@ -125,6 +144,7 @@ def test_prism_pure_next_token_helper_fields_match_manual_logic():
         "entropy": pent,
         "topk": [[tok, float(prob.item())] for tok, prob in zip(p_top_tokens, p_top_probs)],
         "copy_collapse": p_copy,
+        COPY_STRICT_LABEL: p_copy,
         "entropy_collapse": pent <= 1.0,
         "is_answer": p_is_answer,
         "p_top1": p_metrics.get("p_top1"),
@@ -135,6 +155,8 @@ def test_prism_pure_next_token_helper_fields_match_manual_logic():
         "cos_to_final": p_cos,
         "control_margin": None,
     }
+    for k_soft, label in COPY_SOFT_LABELS.items():
+        manual[label] = soft_hits.get(k_soft, False)
 
     # Helper call should append an identical dict
     append_prism_pure_next_token(
@@ -143,12 +165,17 @@ def test_prism_pure_next_token_helper_fields_match_manual_logic():
         prism_logits_all=logits_all,
         tokens_tensor=tokens_tensor,
         ctx_ids_list=ctx_ids_list,
-        window_manager=wm,
+        window_manager=wm_helper,
         final_probs_tensor=final_probs,
         first_ans_token_id=first_ans_id,
         final_dir_vec=final_dir,
-        copy_threshold=0.95,
+        copy_threshold=COPY_THRESH_STRICT,
         copy_margin=0.10,
+        copy_strict_label=COPY_STRICT_LABEL,
+        copy_soft_threshold=COPY_SOFT_THRESHOLD,
+        copy_soft_window_ks=COPY_SOFT_WINDOW_KS,
+        copy_soft_labels=COPY_SOFT_LABELS,
+        copy_soft_extra_labels={},
         entropy_collapse_threshold=1.0,
         decode_id_fn=_decode_id,
         ground_truth=ground_truth,

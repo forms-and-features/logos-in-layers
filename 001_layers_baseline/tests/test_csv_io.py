@@ -18,8 +18,17 @@ def test_csv_writers_headers_and_rows():
         ],
         "pure_next_token_records": [
             {"layer": 0, "pos": 5, "token": "⟨NEXT⟩", "entropy": 1.0,
-             "topk": [["Berlin", 0.9]], "copy_collapse": True, "entropy_collapse": False, "is_answer": True},
+             "topk": [["Berlin", 0.9]],
+             "copy_collapse": True,
+             "entropy_collapse": False,
+             "is_answer": True,
+             "copy_strict@0.95": True,
+             "copy_soft_k1@0.5": True,
+             "copy_soft_k2@0.5": False,
+             "copy_soft_k3@0.5": False,
+             },
         ],
+        "copy_flag_columns": ["copy_strict@0.95", "copy_soft_k1@0.5", "copy_soft_k2@0.5", "copy_soft_k3@0.5"],
     }
 
     top_k = 3
@@ -46,12 +55,13 @@ def test_csv_writers_headers_and_rows():
         with open(pure_path, newline='', encoding='utf-8') as f:
             rows = list(csv.reader(f))
         header = rows[0]
-        # Pure next-token CSV now includes §1.3 metrics plus §1.5 cosine and §1.8 control_margin and prompt_variant
-        expected_len = (2 + 4) + 2 * top_k + 1 + 3 + 5 + 1 + 1  # prompt_id + prompt_variant + base + topk + rest + flags + metrics + cos + control_margin
+        copy_cols = json_data["copy_flag_columns"]
+        expected_len = (2 + 4) + 2 * top_k + 1 + 1 + len(copy_cols) + 1 + 1 + 5 + 1 + 1
         assert len(header) == expected_len
-        assert header[-11:] == [
-            "rest_mass",
-            "copy_collapse",
+        rest_idx = header.index("rest_mass")
+        assert header[rest_idx:rest_idx + 2 + len(copy_cols)] == ["rest_mass", "copy_collapse", *copy_cols]
+        tail = header[-9:]
+        assert tail == [
             "entropy_collapse",
             "is_answer",
             "p_top1",
@@ -63,7 +73,6 @@ def test_csv_writers_headers_and_rows():
             "control_margin",
         ]
         # Validate row shapes and rest_mass range
-        rest_idx = header.index("rest_mass")
         for r in rows[1:]:
             assert len(r) == expected_len
             rest = float(r[rest_idx])

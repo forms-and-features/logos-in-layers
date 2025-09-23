@@ -23,7 +23,7 @@ Ablation: read `ablation_summary` with `{ L_copy_orig, L_sem_orig, L_copy_nf, L_
 001_layers_baseline/run-latest/output-Yi-34B-records.csv
 001_layers_baseline/run-latest/output-Yi-34B-pure-next-token.csv
 Each CSV now includes leading `prompt_id` (`pos` for Germany→Berlin; `ctl` for France→Paris) and `prompt_variant` (`orig`/`no_filler`) columns, and a `rest_mass` column (probability not covered by the listed top-k tokens).
-The pure-next-token CSV adds boolean flags `copy_collapse`, `entropy_collapse`, and `is_answer` produced by the script, as well as per-layer probability/calibration fields: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, `kl_to_final_bits` (bits), `cos_to_final` (cosine similarity to the final logits direction; PROJECT_NOTES §1.5), and `control_margin = p(Paris) − p(Berlin)` for control rows.
+The pure-next-token CSV adds boolean flags `copy_collapse`, `copy_strict@τ`, and `copy_soft_k{1,2,3}@τ_soft`, plus `entropy_collapse`, and `is_answer`, together with per-layer probability/calibration fields: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, `kl_to_final_bits` (bits), `cos_to_final` (cosine similarity to the final logits direction; PROJECT_NOTES §1.5), and `control_margin = p(Paris) − p(Berlin)` for control rows. Soft-copy defaults are τ_soft = 0.5 with windows k ∈ {1,2,3}; extra thresholds may appear when configured.
 
 If present, include the Prism sidecar CSVs for calibration comparison:
 001_layers_baseline/run-latest/output-Yi-34B-records-prism.csv
@@ -59,12 +59,13 @@ Cautions
 One paragraph: do JSON and CSV confirm that positional encodings and the intended norm lens are applied? Quote ≤ 2 console lines with line numbers.
 Verify context_prompt ends with “called simply” (no trailing space).
 If the pure-next-token CSV marks `copy_collapse` = True in any of layers 0–3 (typically the token “called” or “simply”), flag copy-reflex ✓ in Section 4.
-Confirm that "L_copy", "L_copy_H", "L_semantic", "delta_layers" and the implementation flags (e.g. "use_norm_lens", "unembed_dtype") are present in diagnostics. The copy rule is ID-level contiguous subsequence (k=1) with threshold τ=0.95 and margin δ=0.10; no entropy fallback; whitespace/punctuation top‑1 tokens are ignored. Cite `copy_thresh`, `copy_window_k`, `copy_match_level` from diagnostics. Gold‑token alignment: see `gold_answer` in JSON; alignment is ID‑based. Confirm `diagnostics.gold_alignment` is `ok`. If `unresolved`, note fallback to string matching and prefer rank‑based statements. Negative control: confirm the presence of `control_prompt` and `control_summary` in JSON. Ablation: confirm `ablation_summary` exists and that positive rows appear under both `prompt_variant = orig` and `no_filler`. For the main table, filter to `prompt_id = pos`, `prompt_variant = orig`.
+Confirm that "L_copy", "L_copy_H", "L_semantic", "delta_layers", "L_copy_soft" (per k), and "delta_layers_soft" are present in diagnostics alongside the implementation flags (e.g. "use_norm_lens", "unembed_dtype"). The strict copy rule remains ID-level contiguous subsequence (k=1) with threshold τ=0.95 and margin δ=0.10; the soft detectors use τ_soft (default 0.5) with window_ks from `copy_soft_config.window_ks`. Cite `copy_thresh`, `copy_window_k`, `copy_match_level`, and `copy_soft_config` (threshold, window_ks, extra_thresholds); confirm `copy_flag_columns` mirrors these labels in the JSON/CSV. Gold‑token alignment: see `gold_answer`; alignment is ID-based. Confirm `diagnostics.gold_alignment` is `ok`. If `unresolved`, note fallback to string matching and prefer rank-based statements. Negative control: confirm `control_prompt` and `control_summary`. Ablation: confirm `ablation_summary` exists and that positive rows appear under both `prompt_variant = orig` and `no_filler`. For the main table, filter to `prompt_id = pos`, `prompt_variant = orig`.
 Report summary indices from diagnostics: `first_kl_below_0.5`, `first_kl_below_1.0`, `first_rank_le_1`, `first_rank_le_5`, `first_rank_le_10`. Confirm units for KL/entropy are bits. Last‑layer head calibration: verify CSV final `kl_to_final_bits` ≈ 0 and that `diagnostics.last_layer_consistency` exists. If not ≈ 0, quote `top1_agree`, `p_top1_lens` vs `p_top1_model`, `temp_est` and `kl_after_temp_bits`. If `warn_high_last_layer_kl` is true, flag final‑head calibration and prefer rank‑based statements over absolute probabilities. Note: this behaviour is expected for the Gemma family; be vigilant if the same signature appears in other families.
 Lens sanity (JSON `raw_lens_check`): note `mode` (sample/full) and summarize `summary`: `lens_artifact_risk`, `max_kl_norm_vs_raw_bits`, and `first_norm_only_semantic_layer` (if any). If `first_norm_only_semantic_layer` is not null, flag “norm‑only semantics” and caution that early semantics may be lens‑induced.
 Copy-collapse flag check: first row with `copy_collapse = True`  
   layer = … , token_id₁ = … , p₁ = … , token_id₂ = … , p₂ = …  
   ✓ rule satisfied / ✗ fired spuriously
+Soft copy flags: record earliest layer where `copy_soft_k1@τ_soft = True` (and optionally k2/k3); note if soft fires while strict stays null.
 
 
 3. Quantitative findings 
@@ -85,6 +86,8 @@ Interpretation: a large positive `ΔL_sem` (e.g., ≥ ~10% of `n_layers`) sugges
 
 Add beneath the table:
 ΔH (bits) = entropy(L_copy) − entropy(L_semantic) = …
+Soft ΔHₖ (bits) = entropy(L_copy_soft[k]) − entropy(L_semantic) for k ∈ window_ks.
+If any `L_copy_soft[k]` differs materially from `L_copy`, highlight it (e.g., "k=2 soft copy at L … while strict null").
 Confidence milestones (from pure CSV):  
 p_top1 > 0.30 at layer …, p_top1 > 0.60 at layer …, final-layer p_top1 = …
 Rank milestones (from diagnostics):  
@@ -126,7 +129,7 @@ but do not use it for the table or for bolding the collapse layer.
     - Entropy rise at unembed?
     - FP32 un-embed promoted? (see "use_fp32_unembed" in diagnostics)
     - Punctuation / markup anchoring?
-    - Copy-reflex? ✓ if any of layers 0-3 in the pure-next-token CSV have copy_collapse = True (i.e. the model’s top-1 token is copied from the prompt with p > τ and margin > δ).
+    - Copy-reflex? ✓ if any of layers 0-3 in the pure-next-token CSV have `copy_collapse = True` (strict τ, δ) or `copy_soft_k1@τ_soft = True`.
     - Grammatical filler anchoring? (mark if the top-1 token in layers 0–5 is in the set {“is”, “the”, “a”, “of”})
 – Feel free to quote interesting rows from either CSV.
 – If you notice early layers dominated by punctuation, fillers, or copy-tokens in records.csv, flag that under “Punctuation / filler anchoring”.

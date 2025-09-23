@@ -344,7 +344,7 @@ How.
   `{ L_copy_orig, L_sem_orig, L_copy_nf, L_sem_nf, delta_L_copy, delta_L_sem }`.
 - Control rows are not ablated; they are tagged as `prompt_id=ctl, prompt_variant=orig`.
 
-### 1.10. Logit Prism shared decoder
+### [x] 1.10. Logit Prism shared decoder
 
 Why. A single whitening + rotation matrix (`W_prism`) that works for all layers makes cross‑layer geometry directly comparable and reduces probe freedom. A shared decoder is a strong baseline/control against “lens‑induced early semantics”, and a cheap preconditioning step for Tuned Lens.
 
@@ -388,14 +388,16 @@ Trade‑offs / scope.
 - Prism is not a tuned lens; it won’t perfectly match the final head. Its value is robustness and comparability, not exact replication. Keep CSV unchanged and treat Prism as a diagnostic/baseline mode.
 - When TL is added (see §1.12), initialize TL translators from Prism and/or add a “shared‑decoder” ablation to emulate Prism for QA. Keep Prism available to catch lens‑induced regressions.
 
-### 1.11. Soft copy indices (strict + soft; windowed)
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
-**Why.** The strict copy rule (`p_top1 > 0.95`, `k=1`) rarely fires outside specific families (e.g., Gemma‑2), which leaves `Δ‑collapse = L_sem − L_copy` undefined and weakens across‑model comparisons. Adding a *soft* copy index and a *windowed* variant preserves the strict detector for high‑precision claims while providing robust, comparable baselines everywhere.
+### [x] 1.11. Soft copy indices (strict + soft; windowed)
+
+**Why.** The strict copy rule (`p_top1 > 0.95`, `k=1`) rarely fires outside specific families (e.g., Gemma‑2), which leaves `Δ‑collapse = L_sem − L_copy` undefined and weakens across‑model comparisons. The baseline runs should therefore emit both strict **and** soft/windowed detectors by default so that the richer metrics land in every sweep, while still retaining the strict path for high‑precision claims.
 
 **What.** Detect prompt‑echo at two sensitivities and multiple window sizes, and report both *per‑layer booleans* and *first‑hit layer indices*:
 
-* **Strict copy (unchanged):** first layer `L_copy_strict` where the last **k=1** top‑1 token ID is a contiguous subsequence of the prompt IDs with `p_top1 > τ_strict` (default **0.95**).
-* **Soft copy (new):** first layer `L_copy_soft[k]` where a window of the last **k ∈ {1,2,3}** top‑1 IDs forms a contiguous subsequence with `p_top1 > τ_soft` (default **0.50**).
+* **Strict copy (baseline default continues):** first layer `L_copy_strict` where the last **k=1** top‑1 token ID is a contiguous subsequence of the prompt IDs with `p_top1 > τ_strict` (default **0.95**).
+* **Soft copy (baseline default emits alongside strict):** first layer `L_copy_soft[k]` where a window of the last **k ∈ {1,2,3}** top‑1 IDs forms a contiguous subsequence with `p_top1 > τ_soft` (default **0.50**).
 * **Derived summaries:** `Δ_sem_minus_copy_strict = L_sem − L_copy_strict` (nullable) and `Δ_sem_minus_copy_soft[k] = L_sem − L_copy_soft[k]`.
 
 **How.**
@@ -412,7 +414,7 @@ def collapse_soft_k(k):
 
 2. **CSV additions (pure next‑token).**
 
-* Booleans: `copy_strict@0.95`, `copy_soft_k1@0.50`, `copy_soft_k2@0.50`, `copy_soft_k3@0.50`.
+* Booleans: `copy_strict@0.95`, `copy_soft_k1@0.5`, `copy_soft_k2@0.5`, `copy_soft_k3@0.5`.
 * (Optional) If `--copy-soft-thresh-list τ1,τ2` is set, emit additional columns `copy_soft_k{K}@{τi}` for each τ in the list.
 
 3. **JSON meta (summary).**
@@ -435,13 +437,15 @@ def collapse_soft_k(k):
 4. **CLI & defaults.**
 
 * `--copy-thresh` (strict; default **0.95**), `--copy-window-k` (strict; default **1**)
-* **New:** `--copy-soft-thresh` (default **0.50**), `--copy-soft-window-ks` (default **1,2,3**)
-* **New (optional):** `--copy-soft-thresh-list` (comma‑sep; overrides single `--copy-soft-thresh`).
+* `--copy-soft-thresh` (default **0.50**), `--copy-soft-window-ks` (default **1,2,3**) — both applied by default so that strict + soft detections are always produced.
+* Optional override: `--copy-soft-thresh-list` (comma‑sep) to emit additional soft detectors.
 
 **Notes.**
 
 * Keep **strict** `L_copy_strict` as the headline metric for conservatism; use **soft/windowed** indices to compute `Δ‑collapse` when strict is null and to stabilize cross‑model comparisons.
 * Maintain existing whitespace/punctuation filtering and ID‑level contiguous matching for all variants.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

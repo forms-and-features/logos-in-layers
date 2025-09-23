@@ -41,6 +41,12 @@ def parse_cli():
                    help="Minimum P(top-1) for copy collapse")
     p.add_argument("--copy-margin", type=float, default=0.10,
                    help="Require P(top-1) − P(top-2) > margin for copy collapse")
+    p.add_argument("--copy-soft-thresh", type=float, default=0.50,
+                   help="Soft copy detector probability threshold (default: 0.50)")
+    p.add_argument("--copy-soft-window-ks", default="1,2,3",
+                   help="Comma-separated window sizes for soft copy detector (default: 1,2,3)")
+    p.add_argument("--copy-soft-thresh-list", default=None,
+                   help="Optional comma-separated list of additional soft thresholds to log")
     p.add_argument("model_id", nargs="?", default=None,
                    help="Model ID for single-run (when invoking as subprocess)")
     p.add_argument("--out_dir",
@@ -62,6 +68,15 @@ def parse_cli():
 
 def main():
     args = parse_cli()
+    # Normalize CSV-like CLI inputs to typed lists before touching worker defaults
+    if isinstance(args.copy_soft_window_ks, str):
+        raw_parts = [part.strip() for part in args.copy_soft_window_ks.split(',') if part.strip()]
+        args.copy_soft_window_ks = [int(part) for part in raw_parts] if raw_parts else [1, 2, 3]
+    if args.copy_soft_thresh_list:
+        raw_thresh = [part.strip() for part in args.copy_soft_thresh_list.split(',') if part.strip()]
+        args.copy_soft_thresh_list = [float(part) for part in raw_thresh]
+    else:
+        args.copy_soft_thresh_list = []
     # Override worker defaults with CLI selections
     for k, v in vars(args).items():
         setattr(worker.CLI_ARGS, k.replace('-', '_'), v)

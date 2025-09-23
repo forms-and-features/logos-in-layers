@@ -53,6 +53,11 @@ def append_prism_pure_next_token(
     final_dir_vec: torch.Tensor,
     copy_threshold: float,
     copy_margin: float,
+    copy_strict_label: str,
+    copy_soft_threshold: float,
+    copy_soft_window_ks: Iterable[int],
+    copy_soft_labels: Dict[int, str],
+    copy_soft_extra_labels: Dict[Tuple[int, float], str],
     entropy_collapse_threshold: float,
     decode_id_fn,
     ground_truth: str,
@@ -61,6 +66,13 @@ def append_prism_pure_next_token(
     prompt_variant: str,
     control_ids: Optional[Tuple[Optional[int], Optional[int]]] = None,
 ) -> None:
+    flag_labels = [copy_strict_label] + [copy_soft_labels.get(int(k)) for k in copy_soft_window_ks if copy_soft_labels.get(int(k))]
+    flag_labels.extend(copy_soft_extra_labels.values())
+    existing_cols = buf.setdefault("copy_flag_columns", [])
+    for label in flag_labels:
+        if label and label not in existing_cols:
+            existing_cols.append(label)
+
     view, collected, _ = compute_pure_next_token_info(
         layer_out_idx=layer_out_idx,
         logits_all=prism_logits_all,
@@ -73,6 +85,11 @@ def append_prism_pure_next_token(
         final_dir_vec=final_dir_vec,
         copy_threshold=copy_threshold,
         copy_margin=copy_margin,
+        copy_strict_label=copy_strict_label,
+        copy_soft_threshold=copy_soft_threshold,
+        copy_soft_window_ks=copy_soft_window_ks,
+        copy_soft_labels=copy_soft_labels,
+        copy_soft_extra_labels=copy_soft_extra_labels,
         entropy_collapse_threshold=entropy_collapse_threshold,
         decode_id_fn=decode_id_fn,
         ground_truth=ground_truth,

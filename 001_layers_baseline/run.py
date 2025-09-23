@@ -69,6 +69,7 @@ from layers_core.passes import run_prompt_pass
 from layers_core.contexts import UnembedContext, PrismContext
 from layers_core.probes import emit_test_prompts, emit_temperature_exploration
 from layers_core.token_utils import make_decode_id
+from layers_core.collapse_rules import format_copy_strict_label, format_copy_soft_label
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -330,15 +331,47 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             "error": prism_error,
         }
         # Sidecar record buffers for Prism (identical schemas to baseline CSVs)
-        json_data_prism = {"records": [], "pure_next_token_records": []}
+        json_data_prism = {"records": [], "pure_next_token_records": [], "copy_flag_columns": []}
         IMPORTANT_WORDS = ["Germany", "Berlin", "capital", "Answer", "word", "simply"]
 
         # prompt_id and prompt_variant for tagging records across passes
         current_prompt_id = "pos"
         current_prompt_variant = "orig"
 
+        # Copy detector configuration (strict + soft windowed defaults)
+        raw_soft_ks = getattr(config, "copy_soft_window_ks", (1, 2, 3))
+        copy_soft_window_ks = tuple(sorted({int(k) for k in raw_soft_ks if int(k) > 0}))
+        if not copy_soft_window_ks:
+            copy_soft_window_ks = (max(1, int(getattr(config, "copy_window_k", 1))),)
+        copy_soft_threshold = float(getattr(config, "copy_soft_threshold", 0.50))
+        raw_soft_extra = getattr(config, "copy_soft_thresholds_extra", ())
+        copy_soft_thresholds_extra = tuple(sorted({float(th) for th in raw_soft_extra}))
+        copy_soft_thresholds_extra_filtered = tuple(
+            th for th in copy_soft_thresholds_extra if abs(th - copy_soft_threshold) >= 1e-9
+        )
+        copy_strict_label = format_copy_strict_label(config.copy_threshold)
+        copy_soft_labels = {k: format_copy_soft_label(k, copy_soft_threshold) for k in copy_soft_window_ks}
+        copy_soft_extra_labels = {
+            (k, th): format_copy_soft_label(k, th)
+            for th in copy_soft_thresholds_extra_filtered
+            for k in copy_soft_window_ks
+        }
+        copy_flag_columns = [copy_strict_label]
+        copy_flag_columns.extend([copy_soft_labels[k] for k in sorted(copy_soft_labels)])
+        copy_flag_columns.extend([
+            label
+            for (k, th), label in sorted(copy_soft_extra_labels.items(), key=lambda kv: (kv[0][1], kv[0][0]))
+        ])
+        json_data["copy_flag_columns"] = list(copy_flag_columns)
+        json_data_prism["copy_flag_columns"] = list(copy_flag_columns)
+        diag["copy_soft_config"] = {
+            "threshold": copy_soft_threshold,
+            "window_ks": list(copy_soft_window_ks),
+            "extra_thresholds": list(copy_soft_thresholds_extra_filtered),
+        }
+
         # Rolling window manager to isolate copy-detection state per lens and per variant
-        window_mgr = WindowManager(getattr(config, "copy_window_k", 1))
+        window_mgr = WindowManager(getattr(config, "copy_window_k", 1), extra_window_ks=copy_soft_window_ks)
 
         # Baseline norm lens adapter (behavior-preserving)
         norm_lens = NormLensAdapter()
@@ -512,6 +545,11 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     top_k_verbose=TOP_K_VERBOSE,
                     keep_residuals=config.keep_residuals,
                     out_dir=config.out_dir,
+                    copy_soft_threshold=copy_soft_threshold,
+                    copy_soft_window_ks=copy_soft_window_ks,
+                    copy_strict_label=copy_strict_label,
+                    copy_soft_labels=copy_soft_labels,
+                    copy_soft_extra_labels=copy_soft_extra_labels,
                     RAW_LENS_MODE=RAW_LENS_MODE,
                     json_data=json_data,
                     json_data_prism=json_data_prism,
@@ -657,6 +695,11 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             top_k_verbose=TOP_K_VERBOSE,
             keep_residuals=False,
             out_dir=config.out_dir,
+            copy_soft_threshold=copy_soft_threshold,
+            copy_soft_window_ks=copy_soft_window_ks,
+            copy_strict_label=copy_strict_label,
+            copy_soft_labels=copy_soft_labels,
+            copy_soft_extra_labels=copy_soft_extra_labels,
             RAW_LENS_MODE=RAW_LENS_MODE,
             json_data=json_data,
             json_data_prism=json_data_prism,
@@ -704,6 +747,11 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             top_k_verbose=TOP_K_VERBOSE,
             keep_residuals=False,
             out_dir=config.out_dir,
+            copy_soft_threshold=copy_soft_threshold,
+            copy_soft_window_ks=copy_soft_window_ks,
+            copy_strict_label=copy_strict_label,
+            copy_soft_labels=copy_soft_labels,
+            copy_soft_extra_labels=copy_soft_extra_labels,
             RAW_LENS_MODE=RAW_LENS_MODE,
             json_data=json_data,
             json_data_prism=json_data_prism,
@@ -898,12 +946,28 @@ def run_single_model(model_id):
             _vprint(f"   device={dev} dtype={dtype} est_peak={debug_info.get('est_peak')}B available={debug_info.get('available')}B")
 
         # Run the experiment
+        raw_soft_ks = getattr(CLI_ARGS, "copy_soft_window_ks", [1, 2, 3])
+        if not isinstance(raw_soft_ks, (list, tuple, set)):
+            raw_soft_ks = [raw_soft_ks]
+        soft_window_ks_tuple = tuple(sorted({int(k) for k in raw_soft_ks if int(k) > 0}))
+        if not soft_window_ks_tuple:
+            base_k = int(getattr(CLI_ARGS, "copy_window_k", 1))
+            soft_window_ks_tuple = (max(1, base_k),)
+        raw_soft_thresh_extra = getattr(CLI_ARGS, "copy_soft_thresh_list", [])
+        if not isinstance(raw_soft_thresh_extra, (list, tuple, set)):
+            raw_soft_thresh_extra = [raw_soft_thresh_extra]
+        soft_thresh_extra_tuple = tuple(sorted({float(th) for th in raw_soft_thresh_extra}))
+
         cfg = ExperimentConfig(
             device=chosen_device,
             fp32_unembed=CLI_ARGS.fp32_unembed,
             keep_residuals=CLI_ARGS.keep_residuals,
             copy_threshold=CLI_ARGS.copy_threshold,
             copy_margin=CLI_ARGS.copy_margin,
+            copy_window_k=int(getattr(CLI_ARGS, "copy_window_k", 1)),
+            copy_soft_threshold=float(getattr(CLI_ARGS, "copy_soft_thresh", 0.50)),
+            copy_soft_window_ks=soft_window_ks_tuple,
+            copy_soft_thresholds_extra=soft_thresh_extra_tuple,
             out_dir=out_dir,
             self_test=CLI_ARGS.self_test,
         )
@@ -943,6 +1007,9 @@ CLI_ARGS = SimpleNamespace(
     quiet=False,
     prism=os.environ.get("LOGOS_PRISM", "auto"),
     prism_dir="prisms",
+    copy_soft_thresh=0.50,
+    copy_soft_window_ks=[1, 2, 3],
+    copy_soft_thresh_list=[],
 )
 
 if __name__ == "__main__":

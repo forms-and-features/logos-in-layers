@@ -9,6 +9,7 @@ from .collapse_rules import (
     detect_copy_collapse_id_subseq,
     is_pure_whitespace_or_punct,
     is_semantic_top1,
+    is_id_subseq,
 )
 from .metrics import compute_next_token_metrics
 
@@ -26,6 +27,11 @@ def compute_pure_next_token_info(
     final_dir_vec: torch.Tensor,
     copy_threshold: float,
     copy_margin: float,
+    copy_strict_label: str,
+    copy_soft_threshold: float,
+    copy_soft_window_ks: Iterable[int],
+    copy_soft_labels: Dict[int, str],
+    copy_soft_extra_labels: Dict[Tuple[int, float], str],
     entropy_collapse_threshold: float,
     decode_id_fn,
     ground_truth: str,
@@ -52,13 +58,14 @@ def compute_pure_next_token_info(
 
     # Update rolling window (per lens, per variant)
     top1_id = int(last_top_indices[0].item())
-    window_ids = window_manager.append_and_trim(lens_type, prompt_id, prompt_variant, top1_id)
+    window_manager.append_and_trim(lens_type, prompt_id, prompt_variant, top1_id)
+    window_strict = window_manager.get_window(lens_type, prompt_id, prompt_variant, window_manager.window_k)
 
     # Copy / semantic flags and metrics
     copy_collapse = detect_copy_collapse_id_subseq(
         last_logits,
         list(ctx_ids_list),
-        list(window_ids),
+        list(window_strict),
         copy_threshold=copy_threshold,
         copy_margin=copy_margin,
     )
@@ -71,6 +78,7 @@ def compute_pure_next_token_info(
     metrics = compute_next_token_metrics(
         last_full_probs, top1_id, final_probs_tensor, first_ans_token_id, topk_cum=5
     )
+    p_top1_value = metrics.get("p_top1", 0.0)
     # Prefer rank-based ID check when available; fallback to string match
     is_answer = (
         (metrics.get("answer_rank") == 1)
@@ -93,14 +101,46 @@ def compute_pure_next_token_info(
         except Exception:
             control_margin = None
 
+    # Soft copy detections (base + extra thresholds)
+    soft_hits: Dict[int, bool] = {}
+    for k in copy_soft_window_ks:
+        k_int = int(k)
+        label = copy_soft_labels.get(k_int)
+        if not label:
+            continue
+        window_soft = window_manager.get_window(lens_type, prompt_id, prompt_variant, k_int)
+        soft_hits[k_int] = (
+            len(window_soft) >= k_int
+            and is_id_subseq(window_soft, list(ctx_ids_list))
+            and float(p_top1_value) > float(copy_soft_threshold)
+        )
+
+    soft_extra_hits: Dict[Tuple[int, float], bool] = {}
+    for (k_int, th), label in copy_soft_extra_labels.items():
+        window_soft = window_manager.get_window(lens_type, prompt_id, prompt_variant, k_int)
+        soft_extra_hits[(int(k_int), float(th))] = (
+            len(window_soft) >= int(k_int)
+            and is_id_subseq(window_soft, list(ctx_ids_list))
+            and float(p_top1_value) > float(th)
+        )
+
     record_extra = {
         "copy_collapse": copy_collapse,
+        copy_strict_label: copy_collapse,
         "entropy_collapse": entropy_collapse,
         "is_answer": is_answer,
         **metrics,
         "cos_to_final": cos_to_final,
         "control_margin": control_margin,
     }
+    for k_int, hit in soft_hits.items():
+        label = copy_soft_labels.get(k_int)
+        if label and label not in record_extra:
+            record_extra[label] = hit
+    for (k_int, th), hit in soft_extra_hits.items():
+        label = copy_soft_extra_labels.get((k_int, th))
+        if label and label not in record_extra:
+            record_extra[label] = hit
 
     collected = {
         "layer": layer_out_idx,
@@ -109,6 +149,7 @@ def compute_pure_next_token_info(
         "is_answer": is_answer,
         "kl_to_final_bits": metrics["kl_to_final_bits"],
         "answer_rank": metrics["answer_rank"],
+        "copy_soft_hits": soft_hits,
     }
 
     dual_ctx = {

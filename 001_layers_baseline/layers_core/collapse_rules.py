@@ -2,6 +2,24 @@ import torch
 import string
 
 
+def _format_threshold_label(threshold: float) -> str:
+    # Format with up to 6 decimals, trimming trailing zeros for uniqueness without noise.
+    formatted = f"{threshold:.6f}".rstrip('0').rstrip('.')
+    if formatted == "-0":
+        formatted = "0"
+    return formatted
+
+
+def format_copy_strict_label(threshold: float) -> str:
+    """Return canonical CSV/JSON label for strict copy detector."""
+    return f"copy_strict@{_format_threshold_label(threshold)}"
+
+
+def format_copy_soft_label(window_k: int, threshold: float) -> str:
+    """Return canonical label for a soft copy detector at window size k."""
+    return f"copy_soft_k{int(window_k)}@{_format_threshold_label(threshold)}"
+
+
 def detect_copy_collapse(
     logits: torch.Tensor,
     prompt_token_ids: set,
