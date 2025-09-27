@@ -298,6 +298,28 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
 
     model = build_model(cfg.model_id, device, dtype)
 
+    # --- Auto-scale per-step work for large vocabularies --------------------
+    # Unembedding cost is O(V); scale down layers/positions when vocab is large
+    # using a sqrt rule so 128k≈0.5× of the 32k baseline.
+    try:
+        d_vocab = int(getattr(model.cfg, "d_vocab", None) or model.unembed.W_U.shape[-1])
+    except Exception:
+        d_vocab = None
+    baseline_vocab = 32_000
+    sqrt_scale = 1.0
+    if d_vocab and d_vocab > 0:
+        sqrt_scale = min(1.0, (baseline_vocab / float(d_vocab)) ** 0.5)
+    # Start from defaults and apply scaling with sensible floors
+    layers_per_step = max(8, int(round(LAYERS_PER_STEP * sqrt_scale)))
+    positions_per_seq = max(12, int(round(POSITIONS_PER_SEQ * sqrt_scale)))
+    # Don’t exceed the configured defaults
+    layers_per_step = min(layers_per_step, LAYERS_PER_STEP)
+    positions_per_seq = min(positions_per_seq, POSITIONS_PER_SEQ)
+    print(
+        f"[tuned-lens] schedule: d_vocab={d_vocab or 'unknown'} → layers_per_step={layers_per_step}, "
+        f"positions_per_seq={positions_per_seq} (baseline {LAYERS_PER_STEP}/{POSITIONS_PER_SEQ})"
+    )
+
     rank = cfg.rank if cfg.rank is not None else clip_rank(model.cfg.d_model)
     translator = TunedTranslator(
         num_layers=model.cfg.n_layers,
@@ -393,11 +415,11 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
             if trainable_layers <= 0:
                 raise RuntimeError("Translator has no trainable layers")
             candidate_layers = list(range(trainable_layers))
-            sample_k = min(LAYERS_PER_STEP, len(candidate_layers))
+            sample_k = min(layers_per_step, len(candidate_layers))
             sampled_layers = random.sample(candidate_layers, sample_k)
 
-            positions = sample_positions(SEQ_LEN, POSITIONS_PER_SEQ, *POSITION_RANGE).to(device=device)
-            batch_indices = torch.arange(batch_tokens.shape[0], device=device).unsqueeze(1).repeat(1, POSITIONS_PER_SEQ)
+            positions = sample_positions(SEQ_LEN, positions_per_seq, *POSITION_RANGE).to(device=device)
+            batch_indices = torch.arange(batch_tokens.shape[0], device=device).unsqueeze(1).repeat(1, positions_per_seq)
             pos_indices = positions.unsqueeze(0).repeat(batch_tokens.shape[0], 1)
 
             loss_acc = None
@@ -416,11 +438,11 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
                     unembed_ctx["W"],
                     unembed_ctx["b"],
                 )
-                logits_student = logits_student.reshape(batch_tokens.shape[0], POSITIONS_PER_SEQ, -1)
+                logits_student = logits_student.reshape(batch_tokens.shape[0], positions_per_seq, -1)
                 tau = translator.temperature(layer_idx)
                 logits_student = logits_student / tau.to(device=device, dtype=logits_student.dtype)
 
-                teacher = logits[batch_indices, pos_indices, :].reshape(batch_tokens.shape[0], POSITIONS_PER_SEQ, -1)
+                teacher = logits[batch_indices, pos_indices, :].reshape(batch_tokens.shape[0], positions_per_seq, -1)
                 ce = compute_ce(logits_student.reshape(-1, logits_student.shape[-1]), teacher.reshape(-1, teacher.shape[-1]))
 
                 reg = regularization_terms(translator, layer_idx)
@@ -480,7 +502,7 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
             "grad_accum": grad_accum,
             "effective_batch": effective_batch,
             "tokens_per_step": tokens_per_step,
-            "layers_sampled_per_step": LAYERS_PER_STEP,
+            "layers_sampled_per_step": layers_per_step,
             "use_temperature": translator_cpu.use_temperature,
             "temperature_eps": translator_cpu.temperature_eps if translator_cpu.use_temperature else None,
             "dataset": {
@@ -489,7 +511,7 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
                 "split": DATASET_SPLIT,
                 "revision": DATASET_REVISION,
                 "seq_len": SEQ_LEN,
-                "positions_per_seq": POSITIONS_PER_SEQ,
+                "positions_per_seq": positions_per_seq,
                 "position_fraction_range": POSITION_RANGE,
                 "content_hash": streamer.hasher.hexdigest(),
                 "samples_streamed": streamer.samples_seen,
