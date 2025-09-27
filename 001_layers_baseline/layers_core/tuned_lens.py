@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import json
+import math
 import torch
 import torch.nn as nn
 
@@ -188,6 +189,8 @@ class TunedTranslator(nn.Module):
         preconditioner: Optional[Preconditioner] = None,
         device: Optional[torch.device | str] = None,
         dtype: torch.dtype = torch.float32,
+        use_temperature: bool = True,
+        temperature_eps: float = 1e-3,
     ) -> None:
         super().__init__()
         if num_layers <= 0:
@@ -199,6 +202,8 @@ class TunedTranslator(nn.Module):
         self.d_model = int(d_model)
         self.rank = int(rank)
         self.final_identity = bool(final_identity)
+        self.use_temperature = bool(use_temperature)
+        self.temperature_eps = float(temperature_eps)
 
         layers = []
         for idx in range(self.num_layers):
@@ -231,6 +236,13 @@ class TunedTranslator(nn.Module):
             self.register_buffer("_precond_rotation", None)
 
         self.to(device=device, dtype=dtype)
+
+        if self.use_temperature:
+            init_val = math.log(math.exp(1.0 - self.temperature_eps) - 1.0)
+            init_tensor = torch.full((self.num_layers,), init_val, dtype=dtype, device=device)
+            self.log_tau = nn.Parameter(init_tensor)
+        else:
+            self.register_parameter("log_tau", None)
 
     # -- preconditioning --------------------------------------------------
 
@@ -280,6 +292,23 @@ class TunedTranslator(nn.Module):
         translated = self.layers[layer_idx](h_pre)
         return self._invert_precond(translated)
 
+    def temperature(self, layer_idx: int) -> torch.Tensor:
+        if (not self.use_temperature) or (self.final_identity and layer_idx == self.num_layers - 1):
+            device = None
+            if self.use_temperature and hasattr(self, "log_tau") and self.log_tau is not None:
+                device = self.log_tau.device
+            else:
+                layer = self.layers[layer_idx]
+                if getattr(layer, "c", None) is not None:
+                    device = layer.c.device
+                elif getattr(layer, "U", None) is not None and layer.U is not None:
+                    device = layer.U.device
+            if device is None:
+                device = torch.device("cpu")
+            return torch.tensor(1.0, device=device, dtype=torch.float32)
+        log_tau = self.log_tau[layer_idx]
+        return torch.nn.functional.softplus(log_tau) + self.temperature_eps
+
     # -- metadata ---------------------------------------------------------
 
     def metadata(self) -> Dict[str, Any]:
@@ -289,11 +318,16 @@ class TunedTranslator(nn.Module):
             "rank": self.rank,
             "final_identity": self.final_identity,
             "has_preconditioner": self.has_preconditioner(),
+            "use_temperature": self.use_temperature,
+            "temperature_eps": self.temperature_eps,
         }
         if self.has_preconditioner():
             meta["preconditioner"] = {
                 "rotation": self._precond_rotation is not None,
             }
+        if self.use_temperature:
+            temps = [float(self.temperature(idx).detach().cpu().item()) for idx in range(self.num_layers)]
+            meta["temperatures"] = temps
         return meta
 
 
@@ -396,10 +430,22 @@ def load_tuned_lens(
         preconditioner=precond_obj,
         device=device_arg,
         dtype=torch.float32,
+        use_temperature=bool(meta.get("use_temperature", True)),
+        temperature_eps=float(meta.get("temperature_eps", 1e-3)),
     )
 
     state = torch.load(weights_path, map_location=map_location or "cpu")
-    translator.load_state_dict(state)
+    load_result = translator.load_state_dict(state, strict=False)
+
+    allowed_missing = {"log_tau"}
+    missing = set(load_result.missing_keys)
+    unexpected = set(load_result.unexpected_keys)
+    if missing - allowed_missing:
+        raise RuntimeError(
+            f"Tuned lens state_dict is missing unexpected keys: {sorted(missing - allowed_missing)}"
+        )
+    if unexpected:
+        raise RuntimeError(f"Tuned lens state_dict has unexpected keys: {sorted(unexpected)}")
     if device_arg is not None:
         translator.to(device_arg)
     return translator, provenance
@@ -409,6 +455,8 @@ def clip_rank(d_model: int) -> int:
     """Utility implementing the default width-scaled rank schedule."""
 
     base = max(1, d_model // 32)
+    if d_model >= 4096:
+        base = max(base, 192)
     return int(max(64, min(base, 256)))
 
 

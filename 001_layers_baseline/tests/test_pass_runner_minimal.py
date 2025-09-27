@@ -279,7 +279,7 @@ def test_run_prompt_pass_with_prism_sidecar():
 def test_run_prompt_pass_with_tuned_spec_records():
     model = _ModelStub()
     norm_lens = NormLensAdapter()
-    translator = TunedTranslator(num_layers=model.cfg.n_layers, d_model=model.cfg.d_model, rank=1, final_identity=True)
+    translator = TunedTranslator(num_layers=model.cfg.n_layers, d_model=model.cfg.d_model, rank=1, final_identity=True, use_temperature=False)
     tuned_adapter = TunedLensAdapter(translator=translator, strict=False)
 
     W_U = torch.randn(model.cfg.d_model, 11, dtype=torch.float32)

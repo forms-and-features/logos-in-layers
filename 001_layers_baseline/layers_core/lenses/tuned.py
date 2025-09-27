@@ -58,6 +58,8 @@ class TunedLensAdapter(LensAdapter):
         translated = self.translator(X, layer_idx)
         X_cast = safe_cast_for_unembed(translated, W_U, force_fp32_unembed=force_fp32_unembed)
         logits = unembed_mm(X_cast, W_U, b_U, cache=cache)
+        tau = self.translator.temperature(layer_idx)
+        logits = logits / tau.to(device=logits.device, dtype=logits.dtype)
         return logits.float()
 
 __all__ = ["TunedLensAdapter"]

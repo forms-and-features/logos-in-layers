@@ -12,10 +12,11 @@ Training outline
 1. Stream text from ``HuggingFaceFW/fineweb-edu`` (subset ``CC-MAIN-2025-26``),
    tokenize with the model tokenizer, and pack into contiguous sequences of
    length 512.
-2. For each optimiser step (975 total) sample one post-block layer uniformly.
-   Use the cached post-block residuals at eight positions drawn uniformly from
-   the last 60–95% of the context. The model forward runs under ``no_grad`` –
-   only the translator parameters receive gradients.
+2. For each optimiser step (975 total) sample a handful of post-block layers
+   (default 8 without replacement). Use the cached post-block residuals at eight
+   positions drawn uniformly from the last 60–95% of the context. The model
+   forward runs under ``no_grad`` – only the translator (and per-layer
+   temperature scalars) receive gradients.
 3. Decode the translated residuals with the model's fp32 shadow unembedding and
    minimise the cross-entropy to the model's final distribution. Apply small
    L2 and depth-smoothness regularisation (weights = 1e-4).
@@ -78,6 +79,8 @@ POSITION_RANGE = (0.60, 0.95)  # relative slice of the context
 MICRO_BATCH = 8
 GRAD_ACCUM = 4
 EFFECTIVE_BATCH = MICRO_BATCH * GRAD_ACCUM
+
+LAYERS_PER_STEP = 8
 
 TOTAL_TOKENS = 16_000_000
 TOKENS_PER_STEP = SEQ_LEN * EFFECTIVE_BATCH
@@ -287,6 +290,7 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
         preconditioner=maybe_load_preconditioner(cfg.clean_model_name) if cfg.use_prism else None,
         device=device,
         dtype=torch.float32,
+        use_temperature=True,
     )
 
     auto_fp32_unembed = should_auto_promote_unembed(dtype)
@@ -322,6 +326,7 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
 
     for step_idx in range(TOTAL_STEPS):
         optimizer.zero_grad(set_to_none=True)
+        step_loss_values: List[float] = []
         for accum_idx in range(GRAD_ACCUM):
             try:
                 batch_tokens = next(seq_iter)
@@ -339,50 +344,59 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
                 logits = model(batch_tokens)
             detach_hooks(handles)
 
-            layer_max = translator.num_layers - 1 if translator.final_identity else translator.num_layers
-            layer_choices = list(range(layer_max)) if translator.final_identity else list(range(translator.num_layers))
-            if not layer_choices:
+            total_layers = translator.num_layers
+            trainable_layers = total_layers - 1 if translator.final_identity else total_layers
+            if trainable_layers <= 0:
                 raise RuntimeError("Translator has no trainable layers")
-            layer_idx = random.choice(layer_choices)
-
-            resid_key = f"blocks.{layer_idx}.hook_resid_post"
-            resid = residual_cache.pop(resid_key).to(device=device)
-            residual_cache.clear()
-            norm_module = get_correct_norm_module(model, layer_idx, probe_after_block=True)
-            resid_norm = apply_norm_or_skip(resid, norm_module)
+            candidate_layers = list(range(trainable_layers))
+            sample_k = min(LAYERS_PER_STEP, len(candidate_layers))
+            sampled_layers = random.sample(candidate_layers, sample_k)
 
             positions = sample_positions(SEQ_LEN, POSITIONS_PER_SEQ, *POSITION_RANGE).to(device=device)
             batch_indices = torch.arange(batch_tokens.shape[0], device=device).unsqueeze(1).repeat(1, POSITIONS_PER_SEQ)
             pos_indices = positions.unsqueeze(0).repeat(batch_tokens.shape[0], 1)
 
-            resid_selected = resid_norm[batch_indices, pos_indices, :]  # (B, P, d)
-            resid_flat = resid_selected.reshape(-1, resid_selected.shape[-1])
+            loss_acc = None
+            for layer_idx in sampled_layers:
+                resid_key = f"blocks.{layer_idx}.hook_resid_post"
+                resid = residual_cache.pop(resid_key).to(device=device)
+                norm_module = get_correct_norm_module(model, layer_idx, probe_after_block=True)
+                resid_norm = apply_norm_or_skip(resid, norm_module)
 
-            translated = translator(resid_flat, layer_idx)
-            logits_student = unembed_mm(
-                safe_cast_for_unembed(translated, unembed_ctx["W"], force_fp32_unembed=True),
-                unembed_ctx["W"],
-                unembed_ctx["b"],
-            )
-            logits_student = logits_student.reshape(batch_tokens.shape[0], POSITIONS_PER_SEQ, -1)
+                resid_selected = resid_norm[batch_indices, pos_indices, :]
+                resid_flat = resid_selected.reshape(-1, resid_selected.shape[-1])
 
-            teacher = logits[batch_indices, pos_indices, :].reshape(batch_tokens.shape[0], POSITIONS_PER_SEQ, -1)
-            ce = compute_ce(logits_student.reshape(-1, logits_student.shape[-1]), teacher.reshape(-1, teacher.shape[-1]))
+                translated = translator(resid_flat, layer_idx)
+                logits_student = unembed_mm(
+                    safe_cast_for_unembed(translated, unembed_ctx["W"], force_fp32_unembed=True),
+                    unembed_ctx["W"],
+                    unembed_ctx["b"],
+                )
+                logits_student = logits_student.reshape(batch_tokens.shape[0], POSITIONS_PER_SEQ, -1)
+                tau = translator.temperature(layer_idx)
+                logits_student = logits_student / tau.to(device=device, dtype=logits_student.dtype)
 
-            reg = regularization_terms(translator, layer_idx)
-            loss = ce + reg
+                teacher = logits[batch_indices, pos_indices, :].reshape(batch_tokens.shape[0], POSITIONS_PER_SEQ, -1)
+                ce = compute_ce(logits_student.reshape(-1, logits_student.shape[-1]), teacher.reshape(-1, teacher.shape[-1]))
+
+                reg = regularization_terms(translator, layer_idx)
+                loss_layer = ce + reg
+                loss_acc = loss_layer if loss_acc is None else loss_acc + loss_layer
+
+            residual_cache.clear()
+
+            loss = loss_acc / sample_k
             loss.backward()
-            current_loss = float(loss.detach().cpu())
-            meter_loss.append(current_loss)
+            step_loss_values.append(float(loss.detach().cpu()))
 
         optimizer.step()
         scheduler.step()
 
-        if meter_loss:
-            recent = meter_loss[-GRAD_ACCUM:] if len(meter_loss) >= GRAD_ACCUM else meter_loss[-1:]
-            avg_recent_loss = float(np.mean(recent))
-        else:
-            avg_recent_loss = float('nan')
+        mean_step_loss = float(np.mean(step_loss_values)) if step_loss_values else float('nan')
+        meter_loss.append(mean_step_loss)
+
+        recent = meter_loss[-LOG_EVERY:] if len(meter_loss) >= LOG_EVERY else meter_loss
+        avg_recent_loss = float(np.mean(recent)) if recent else float('nan')
 
         if (step_idx % LOG_EVERY == 0) or (step_idx == TOTAL_STEPS - 1):
             elapsed = max(time.time() - start_time, 1e-6)
@@ -422,6 +436,9 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
             "grad_accum": GRAD_ACCUM,
             "effective_batch": EFFECTIVE_BATCH,
             "tokens_per_step": TOKENS_PER_STEP,
+            "layers_sampled_per_step": LAYERS_PER_STEP,
+            "use_temperature": translator_cpu.use_temperature,
+            "temperature_eps": translator_cpu.temperature_eps if translator_cpu.use_temperature else None,
             "dataset": {
                 "repo_id": DATASET_REPO,
                 "name": DATASET_NAME,

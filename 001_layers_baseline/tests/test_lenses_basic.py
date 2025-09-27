@@ -171,6 +171,7 @@ def _run_tuned_pair(model: nn.Module, layer_idx: int) -> None:
         d_model=d_model,
         rank=2,
         final_identity=False,
+        use_temperature=False,
     )
     layer = translator.layers[layer_idx]
     layer.U.data.normal_(mean=0.0, std=0.1)
@@ -209,7 +210,7 @@ def _run_tuned_pair(model: nn.Module, layer_idx: int) -> None:
 
 def test_tuned_lens_adapter_prenorm_preblock():
     model = ModelStub([PreNormBlock(8), PreNormBlock(8)])
-    translator = TunedTranslator(num_layers=2, d_model=8, rank=2)
+    translator = TunedTranslator(num_layers=2, d_model=8, rank=2, use_temperature=False)
     adapter = TunedLensAdapter(translator=translator, strict=False)
     resid = torch.randn(1, 4, 8)
     out = adapter.forward(
@@ -232,7 +233,7 @@ def test_tuned_lens_adapter_prenorm_postblock():
 
 def test_tuned_lens_adapter_postnorm_preblock():
     model = ModelStub([PostNormBlock(8), PostNormBlock(8)])
-    translator = TunedTranslator(num_layers=2, d_model=8, rank=2)
+    translator = TunedTranslator(num_layers=2, d_model=8, rank=2, use_temperature=False)
     adapter = TunedLensAdapter(translator=translator, strict=False)
     resid = torch.randn(1, 4, 8)
     out = adapter.forward(
@@ -255,7 +256,7 @@ def test_tuned_lens_adapter_postnorm_postblock():
 
 def test_tuned_lens_missing_head_non_strict_returns_none():
     model = ModelStub([PreNormBlock(8), PreNormBlock(8)])
-    translator = TunedTranslator(num_layers=2, d_model=8, rank=2)
+    translator = TunedTranslator(num_layers=2, d_model=8, rank=2, use_temperature=False)
     adapter = TunedLensAdapter(translator=translator, strict=True)
     resid = torch.randn(1, 4, 8)
     with pytest.raises(KeyError):
