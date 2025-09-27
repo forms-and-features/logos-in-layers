@@ -11,6 +11,7 @@ Note: this JSON is a compact version; the bulky per-token records live only in t
 Also read `diagnostics.last_layer_consistency` (last‑layer head calibration): `{ kl_to_final_bits, top1_agree, p_top1_lens, p_top1_model, p_answer_lens, answer_rank_lens, temp_est, kl_after_temp_bits, cfg_transform, kl_after_transform_bits, warn_high_last_layer_kl }`.
 
 If present, also read `diagnostics.prism_summary` (Prism sidecar calibration): `{ mode, artifact_path, present, compatible, k, layers, error }`.
+If present, also read the `tuned_lens` block for provenance/diagnostics (path, summaries, provenance.translator/use_temperature/temperatures).
 
 Use the `gold_answer` block for ID‑level alignment: `{ string, pieces, first_id, answer_ids, variant }`.
 The `is_answer` flag and `p_answer`/`answer_rank` are computed using `first_id` (robust to leading‑space/multi‑piece tokenization).
@@ -27,6 +28,11 @@ The pure-next-token CSV adds boolean flags `copy_collapse`, `copy_strict@τ`, an
 If present, include the Prism sidecar CSVs for calibration comparison:
 001_layers_baseline/run-latest/output-MODEL-records-prism.csv
 001_layers_baseline/run-latest/output-MODEL-pure-next-token-prism.csv
+
+If present, also include the Tuned‑Lens sidecar CSVs (same schema) for comparison:
+001_layers_baseline/run-latest/output-MODEL-records-tuned.csv
+001_layers_baseline/run-latest/output-MODEL-pure-next-token-tuned.csv
+The pure CSVs include `teacher_entropy_bits` (entropy of the teacher’s final distribution at NEXT). Use it to quantify entropy drift: `(entropy − teacher_entropy_bits)`.
 
 - Parameters (copy-collapse): copy_threshold = 0.95, copy_margin = 0.10
 
@@ -48,6 +54,13 @@ Cautions
 - If `raw_lens_check.summary.lens_artifact_risk` is `high` or `first_norm_only_semantic_layer` is present, treat any pre‑final “early semantics” cautiously and prefer rank milestones (`first_rank_le_{10,5,1}`) over absolute probabilities; report the risk tier and `max_kl_norm_vs_raw_bits`.
 - Cosine is a within‑model trajectory only; if citing thresholds (e.g., cos_to_final ≥ 0.2/0.4/0.6), include the layer indices from the pure CSV, and avoid cross‑family comparisons of absolute cosine values.
 - When “top‑1” does not refer to the answer (pre‑semantic layers), label it as generic top‑1 (not `p_answer`). Use `p_answer`/`answer_rank` for semantic claims and always include the layer index when citing milestones (KL, cosine, rank, probabilities).
+
+Tuned‑Lens usage (if present)
+- Do not “choose” a single lens. Present baseline (norm) and tuned side‑by‑side where relevant.
+- Report ΔKL medians at depth percentiles (e.g., L≈{25,50,75}%): `Δ = KL_norm − KL_tuned` from the pure CSVs.
+- Check last‑layer agreement (JSON `diagnostics.last_layer_consistency.kl_after_temp_bits` ≈ 0). Quote the line.
+- Entropy drift: compare `entropy` vs `teacher_entropy_bits` at mid‑depths; note sign/magnitude.
+- Rank earliness: treat as a per‑probe observation only (suite‑level metric elsewhere). If tuned does not improve `first_rank≤{10,5,1}`, simply report both.
 
 1. Overview  
 2 – 3 sentences: model name, size, run date, summary of what the probe captures.

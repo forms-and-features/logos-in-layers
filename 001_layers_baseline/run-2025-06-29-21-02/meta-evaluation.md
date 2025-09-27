@@ -55,6 +55,13 @@ Use your knowledge of cutting-edge LLM research. Be thorough and specific. Make 
 
 We are analysing layer-by-layer logit-lens sweeps over four open-weight base LLMs (Llama-3-8B, Mistral-7B-v0.1, Gemma-2-9B, Qwen-3-8B).
 
+Tuned‑Lens note (if present in this run)
+- Some newer runs include Tuned‑Lens sidecars (`*-records-tuned.csv`, `*-pure-next-token-tuned.csv`) and a `tuned_lens` block in each JSON. If these are present in the referenced folder, evaluate them alongside the baseline:
+  - Report ΔKL medians at depth percentiles (L≈{25,50,75}%).
+  - Check last‑layer agreement (`diagnostics.last_layer_consistency.kl_after_temp_bits` ≈ 0).
+  - Use `teacher_entropy_bits` in the pure CSV to comment on entropy drift at mid‑depths.
+  - Do not “switch” lenses; present both. Treat rank‑earliness as a per‑probe observation (suite‑level claims belong in a separate summary).
+
 Known limitations of the approach that we accepted in this iteration (but suggestions are appreciated):
 
 The script:
@@ -184,5 +191,4 @@ These steps keep the project lightweight but move it from anecdotal layer counts
 [4]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-2025-06-29-21-02/evaluation-gemma-2-9b.md "raw.githubusercontent.com"
 [5]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-2025-06-29-21-02/evaluation-Qwen3-8B.md "raw.githubusercontent.com"
 [6]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-2025-06-29-21-02/evaluation-cross-model.md "raw.githubusercontent.com"
-
 

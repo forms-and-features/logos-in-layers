@@ -54,6 +54,11 @@ If present for a model, include Prism sidecars for calibration comparison:
 001_layers_baseline/run-latest/output-<model>-records-prism.csv
 001_layers_baseline/run-latest/output-<model>-pure-next-token-prism.csv
 
+If present for a model, also include Tuned‑Lens sidecars (same schema):
+001_layers_baseline/run-latest/output-<model>-records-tuned.csv
+001_layers_baseline/run-latest/output-<model>-pure-next-token-tuned.csv
+The pure CSVs also include `teacher_entropy_bits`; use it to report entropy drift `(entropy − teacher_entropy_bits)` at representative depths.
+
 Final-row caveat (head calibration): When comparing final rows across models, prefer rank/KL thresholds. If a model’s JSON has `warn_high_last_layer_kl = true`, treat final probability differences as head‑calibration artefacts and do not infer regressions. Known pattern: the Gemma family often shows non‑zero last‑layer KL due to a calibrated final head; be on the lookout for similar signatures in other families. If `raw_lens_check.summary.lens_artifact_risk` is `high` or `first_norm_only_semantic_layer` is present, downgrade confidence in pre‑final “early semantics” and lean on rank milestones over probabilities.
 
 Gold‑token alignment caveat: Verify `gold_alignment` across models. For any model with `unresolved`, flag reduced comparability, rely on rank thresholds (`first_rank_le_{1,5,10}`), and avoid absolute probability claims. Stylistic ablation caveat: Filter depth summaries to `prompt_id = pos`, `prompt_variant = orig`. Compare `ΔL_sem`, `ΔL_copy`, and `ΔL_copy_soft[k]` (optionally normalized by `n_layers`); treat large positive shifts as stronger stylistic‑cue sensitivity and keep comparisons within-family when in doubt. When “top‑1” does not refer to the answer, label it as generic top‑1 (not `p_answer`), and include layer indices when citing any milestones (KL, cosine, rank, probabilities).
@@ -142,6 +147,12 @@ STYLE GUIDELINES
 - Cite external papers only with DOI/arXiv; skip if unsure.  
 - Avoid normative language; focus on actionable analysis.
  - Ground every numeric milestone (layers, KL, cosine, probabilities) with a quoted CSV/JSON line from the model being discussed, and include the layer index. Do not reuse numbers across models.
+
+Tuned‑Lens guidance (multi‑model)
+- Present both baseline (norm) and tuned summaries for each model when tuned artifacts exist.
+- For each model, report ΔKL medians at depth percentiles (e.g., L≈{25,50,75}%) and last‑layer agreement (JSON `diagnostics.last_layer_consistency.kl_after_temp_bits`).
+- Entropy drift: for each model, summarize `(entropy − teacher_entropy_bits)` at one mid‑depth layer.
+- Rank earliness (suite‑level intent): do not assert “earlier” across models based on a single probe; instead, note whether tuned rank milestones appear earlier/equal/later. Prefer per‑model notes over aggregate claims unless you have a prompt suite.
 
 Briefly relate a model's collapse-depth (Δ) to its public factual-reasoning scores (e.g. MMLU, ARC-C) or to whether it is base vs. instruction-tuned; see the following table for scores:
 
