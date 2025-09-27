@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Iterable, Optional, Tuple
+import math
 
 import torch
 
@@ -124,6 +125,12 @@ def compute_pure_next_token_info(
             and float(p_top1_value) > float(th)
         )
 
+    # Teacher entropy (final distribution at the NEXT position), in bits
+    try:
+        teacher_entropy_bits = float(-(final_probs_tensor * (final_probs_tensor + 1e-30).log()).sum().item() / math.log(2))
+    except Exception:
+        teacher_entropy_bits = None
+
     record_extra = {
         "copy_collapse": copy_collapse,
         copy_strict_label: copy_collapse,
@@ -133,6 +140,8 @@ def compute_pure_next_token_info(
         "cos_to_final": cos_to_final,
         "control_margin": control_margin,
     }
+    if teacher_entropy_bits is not None:
+        record_extra["teacher_entropy_bits"] = teacher_entropy_bits
     for k_int, hit in soft_hits.items():
         label = copy_soft_labels.get(k_int)
         if label and label not in record_extra:
