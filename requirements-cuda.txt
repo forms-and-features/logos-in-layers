@@ -3,6 +3,12 @@ transformers>=4.51
 accelerate==0.27.2
 transformer-lens==2.16.1
 datasets>=3.1.0
-bitsandbytes==0.43.2
+# Install the GPU-specific bitsandbytes wheel matching your CUDA minor version.
+# For CUDA 12.8 (common on H200/B200 with recent PyTorch builds):
+bitsandbytes-cuda128==0.43.2
+# If your PyTorch CUDA is different, replace the suffix accordingly, e.g.:
+# bitsandbytes-cuda121==0.43.2  # CUDA 12.1
+# bitsandbytes-cuda124==0.43.2  # CUDA 12.4
+# bitsandbytes-cuda126==0.43.2  # CUDA 12.6
 tqdm==4.67.1
 pytest>=8.4.2
