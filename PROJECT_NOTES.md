@@ -451,7 +451,20 @@ def collapse_soft_k(k):
 
 ### 1.12. Integrate a Tuned Lens (translator‑in‑d)
 
-See: TUNED_LENS_PLAN.md
+See: `001_layers_baseline/TUNED_LENS_PLAN.md`
+
+**✅ IMPLEMENTATION STATUS: COMPLETED (2025‑09‑27)**
+
+- Training fitter implemented with multi‑layer updates, per‑layer temperatures, width‑scaled rank (k up to 256), 32M‑token budget, and vocab‑aware auto‑scaling.
+- Large‑vocab runtime optimizations: compute teacher logits only at sampled positions; allow fp16/bf16 unembed for `d_vocab ≥ 100k`.
+- Runtime adapter loads translators on the target device, applies per‑layer temperature, and enforces last‑layer identity; last‑layer consistency check passes (near‑zero KL to model head).
+- Outputs: tuned sidecar CSVs written alongside baseline; pure CSV now includes `teacher_entropy_bits` for drift checks.
+- Results snapshot (single‑probe; see plan §15/§16 for details):
+  - Mistral‑7B: large ΔKL improvements across mid‑depths; earlier `KL≤1.0` crossing; no copy‑collapse; last‑layer agreement passes.
+  - Llama‑3‑8B (128k vocab): large ΔKL gains; rank‑earliness did not improve on the single probe; last‑layer agreement passes; entropy drift behaves as expected mid‑stack.
+
+Notes
+- “Gates” (to prefer tuned in summaries) remain an evaluator‑level policy and are intentionally kept out of the probe script.
 
 #### Wrap‑up
 

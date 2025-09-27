@@ -684,3 +684,15 @@ These figures assume 32M tokens/model, prefetch enabled, and the auto‑scaled s
 2) Retrain/evaluate additional models with the auto‑scaled schedule; prioritize 8–14B sizes where hardware fit and cost are favorable.
 3) If needed for 128k–256k vocabs, implement top‑K teacher CE (union of per‑position teacher top‑K, K≈4–8k) to further cut unembed cost while preserving rank/top‑k signals; validate entropy impact.
 4) Optional: add fair scalar temperature calibration for the norm‑lens when reporting (off by default) to isolate translator vs calibration effects in gates.
+
+---
+
+## 16) Brief Findings Snapshot (2025‑09‑27)
+
+- Mistral‑7B (local first run vs CUDA retrain):
+  - ΔKL medians at depth percentiles improved from ~0.09 bits (early draft) to multi‑bit gains after multi‑layer updates and temps (e.g., L8/L16/L24: +4.03/+3.74/+7.09 bits). First `KL≤1.0` moved earlier by ~6 layers; no copy‑collapse; last‑layer agreement near‑zero KL.
+- Llama‑3‑8B (H200, 32M tokens, auto‑scaled 12 layers × 12 positions):
+  - Large ΔKL gains across the stack (e.g., L8/L16/L24: +4.20/+4.31/+3.97 bits). Rank‑earliness did not improve on the single Berlin probe; last‑layer agreement near‑zero KL. Mid‑stack tuned entropy remains higher than teacher (as expected when the teacher is already low‑entropy on this prompt).
+- Engineering improvements landed since the first draft:
+  - Vocab‑aware auto‑scaling; teacher logits only at sampled positions; fp16/bf16 unembed for very large vocabs; UTC finish‑time logging; teacher_entropy_bits emitted in pure CSVs.
+- Policy: gating (Gate‑A/B/C/D) remains evaluator‑level; the probe emits both tuned and baseline sidecars without making the selection.
