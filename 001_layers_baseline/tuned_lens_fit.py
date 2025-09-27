@@ -354,6 +354,17 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
     start_time = time.time()
     LOG_EVERY = 25
 
+    def _format_eta(seconds: float) -> str:
+        secs = int(max(0, round(seconds)))
+        h = secs // 3600
+        m = (secs % 3600) // 60
+        s = secs % 60
+        if h > 0:
+            return f"{h}h {m:02d}m {s:02d}s"
+        if m > 0:
+            return f"{m}m {s:02d}s"
+        return f"{s}s"
+
     for step_idx in range(total_steps):
         optimizer.zero_grad(set_to_none=True)
         step_loss_values: List[float] = []
@@ -443,7 +454,7 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
                 f"loss={avg_recent_loss:.4f} "
                 f"tokens={tokens_done/1e6:.2f}M "
                 f"throughput={tok_per_sec:,.0f} tok/s "
-                f"ETA={eta_seconds/3600:.2f}h"
+                f"ETA={_format_eta(eta_seconds)}"
             )
 
     translator.eval()
