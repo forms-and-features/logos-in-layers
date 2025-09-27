@@ -617,3 +617,70 @@ This section records the first end‑to‑end tuned‑lens run on Mistral‑7B (
 1) Implement multi‑layer updates + temperature + rank policy; retrain Mistral‑7B at 16M tokens.
 2) Evaluate on the prompt suite; if Gate‑A is still borderline at 75% depth, consider `L_sample = all` for GPUs or increasing tokens to 24M for that model only.
 3) If gates pass, proceed to train tuned lenses for the remaining mid‑sized models; defer giants until hardware or sharding support is available.
+
+---
+
+## 15) Second Iteration (H200 CUDA) — Results and Runtime Adjustments
+
+This section documents the second end‑to‑end pass after implementing §14.3 and adding additional runtime optimizations for large vocabularies. The run used an H200‑class GPU with the updated fitter defaults and 32M tokens per model.
+
+### 15.1 Changes implemented in this iteration
+
+- Multi‑layer updates: sample `L_sample=24` layers/step (identity at last layer) and average losses over sampled layers and positions.
+- Per‑layer temperature: learn τℓ; last layer fixed to τ=1.0. Runtime divides tuned logits by τℓ.
+- Capacity: default rank schedule now yields `k=256` for `d_model ≥ 4096` (was 128; interim 192).
+- Data budget: increased to 32M tokens (total_steps doubled to 1954 with effective batch 32×512).
+- Throughput UX: human‑readable ETA; periodic tokens/sec logging.
+- CUDA path: larger micro‑batch (32) and grad‑accum=1; pinned H2D and non‑blocking copies; keep tokenizer parallelism on by prefetching before tokenizer/model construction.
+- Vocab‑aware auto‑scaling: scale per‑step work by `√(32k / d_vocab)` with floors (`layers ≥ 8`, `positions ≥ 12`); record actual schedule in provenance.
+- Large‑vocab acceleration:
+  - Build teacher logits only at sampled positions via final post‑block residual + correct final norm + tied unembedding (no full B×T×V logits tensor).
+  - For `d_vocab ≥ 100k`, allow fp16/bf16 unembed (do not force fp32) to speed the large GEMMs; otherwise keep fp32 unembed for stability.
+
+### 15.2 Mistral‑7B results (Germany→Berlin probe; tuned lens trained on CUDA)
+
+- KL improvements (medians at depth percentiles; bits):
+  - 25% (L8): ΔKL = +4.03 (norm 10.26 → tuned 6.22)
+  - 50% (L16): ΔKL = +3.74 (norm 10.33 → tuned 6.58)
+  - 75% (L24): ΔKL = +7.09 (norm 9.05 → tuned 1.97)
+- Earliness (single probe diagnostics):
+  - First KL ≤ 1.0 layer: norm L32 → tuned L26 (earlier by 6 layers).
+  - First rank ≤ {10,5,1}: norm L{20,22,24} vs tuned L{22,24,25} (rank‑based earliness did not improve on this prompt).
+- Sanity checks:
+  - Last layer identity holds: `kl_after_temp_bits ≈ 3.9e‑06`; tuned last post‑block decoded ≈ model head.
+  - No copy‑collapse flags at NEXT token across layers.
+
+Interpretation: Gate‑A and Gate‑C are clearly satisfied on this probe; Gate‑B requires suite evaluation across prompts per §14.4.
+
+### 15.3 Large‑vocab models (Llama‑3‑8B, Qwen‑3, Gemma‑2)
+
+- Observation: with `d_vocab ≈ 128k–256k`, naive per‑step cost was dominated by O(V) unembedding, yielding ~2.1–2.4k tok/s on Llama‑3‑8B even after multi‑layer sampling.
+- Remedies applied:
+  - Auto‑scaled schedule (e.g., Llama‑3‑8B: 24/16 → 12/12).
+  - Teacher logits computed only at sampled positions (remove B×T×V cost).
+  - fp16/bf16 unembed for `d_vocab ≥ 100k`.
+- Result: throughput rose into the ~3.5k tok/s range on H200 (exact figure depends on clocks). Further gains are available via top‑K CE distillation if needed (not implemented yet).
+
+### 15.4 Runtime and cost expectations (H200)
+
+- 32k vocab, 7–8B class (Mistral‑7B): ~0.66 h
+- 128k vocab, 8B class (Llama‑3‑8B): ~2.5–3.5 h after optimizations.
+- 152k vocab, 8/14B class (Qwen‑3‑8B/14B): ~3.5 h / ~6 h after optimizations.
+- 256k vocab, 9–27B class (Gemma‑2‑9B/27B): ~6–7 h / ~18–20 h after optimizations.
+- Yi‑34B (32–64k): ~3–6 h depending on tokenizer.
+- 70B on single H200 likely does not fit; use B200 or sharded multi‑GPU.
+
+These figures assume 32M tokens/model, prefetch enabled, and the auto‑scaled schedule. See §11 for general runtime/storage notes.
+
+### 15.5 Risks, regressions, and mitigations
+
+- Rank‑based earliness may not improve on every prompt even when KL decreases substantially; evaluate Gate‑B on a prompt suite as intended.
+- fp16 unembed for very large `d_vocab` slightly changes calibration tails; per‑layer temperatures largely compensate. Validate Gate‑C and entropy drift on the suite.
+- Auto‑scaled layers/positions reduce per‑step coverage for large vocabs; we kept TOTAL_TOKENS at 32M to preserve data volume. If a model is borderline on Gate‑A/B, prefer increasing tokens over increasing layers/positions (to avoid re‑introducing the O(V) bottleneck).
+
+### 15.6 Next actions
+
+1) Add prompt‑suite evaluator to compute Gate‑A/B medians and shifts; store suite summaries in the run JSON and TL provenance.
+2) Retrain/evaluate additional models with the auto‑scaled schedule; prioritize 8–14B sizes where hardware fit and cost are favorable.
+3) If needed for 128k–256k vocabs, implement top‑K teacher CE (union of per‑position teacher top‑K, K≈4–8k) to further cut unembed cost while preserving rank/top‑k signals; validate entropy impact.
+4) Optional: add fair scalar temperature calibration for the norm‑lens when reporting (off by default) to isolate translator vs calibration effects in gates.
