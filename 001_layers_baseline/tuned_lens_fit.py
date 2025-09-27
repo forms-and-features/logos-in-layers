@@ -279,6 +279,23 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
     device = cfg.device
     dtype = cfg.dtype
 
+    # Ensure parallel tokenization stays enabled even if the process forks later
+    # (datasets prefetch/generation). This avoids the library's safety auto-disable.
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "true")
+
+    # Optionally prefetch shards before constructing the tokenizer/model to avoid
+    # the "fork after tokenizers" warning and keep tokenizers parallelism on.
+    if cfg.prefetch_dataset:
+        print("[tuned-lens] Prefetching dataset shards locally (this may take a while)…")
+        _ = load_dataset(
+            DATASET_REPO,
+            name=DATASET_NAME,
+            split=DATASET_SPLIT,
+            revision=DATASET_REVISION,
+            streaming=False,
+            cache_dir=cfg.cache_dir,
+        )
+
     model = build_model(cfg.model_id, device, dtype)
 
     rank = cfg.rank if cfg.rank is not None else clip_rank(model.cfg.d_model)
@@ -304,6 +321,18 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
         "b": None if b_U is None else b_U.to(device=device, dtype=torch.float32),
     }
 
+    # Device-aware batching: on CUDA we can use larger micro-batches and reduce
+    # grad accumulation to lower per-step Python/launch overhead.
+    micro_batch = MICRO_BATCH
+    grad_accum = GRAD_ACCUM
+    if device.type == "cuda":
+        micro_batch = 32
+        grad_accum = 1
+    effective_batch = micro_batch * grad_accum
+    tokens_per_step = SEQ_LEN * effective_batch
+    total_steps = math.ceil(TOTAL_TOKENS / tokens_per_step)
+    warmup_steps = math.ceil(0.1 * total_steps)
+
     streamer = PackedSequenceStreamer(
         tokenizer=model.tokenizer,
         seq_len=SEQ_LEN,
@@ -312,29 +341,33 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
         split=DATASET_SPLIT,
         revision=DATASET_REVISION,
         cache_dir=cfg.cache_dir,
-        prefetch=cfg.prefetch_dataset,
+        # We've prefetched already (if requested) before building the model.
+        prefetch=False,
     )
-    seq_iter = iter(microbatch_iterator(streamer, MICRO_BATCH))
+    seq_iter = iter(microbatch_iterator(streamer, micro_batch))
 
     optimizer = torch.optim.AdamW(translator.parameters(), lr=LR, betas=BETAS, weight_decay=WEIGHT_DECAY)
-    scheduler = CosineAnnealingLR(optimizer, T_max=TOTAL_STEPS, eta_min=0.0)
+    scheduler = CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=0.0)
 
     translator.train()
     meter_loss: List[float] = []
     start_time = time.time()
     LOG_EVERY = 25
 
-    for step_idx in range(TOTAL_STEPS):
+    for step_idx in range(total_steps):
         optimizer.zero_grad(set_to_none=True)
         step_loss_values: List[float] = []
         for accum_idx in range(GRAD_ACCUM):
             try:
                 batch_tokens = next(seq_iter)
             except StopIteration:
-                seq_iter = iter(microbatch_iterator(streamer, MICRO_BATCH))
+                seq_iter = iter(microbatch_iterator(streamer, micro_batch))
                 batch_tokens = next(seq_iter)
 
-            batch_tokens = batch_tokens.to(device=device)
+            if device.type == "cuda":
+                batch_tokens = batch_tokens.pin_memory().to(device=device, non_blocking=True)
+            else:
+                batch_tokens = batch_tokens.to(device=device)
 
             # Attach residual hooks
             residual_cache: Dict[str, torch.Tensor] = {}
@@ -401,12 +434,12 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
         if (step_idx % LOG_EVERY == 0) or (step_idx == TOTAL_STEPS - 1):
             elapsed = max(time.time() - start_time, 1e-6)
             steps_done = step_idx + 1
-            tokens_done = steps_done * TOKENS_PER_STEP
+            tokens_done = steps_done * tokens_per_step
             tok_per_sec = tokens_done / elapsed
-            remaining_steps = TOTAL_STEPS - steps_done
+            remaining_steps = total_steps - steps_done
             eta_seconds = remaining_steps * (elapsed / steps_done)
             print(
-                f"[tuned-lens] step {steps_done}/{TOTAL_STEPS} "
+                f"[tuned-lens] step {steps_done}/{total_steps} "
                 f"loss={avg_recent_loss:.4f} "
                 f"tokens={tokens_done/1e6:.2f}M "
                 f"throughput={tok_per_sec:,.0f} tok/s "
@@ -430,12 +463,12 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
         "translator": translator_cpu.metadata(),
         "training": {
             "seed": SEED,
-            "total_steps": TOTAL_STEPS,
-            "warmup_steps": WARMUP_STEPS,
-            "micro_batch": MICRO_BATCH,
-            "grad_accum": GRAD_ACCUM,
-            "effective_batch": EFFECTIVE_BATCH,
-            "tokens_per_step": TOKENS_PER_STEP,
+            "total_steps": total_steps,
+            "warmup_steps": warmup_steps,
+            "micro_batch": micro_batch,
+            "grad_accum": grad_accum,
+            "effective_batch": effective_batch,
+            "tokens_per_step": tokens_per_step,
             "layers_sampled_per_step": LAYERS_PER_STEP,
             "use_temperature": translator_cpu.use_temperature,
             "temperature_eps": translator_cpu.temperature_eps if translator_cpu.use_temperature else None,
