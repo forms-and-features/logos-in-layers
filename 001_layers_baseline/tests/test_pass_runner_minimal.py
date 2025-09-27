@@ -11,11 +11,12 @@ import torch
 import torch.nn as nn
 
 from layers_core.passes import run_prompt_pass
-from layers_core.lenses import NormLensAdapter
+from layers_core.lenses import NormLensAdapter, TunedLensAdapter
 from layers_core.windows import WindowManager
 from layers_core.prism import WhitenStats
 from layers_core.contexts import UnembedContext, PrismContext
 from layers_core.collapse_rules import format_copy_strict_label, format_copy_soft_label
+from layers_core.tuned_lens import TunedTranslator
 
 COPY_SOFT_WINDOW_KS = (1, 2, 3)
 COPY_SOFT_THRESHOLD = 0.33
@@ -275,6 +276,65 @@ def test_run_prompt_pass_with_prism_sidecar():
     assert any(rec.get("layer", -1) >= 1 for rec in json_data_prism["pure_next_token_records"]) , f"no post-block prism pure rows; diag={diag}; pure_count={pure_count}"
 
 
+def test_run_prompt_pass_with_tuned_spec_records():
+    model = _ModelStub()
+    norm_lens = NormLensAdapter()
+    translator = TunedTranslator(num_layers=model.cfg.n_layers, d_model=model.cfg.d_model, rank=1, final_identity=True)
+    tuned_adapter = TunedLensAdapter(translator=translator, strict=False)
+
+    W_U = torch.randn(model.cfg.d_model, 11, dtype=torch.float32)
+    b_U = torch.randn(11, dtype=torch.float32)
+    unembed_ctx = UnembedContext(W=W_U, b=b_U, force_fp32=True, cache={})
+    prism_ctx = PrismContext(stats=None, Q=None, active=False)
+
+    window_mgr = WindowManager(1, extra_window_ks=COPY_SOFT_WINDOW_KS)
+    json_data = {"records": [], "pure_next_token_records": [], "raw_lens_check": {"mode": "off", "samples": [], "summary": None}}
+    json_data_prism = {"records": [], "pure_next_token_records": []}
+
+    tuned_window_mgr = WindowManager(1, extra_window_ks=COPY_SOFT_WINDOW_KS)
+    tuned_json = {"records": [], "pure_next_token_records": [], "copy_flag_columns": [COPY_STRICT_LABEL, *COPY_SOFT_LABELS.values()]}
+    tuned_spec = {"adapter": tuned_adapter, "json_data": tuned_json, "window_manager": tuned_window_mgr}
+
+    run_prompt_pass(
+        model=model,
+        context_prompt="dummy tuned",
+        ground_truth="Berlin",
+        prompt_id="pos",
+        prompt_variant="orig",
+        window_manager=window_mgr,
+        norm_lens=norm_lens,
+        unembed_ctx=unembed_ctx,
+        copy_threshold=0.95,
+        copy_margin=0.10,
+        entropy_collapse_threshold=1.0,
+        top_k_record=5,
+        top_k_verbose=20,
+        keep_residuals=False,
+        out_dir=None,
+        RAW_LENS_MODE='off',
+        json_data=json_data,
+        json_data_prism=json_data_prism,
+        prism_ctx=prism_ctx,
+        decode_id_fn=_decode_id,
+        ctx_ids_list=[1, 2, 3, 4],
+        first_ans_token_id=None,
+        important_words=["Germany", "Berlin"],
+        head_scale_cfg=None,
+        head_softcap_cfg=None,
+        copy_soft_threshold=COPY_SOFT_THRESHOLD,
+        copy_soft_window_ks=COPY_SOFT_WINDOW_KS,
+        copy_strict_label=COPY_STRICT_LABEL,
+        copy_soft_labels=COPY_SOFT_LABELS,
+        copy_soft_extra_labels={},
+        clean_model_name="stub",
+        tuned_spec=tuned_spec,
+    )
+
+    assert len(tuned_json["records"]) > 0
+    assert len(tuned_json["pure_next_token_records"]) > 0
+    assert "summaries" in tuned_spec and len(tuned_spec["summaries"]) == 1
+
+
 def test_keep_residuals_policy():
     # Prism disabled → raw residuals saved; Prism enabled → normalized residuals saved
     model = _ModelStub()
@@ -386,6 +446,7 @@ if __name__ == "__main__":
         test_run_prompt_pass_minimal(); print("✅ minimal path")
         test_run_prompt_pass_control_margin(); print("✅ control margin path")
         test_run_prompt_pass_with_prism_sidecar(); print("✅ prism sidecar path")
+        test_run_prompt_pass_with_tuned_spec_records(); print("✅ tuned spec path")
         test_keep_residuals_policy(); print("✅ keep-residuals policy")
     except AssertionError as e:
         print("❌ assertion failed:", e)

@@ -54,6 +54,7 @@ models/
 checkpoints/
 weights/
 001_layers_baseline/prisms/
+001_layers_baseline/tuned_lenses/
 
 # HuggingFace cache
 .cache/

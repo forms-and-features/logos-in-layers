@@ -36,6 +36,6 @@ class WindowManager:
         return wl[-k:].copy()
 
     def reset_variant(self, prompt_id: str, variant: str) -> None:
-        # Reset both lens windows for this (prompt, variant)
-        for lens in ("norm", "prism"):
-            self.windows.pop((lens, prompt_id, variant), None)
+        keys = [key for key in self.windows if key[1] == prompt_id and key[2] == variant]
+        for key in keys:
+            self.windows.pop(key, None)

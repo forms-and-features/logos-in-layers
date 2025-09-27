@@ -93,6 +93,8 @@ $$
 
 `001_layers_baseline/layers_core/tuned_lens.py`
 
+**Status:** ✅ Implemented (`layers_core/tuned_lens.py` with translator, preconditioner, save/load helpers).
+
 * `class TunedTranslator(nn.Module)`: per‑layer $U_\ell, V_\ell, c_\ell$; `forward(h_norm, layer_idx) → tuned_logits`.
 * `class TunedLensAdapter`: mirrors `NormLensAdapter`; takes `UnembedContext` + `TunedTranslator`; `decode_next_token(h_norm, layer_idx)`.
 * `save_tuned_lens(path)` / `load_tuned_lens(path)` writing `weights.pt`, `precond.pt` (if Prism used), and `provenance.json`.
@@ -100,6 +102,8 @@ $$
 ### Training script (single‑flag CLI)
 
 `001_layers_baseline/tuned_lens_fit.py`
+
+**Status:** ✅ Implemented (`tuned_lens_fit.py` trains translators with streaming loader and saves artifacts).
 
 **CLI:**
 
@@ -124,6 +128,8 @@ Everything else uses the **fixed defaults** above:
 
 ### Integration in `run.py`
 
+**Status:** ✅ Implemented (auto-load tuned lens, dual-lens emission, tuned sidecar CSVs).
+
 * At startup, **auto‑load** TL from `001_layers_baseline/tuned_lenses/<clean_model_name>/`.
 
   * **If present:** run the standard norm‑lens sweep **and** a TL sweep **from cached residuals**; summaries prefer TL where **acceptance gates** pass (§6).
@@ -142,6 +148,8 @@ Everything else uses the **fixed defaults** above:
 ### HF Hub mirrors
 
 * `scripts/tuned_lens_upload.py` / `scripts/tuned_lens_download.py` modeled on Prism scripts; default repo `logos-in-layers-tuned`; path `tuned_lenses/<clean_model_name>/…`. (Use the same `huggingface_hub` utilities as the Prism scripts.)
+
+  **Status:** ✅ Implemented (scripts generate `INDEX.json`, compute checksums, and upload/download tuned lens artifacts).
 
 ---
 
@@ -475,6 +483,51 @@ tuned = load_tuned_lens(tl_path)  # returns TunedTranslator + metadata
 * **Extended coverage:** Add lenses for additional sizes/variants as needed (e.g., instruct-tuned bases, with a clear label that training used base data and distillation to each model’s final head).
 * **Community alignment:** Open an issue/PR upstream (e.g., in the `tuned-lens` docs) to list this repo under “pre-trained lenses,” enabling broader discoverability.
 
+### Smoke test
+
+####  Steps
+
+  1. HF auth (if needed)
+     ```
+     huggingface-cli login       # only once, for gated models
+     ```
+
+  2. Activate the project venv
+     ```
+     cd logos-in-layers
+     source venv/bin/activate
+     ```
+
+  3. Run the trainer
+     ```
+     python 001_layers_baseline/tuned_lens_fit.py --model-id mistralai/Mistral-7B-v0.1
+     ```
+      - The script streams FineWeb‑Edu (CC-MAIN-2025-26) and writes artifacts to `001_layers_baseline/tuned_lenses/Mistral-7B-v0.1/`.
+      - Expect a 16M-token run (about 975 steps with the default LR schedule). On CPU this can take a while; use `--device mps` if you’re on Apple Silicon and want the faster path.
+
+  4. Inspect outputs
+     The folder should now contain:
+     ```
+     weights.pt
+     provenance.json
+     (optional) precond.pt
+     ```
+     provenance.json will record the dataset revision, seed, rank, etc.
+
+  5. Verify integration
+     Re-run the analysis script to see tuned sidecar CSVs emitted automatically:
+     ```
+     cd 001_layers_baseline
+     python run.py mistralai/Mistral-7B-v0.1
+     ```
+     In `run-latest/` you should now see the tuned CSVs (*-records-tuned.csv, *-pure-next-token-tuned.csv) and the run JSON will include a tuned_lens block referencing the artifacts.
+
+  Once that works, you can exercise the upload script:
+  ```
+  python scripts/tuned_lens_upload.py --repo-id <user>/logos-in-layers-tuned
+  ```
+  (Optionally stage just the new model before running it.)
+
 ---
 
 ## References
@@ -486,3 +539,81 @@ tuned = load_tuned_lens(tl_path)  # returns TunedTranslator + metadata
 [1]: https://arxiv.org/abs/2303.08112?utm_source=chatgpt.com "Eliciting Latent Predictions from Transformers with the Tuned Lens"
 [2]: https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu "HuggingFaceFW/fineweb-edu · Datasets at Hugging Face"
 [3]: https://www.lesswrong.com/posts/TKRp7inbiLRmzNMFB/logit-prisms-decomposing-transformer-outputs-for-mechanistic?utm_source=chatgpt.com "Logit Prisms: Decomposing Transformer Outputs for ..."
+
+---
+
+## 14) Findings From First Run + Path Forward
+
+This section records the first end‑to‑end tuned‑lens run on Mistral‑7B (local training; 16M tokens; rank=128; identity‑plus‑low‑rank; no per‑layer temperature), and lays out concrete next steps to reach the acceptance gates reliably.
+
+### 14.1 What worked
+
+- Integration behaves as designed: tuned artifacts are auto‑loaded when present (`--tuned auto`), skipped otherwise; sidecar CSVs are emitted without changing baseline outputs; last‑layer identity constraint holds (KL≈0 vs model head).
+- Diagnostics and provenance are complete (rank, depth, dataset hash, version, device/dtype). No TODO placeholders remain.
+
+### 14.2 What didn’t move enough (on a single probe)
+
+- On Mistral‑7B (Germany→Berlin probe), the tuned lens reduces KL by ~0.085–0.096 bits at the 25/50/75% depth slices and shows 0‑layer earliness shift for rank≤{1,5,10}. Gate‑A targets (≥{0.2, 0.3, 0.3} bits) are not met on this single prompt.
+- Root causes (expected):
+  - Per‑layer updates are sparse (one layer sampled per optimizer step) → ~30 update steps per layer across the entire 16M‑token budget.
+  - No per‑layer temperature → tuned logits may remain miscalibrated even when the direction improves.
+  - Single‑prompt snapshot is noisy; gates are intended for medians across a prompt suite.
+
+### 14.3 Plan to increase signal per layer and improve calibration
+
+1) Train multiple layers per step (high‑leverage)
+
+- Change the fitter to update several randomly sampled post‑block layers per forward pass (retain identity at the last layer). Default: sample `L_sample = 8` layers per step without replacement (uniform over layers each step). For large GPUs, allowing `L_sample = all` is fine; keep the default at 8 for portability (MPS/CPU).
+- Loss: sum (or mean) cross‑entropy to the final head over the sampled layers and positions; same regularizers as §3. This multiplies the update count per layer by ~8× without extra forwards.
+
+2) Add per‑layer scalar temperature (optional but recommended)
+
+- Introduce a learned positive scalar `τ_ℓ` per post‑block layer; implement as `log_tau_ℓ` with `τ_ℓ = softplus(log_tau_ℓ) + ε`, initialize near 1.0. Apply as `logits/τ_ℓ` after the translator and before softmax.
+- Keep the last layer fixed: `τ_{last} = 1.0` (no effect on Gate‑C).
+- Fair baseline calibration: optionally learn a single scalar per layer for the norm lens when reporting gates (configurable; default off initially). This isolates the effect of the translator vs pure temperature.
+
+3) Capacity tweak (rank)
+
+- Bump rank to 192 for models with `d_model ≥ 4096` (e.g., Mistral‑7B, Llama‑3‑8B). New policy:
+  - `rank_k = min(256, max(base_rank, floor(d_model/32)))`, with `base_rank = 192` if `d_model ≥ 4096` else `base_rank = 128`.
+- Rationale: rank=128 is often enough, but 192 provides headroom for mid‑stack layers without exploding parameters; 256 remains a hard cap for very wide models.
+
+4) Evaluate on a prompt suite (not a single probe)
+
+- Add a small, fixed suite (10–20 prompts) and compute Gate‑A medians and earliness shifts across prompts; record per‑model summaries in the run JSON.
+- Keep the single‐probe CSVs for visualization and debugging; use the suite medians for gating decisions.
+
+5) Reporting/diagnostics additions
+
+- Record `L_sample` and whether per‑layer temperature was enabled in `provenance.json`.
+- Add tuned‑vs‑norm ΔKL medians at {25,50,75}% and earliness shifts to the tuned lens block in the run JSON.
+- Log step throughput and ETA every N steps (already added) for long runs.
+
+### 14.4 Acceptance gates (unchanged), and how we’ll judge them
+
+- Gate‑A: `median_delta_kl_bits` ≥ {0.2, 0.3, 0.3} bits at {25,50,75}% — computed over the prompt suite, using tuned vs norm with the chosen calibration setting.
+- Gate‑B: earliness shifts for `first_rank_le_{10,5}` ≥ {+4,+2} layers on ≥60% of prompts.
+- Gate‑C: `last_layer_kl_after_temp_bits` ≤ 0.05 (tuned last layer is identity; norm lens may use a scalar temperature for the fair comparison if enabled).
+- Gate‑D: no depth percentile with negative ΔKL worse than −0.1 bits.
+
+### 14.5 Implementation outline (follow‑up work)
+
+- Fitter
+  - Sample `L_sample=8` layers per step; compute CE across all sampled layers from the cached residuals; keep optimizer/regularizers unchanged.
+  - Add per‑layer `log_tau_ℓ` parameters (freeze last layer); apply temperature at decode.
+  - Rank policy update as above; record in `provenance.json` (`translator.rank`).
+  - No new CLI flags for defaults; keep behavior deterministic with seed=316; continue to skip models when artifacts already exist.
+
+- Runtime (run.py)
+  - Load temperatures from the tuned artifacts and apply at decode.
+  - Optional fair calibration for norm lens (single scalar per layer) can be toggled later; keep off by default to avoid changing baseline semantics.
+  - Emit tuned suite metrics in the diagnostics when a suite is present; otherwise leave per‑probe summaries as is.
+
+- Evaluation
+  - Add a small prompt suite and a helper to compute ΔKL medians and earliness shifts from CSVs per model; store suite summaries in the run JSON.
+
+### 14.6 Roll‑forward strategy
+
+1) Implement multi‑layer updates + temperature + rank policy; retrain Mistral‑7B at 16M tokens.
+2) Evaluate on the prompt suite; if Gate‑A is still borderline at 75% depth, consider `L_sample = all` for GPUs or increasing tokens to 24M for that model only.
+3) If gates pass, proceed to train tuned lenses for the remaining mid‑sized models; defer giants until hardware or sharding support is available.

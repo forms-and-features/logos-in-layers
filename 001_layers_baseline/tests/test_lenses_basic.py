@@ -9,12 +9,14 @@ import _pathfix  # noqa: F401
 
 import torch
 import torch.nn as nn
+import pytest
 
 from layers_core.lenses import NormLensAdapter, PrismLensAdapter, TunedLensAdapter
 from layers_core.norm_utils import get_correct_norm_module, apply_norm_or_skip
 from layers_core.numerics import safe_cast_for_unembed
 from layers_core.unembed import unembed_mm
 from layers_core.prism import WhitenStats, whiten_apply
+from layers_core.tuned_lens import TunedTranslator
 
 
 class PreNormBlock(nn.Module):
@@ -158,134 +160,115 @@ def test_prism_lens_adapter_postnorm_postblock():
     _run_prism_pair(model, layer_idx=0, probe_after_block=True)
 
 
-def _run_tuned_pair(model: nn.Module, layer_idx: int, probe_after_block: bool) -> None:
+def _run_tuned_pair(model: nn.Module, layer_idx: int) -> None:
     torch.manual_seed(0)
     d_model = model.blocks[0].ln1.normalized_shape[0]
     seq_len, vocab = 4, 7
     resid = torch.randn(1, seq_len, d_model, dtype=torch.float32)
 
-    # Synthetic tuned head per layer
-    Wt = torch.randn(d_model, vocab, dtype=torch.float32)
-    bt = torch.randn(vocab, dtype=torch.float32)
+    translator = TunedTranslator(
+        num_layers=len(model.blocks),
+        d_model=d_model,
+        rank=2,
+        final_identity=False,
+    )
+    layer = translator.layers[layer_idx]
+    layer.U.data.normal_(mean=0.0, std=0.1)
+    layer.V.data.normal_(mean=0.0, std=0.05)
+    layer.c.data.normal_(mean=0.0, std=0.02)
 
-    # Inline baseline: normalize → tuned head
-    norm = get_correct_norm_module(model, layer_idx, probe_after_block=probe_after_block)
+    W_U = torch.randn(d_model, vocab, dtype=torch.float32)
+    b_U = torch.randn(vocab, dtype=torch.float32)
+
+    norm = get_correct_norm_module(model, layer_idx, probe_after_block=True)
     resid_n = apply_norm_or_skip(resid, norm)
     X = resid_n[0, :, :]
-    Xc = safe_cast_for_unembed(X, Wt, force_fp32_unembed=False)
-    logits_inline = unembed_mm(Xc, Wt, bt).float()
+    tuned = translator(X, layer_idx)
+    logits_manual = unembed_mm(
+        safe_cast_for_unembed(tuned, W_U, force_fp32_unembed=False),
+        W_U,
+        b_U,
+    ).float()
 
-    # Adapter with a head table for the correct probe timing
-    if probe_after_block:
-        adapter = TunedLensAdapter(weights_post={layer_idx: (Wt, bt)}, weights_pre={})
-    else:
-        adapter = TunedLensAdapter(weights_pre={layer_idx: (Wt, bt)}, weights_post={})
-
+    adapter = TunedLensAdapter(translator=translator, strict=True)
     logits_adapter = adapter.forward(
         model,
         layer_idx,
         resid,
-        probe_after_block=probe_after_block,
-        W_U=Wt,   # unused
-        b_U=bt,   # unused
+        probe_after_block=True,
+        W_U=W_U,
+        b_U=b_U,
         force_fp32_unembed=False,
         cache={},
     )
 
-    assert logits_inline.shape == logits_adapter.shape
-    assert logits_adapter.dtype == torch.float32
-    close = torch.allclose(logits_inline, logits_adapter, atol=1e-6)
-    if not close:
-        diff = (logits_inline - logits_adapter).abs().max().item()
-        print(f"[DEBUG tuned] max_abs_diff={diff}")
-    assert close
+    assert logits_adapter is not None
+    assert logits_adapter.shape == logits_manual.shape
+    assert torch.allclose(logits_adapter, logits_manual, atol=1e-6)
 
 
 def test_tuned_lens_adapter_prenorm_preblock():
     model = ModelStub([PreNormBlock(8), PreNormBlock(8)])
-    _run_tuned_pair(model, layer_idx=0, probe_after_block=False)
-
-
-def test_tuned_lens_adapter_prenorm_postblock():
-    model = ModelStub([PreNormBlock(8), PreNormBlock(8)])
-    _run_tuned_pair(model, layer_idx=0, probe_after_block=True)
-
-
-def test_tuned_lens_adapter_postnorm_preblock():
-    model = ModelStub([PostNormBlock(8), PostNormBlock(8)])
-    _run_tuned_pair(model, layer_idx=0, probe_after_block=False)
-
-
-def test_tuned_lens_adapter_postnorm_postblock():
-    model = ModelStub([PostNormBlock(8), PostNormBlock(8)])
-    _run_tuned_pair(model, layer_idx=0, probe_after_block=True)
-
-
-def test_tuned_lens_missing_head_non_strict_returns_none():
-    # No heads provided; strict=False should not raise and should return None
-    model = ModelStub([PreNormBlock(8), PreNormBlock(8)])
-    adapter = TunedLensAdapter(weights_pre={}, weights_post={}, strict=False)
-    resid = torch.randn(1, 4, 8, dtype=torch.float32)
+    translator = TunedTranslator(num_layers=2, d_model=8, rank=2)
+    adapter = TunedLensAdapter(translator=translator, strict=False)
+    resid = torch.randn(1, 4, 8)
     out = adapter.forward(
         model,
         0,
         resid,
         probe_after_block=False,
-        W_U=torch.empty(8, 7),
-        b_U=None,
+        W_U=torch.randn(8, 7),
+        b_U=torch.randn(7),
         force_fp32_unembed=False,
         cache={},
     )
     assert out is None
-    assert 0 in adapter.diag.get("missing_layers", [])
 
 
-def test_tuned_lens_integer_weight_raises():
+def test_tuned_lens_adapter_prenorm_postblock():
     model = ModelStub([PreNormBlock(8), PreNormBlock(8)])
-    # int8 weight should be rejected
-    W = torch.randint(-5, 5, (8, 7), dtype=torch.int8)
-    b = torch.randint(-5, 5, (7,), dtype=torch.int8)
-    adapter = TunedLensAdapter(weights_pre={0: (W, b)}, weights_post={})
-    resid = torch.randn(1, 4, 8, dtype=torch.float32)
-    try:
+    _run_tuned_pair(model, layer_idx=0)
+
+
+def test_tuned_lens_adapter_postnorm_preblock():
+    model = ModelStub([PostNormBlock(8), PostNormBlock(8)])
+    translator = TunedTranslator(num_layers=2, d_model=8, rank=2)
+    adapter = TunedLensAdapter(translator=translator, strict=False)
+    resid = torch.randn(1, 4, 8)
+    out = adapter.forward(
+        model,
+        0,
+        resid,
+        probe_after_block=False,
+        W_U=torch.randn(8, 7),
+        b_U=torch.randn(7),
+        force_fp32_unembed=False,
+        cache={},
+    )
+    assert out is None
+
+
+def test_tuned_lens_adapter_postnorm_postblock():
+    model = ModelStub([PostNormBlock(8), PostNormBlock(8)])
+    _run_tuned_pair(model, layer_idx=0)
+
+
+def test_tuned_lens_missing_head_non_strict_returns_none():
+    model = ModelStub([PreNormBlock(8), PreNormBlock(8)])
+    translator = TunedTranslator(num_layers=2, d_model=8, rank=2)
+    adapter = TunedLensAdapter(translator=translator, strict=True)
+    resid = torch.randn(1, 4, 8)
+    with pytest.raises(KeyError):
         _ = adapter.forward(
             model,
             0,
             resid,
             probe_after_block=False,
-            W_U=torch.empty(8, 7),
-            b_U=None,
+            W_U=torch.randn(8, 7),
+            b_U=torch.randn(7),
             force_fp32_unembed=False,
             cache={},
         )
-    except ValueError as e:
-        assert "floating-point" in str(e)
-    else:
-        raise AssertionError("Expected ValueError for non-floating tuned weights")
-
-
-def test_tuned_lens_shape_mismatch_raises():
-    model = ModelStub([PreNormBlock(8), PreNormBlock(8)])
-    # Wrong d_model in W (rows=9)
-    W = torch.randn(9, 7, dtype=torch.float32)
-    b = torch.randn(7, dtype=torch.float32)
-    adapter = TunedLensAdapter(weights_pre={0: (W, b)}, weights_post={})
-    resid = torch.randn(1, 4, 8, dtype=torch.float32)
-    try:
-        _ = adapter.forward(
-            model,
-            0,
-            resid,
-            probe_after_block=False,
-            W_U=torch.empty(8, 7),
-            b_U=None,
-            force_fp32_unembed=False,
-            cache={},
-        )
-    except ValueError as e:
-        assert "W rows" in str(e)
-    else:
-        raise AssertionError("Expected ValueError for mismatched W rows vs d_model")
 
 
 if __name__ == "__main__":

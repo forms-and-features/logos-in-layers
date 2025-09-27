@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple, List
 
 import torch
 import os
@@ -62,12 +62,30 @@ def run_prompt_pass(
     clean_model_name: Optional[str] = None,
     control_ids: Optional[Tuple[Optional[int], Optional[int]]] = None,
     enable_raw_lens_sampling: bool = True,
+    tuned_spec: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], str, Dict[str, Any]]:
     """Run a single prompt pass and append outputs into json_data structures.
 
     Returns (summary_diag, last_layer_consistency, detected_architecture, diag_delta).
     """
     window_manager.reset_variant(prompt_id, prompt_variant)
+
+    tuned_enabled = bool(tuned_spec and tuned_spec.get("adapter"))
+    if tuned_enabled:
+        tuned_adapter = tuned_spec["adapter"]
+        tuned_json_data = tuned_spec["json_data"]
+        tuned_window_manager = tuned_spec["window_manager"]
+        tuned_window_manager.reset_variant(prompt_id, prompt_variant)
+        tuned_cache = tuned_spec.setdefault("cache", {})
+        tuned_collected_records: List[Dict[str, Any]] = []
+        tuned_summaries = tuned_spec.setdefault("summaries", [])
+    else:
+        tuned_adapter = None
+        tuned_json_data = None
+        tuned_window_manager = None
+        tuned_cache = None
+        tuned_collected_records = []
+        tuned_summaries = None
 
     last_layer_consistency: Optional[Dict[str, Any]] = None
     detected_architecture: str = "unknown"
@@ -103,6 +121,18 @@ def run_prompt_pass(
                 force_fp32_unembed=unembed_ctx.force_fp32,
                 cache=unembed_ctx.cache,
             )
+            tuned_logits_all_L0 = None
+            if tuned_adapter is not None:
+                tuned_logits_all_L0 = tuned_adapter.forward(
+                    model,
+                    0,
+                    resid_raw,
+                    probe_after_block=False,
+                    W_U=unembed_ctx.W,
+                    b_U=unembed_ctx.b,
+                    force_fp32_unembed=unembed_ctx.force_fp32,
+                    cache=tuned_cache,
+                )
             # Pass-wide Prism enablement is decided at L0 and carried forward
             # to match baseline behavior (no per-layer re-enabling attempts).
             prism_lens = PrismLensAdapter(prism_ctx.stats, prism_ctx.Q, prism_ctx.active)
@@ -163,6 +193,26 @@ def run_prompt_pass(
                         top_k=k_eff,
                     )
 
+                if tuned_logits_all_L0 is not None and tuned_json_data is not None and tuned_window_manager is not None:
+                    tuned_layer_logits = tuned_logits_all_L0[pos]
+                    tuned_entropy_bits = bits_entropy_from_logits(tuned_layer_logits)
+                    tuned_full_probs = torch.softmax(tuned_layer_logits, dim=0)
+                    _, tuned_top_indices = torch.topk(tuned_layer_logits, k_eff, largest=True, sorted=True)
+                    tuned_top_tokens = [decode_id_fn(idx) for idx in tuned_top_indices]
+                    tuned_top_probs = tuned_full_probs[tuned_top_indices]
+                    tuned_json_data["records"].append(
+                        make_record(
+                            prompt_id=prompt_id,
+                            prompt_variant=prompt_variant,
+                            layer=0,
+                            pos=pos,
+                            token=token_str,
+                            entropy=tuned_entropy_bits,
+                            top_tokens=tuned_top_tokens,
+                            top_probs=tuned_top_probs,
+                        )
+                    )
+
             # Pure next-token (L0)
             collected_pure_records = []
             view, collected, dual_ctx = compute_pure_next_token_info(
@@ -204,6 +254,47 @@ def run_prompt_pass(
                 )
             )
             collected_pure_records.append(collected)
+
+            if tuned_logits_all_L0 is not None and tuned_json_data is not None and tuned_window_manager is not None:
+                tuned_view, tuned_collected, _ = compute_pure_next_token_info(
+                    layer_out_idx=0,
+                    logits_all=tuned_logits_all_L0,
+                    tokens_tensor=tokens,
+                    ctx_ids_list=ctx_ids_list,
+                    window_manager=tuned_window_manager,
+                    lens_type="tuned",
+                    final_probs_tensor=final_probs,
+                    first_ans_token_id=first_ans_token_id,
+                    final_dir_vec=final_dir,
+                    copy_threshold=copy_threshold,
+                    copy_margin=copy_margin,
+                    copy_strict_label=copy_strict_label,
+                    copy_soft_threshold=copy_soft_threshold,
+                    copy_soft_window_ks=copy_soft_window_ks,
+                    copy_soft_labels=copy_soft_labels,
+                    copy_soft_extra_labels=copy_soft_extra_labels,
+                    entropy_collapse_threshold=entropy_collapse_threshold,
+                    decode_id_fn=decode_id_fn,
+                    ground_truth=ground_truth,
+                    top_k_record=top_k_record,
+                    prompt_id=prompt_id,
+                    prompt_variant=prompt_variant,
+                    control_ids=control_ids,
+                )
+                tuned_json_data["pure_next_token_records"].append(
+                    make_pure_record(
+                        prompt_id=prompt_id,
+                        prompt_variant=prompt_variant,
+                        layer=0,
+                        pos=tuned_view["pos"],
+                        token=tuned_view["token_str"],
+                        entropy=tuned_view["entropy_bits"],
+                        top_tokens=tuned_view["top_tokens"],
+                        top_probs=tuned_view["top_probs"],
+                        extra=tuned_view["record_extra"],
+                    )
+                )
+                tuned_collected_records.append(tuned_collected)
 
             # Optional raw-vs-norm sample at L0
             if enable_raw_lens_sampling and RAW_LENS_MODE != "off":
@@ -287,6 +378,19 @@ def run_prompt_pass(
                     cache=unembed_ctx.cache,
                 )
 
+                tuned_logits_all = None
+                if tuned_adapter is not None:
+                    tuned_logits_all = tuned_adapter.forward(
+                        model,
+                        layer,
+                        resid_raw,
+                        probe_after_block=True,
+                        W_U=unembed_ctx.W,
+                        b_U=unembed_ctx.b,
+                        force_fp32_unembed=unembed_ctx.force_fp32,
+                        cache=tuned_cache,
+                    )
+
                 # Prism sidecar logits via adapter for per-position record emission
                 prism_logits_all = None
                 if prism_lens.enabled:
@@ -343,6 +447,26 @@ def run_prompt_pass(
                             top_k=k_eff,
                         )
 
+                    if tuned_logits_all is not None and tuned_json_data is not None and tuned_window_manager is not None:
+                        tuned_layer_logits = tuned_logits_all[pos]
+                        tuned_entropy_bits = bits_entropy_from_logits(tuned_layer_logits)
+                        tuned_full_probs = torch.softmax(tuned_layer_logits, dim=0)
+                        _, tuned_top_indices = torch.topk(tuned_layer_logits, k_eff, largest=True, sorted=True)
+                        tuned_top_tokens = [decode_id_fn(idx) for idx in tuned_top_indices]
+                        tuned_top_probs = tuned_full_probs[tuned_top_indices]
+                        tuned_json_data["records"].append(
+                            make_record(
+                                prompt_id=prompt_id,
+                                prompt_variant=prompt_variant,
+                                layer=layer + 1,
+                                pos=pos,
+                                token=token_str,
+                                entropy=tuned_entropy_bits,
+                                top_tokens=tuned_top_tokens,
+                                top_probs=tuned_top_probs,
+                            )
+                        )
+
                 # Pure next-token for this layer
                 view, collected, dual_ctx = compute_pure_next_token_info(
                     layer_out_idx=layer + 1,
@@ -383,6 +507,47 @@ def run_prompt_pass(
                     )
                 )
                 collected_pure_records.append(collected)
+
+                if tuned_logits_all is not None and tuned_json_data is not None and tuned_window_manager is not None:
+                    tuned_view, tuned_collected, _ = compute_pure_next_token_info(
+                        layer_out_idx=layer + 1,
+                        logits_all=tuned_logits_all,
+                        tokens_tensor=tokens,
+                        ctx_ids_list=ctx_ids_list,
+                        window_manager=tuned_window_manager,
+                        lens_type="tuned",
+                        final_probs_tensor=final_probs,
+                        first_ans_token_id=first_ans_token_id,
+                        final_dir_vec=final_dir,
+                        copy_threshold=copy_threshold,
+                        copy_margin=copy_margin,
+                        copy_strict_label=copy_strict_label,
+                        copy_soft_threshold=copy_soft_threshold,
+                        copy_soft_window_ks=copy_soft_window_ks,
+                        copy_soft_labels=copy_soft_labels,
+                        copy_soft_extra_labels=copy_soft_extra_labels,
+                        entropy_collapse_threshold=entropy_collapse_threshold,
+                        decode_id_fn=decode_id_fn,
+                        ground_truth=ground_truth,
+                        top_k_record=top_k_record,
+                        prompt_id=prompt_id,
+                        prompt_variant=prompt_variant,
+                        control_ids=control_ids,
+                    )
+                    tuned_json_data["pure_next_token_records"].append(
+                        make_pure_record(
+                            prompt_id=prompt_id,
+                            prompt_variant=prompt_variant,
+                            layer=layer + 1,
+                            pos=tuned_view["pos"],
+                            token=tuned_view["token_str"],
+                            entropy=tuned_view["entropy_bits"],
+                            top_tokens=tuned_view["top_tokens"],
+                            top_probs=tuned_view["top_probs"],
+                            extra=tuned_view["record_extra"],
+                        )
+                    )
+                    tuned_collected_records.append(tuned_collected)
 
                 # Prism pure next-token row for this layer, if available
                 if prism_logits_all is not None:
@@ -485,6 +650,16 @@ def run_prompt_pass(
                 copy_soft_window_ks=copy_soft_window_ks,
                 copy_match_level="id_subsequence",
             )
+            if tuned_enabled and tuned_summaries is not None:
+                summary_tuned = summarize_pure_records(
+                    tuned_collected_records,
+                    copy_threshold=copy_threshold,
+                    copy_window_k=getattr(tuned_window_manager, "window_k", 1) if tuned_window_manager is not None else 1,
+                    copy_soft_threshold=copy_soft_threshold,
+                    copy_soft_window_ks=copy_soft_window_ks,
+                    copy_match_level="id_subsequence",
+                )
+                tuned_summaries.append(summary_tuned)
             return summary_diag, last_layer_consistency, detected_architecture, diag_delta
         finally:
             detach_hooks(hooks)

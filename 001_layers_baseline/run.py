@@ -64,7 +64,8 @@ from layers_core.gold import compute_gold_answer_info, compute_gold_answer_info_
 from layers_core.prism import load_prism_artifacts
 from layers_core.head_transforms import detect_head_transforms
 from layers_core.unembed import prepare_unembed_weights
-from layers_core.lenses import NormLensAdapter
+from layers_core.lenses import NormLensAdapter, TunedLensAdapter
+from layers_core.tuned_lens import load_tuned_lens
 from layers_core.passes import run_prompt_pass
 from layers_core.contexts import UnembedContext, PrismContext
 from layers_core.probes import emit_test_prompts, emit_temperature_exploration
@@ -90,9 +91,14 @@ def _vprint(*args, **kwargs):
 
 def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
     """Run the complete experiment for a single model and write results to files"""
-    
+
+    json_data_tuned_outer = None
+    tuned_provenance_outer = None
+    tuned_diag_info_outer = None
+
     def evaluate_model():
         """The actual experiment code - all prints go to console"""
+        nonlocal json_data_tuned_outer, tuned_provenance_outer, tuned_diag_info_outer
         _vprint(f"\n{'='*60}")
         _vprint(f"EVALUATING MODEL: {model_id}")
         _vprint(f"{'='*60}")
@@ -364,6 +370,16 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         ])
         json_data["copy_flag_columns"] = list(copy_flag_columns)
         json_data_prism["copy_flag_columns"] = list(copy_flag_columns)
+
+        tuned_mode = str(getattr(CLI_ARGS, "tuned", "auto")).lower()
+        if tuned_mode not in ("auto", "off", "require"):
+            tuned_mode = "auto"
+
+        tuned_adapter = None
+        tuned_translator = None
+        tuned_provenance = None
+        tuned_diag_info = {"status": "disabled" if tuned_mode == "off" else "missing", "mode": tuned_mode}
+
         diag["copy_soft_config"] = {
             "threshold": copy_soft_threshold,
             "window_ks": list(copy_soft_window_ks),
@@ -375,6 +391,48 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
 
         # Baseline norm lens adapter (behavior-preserving)
         norm_lens = NormLensAdapter()
+
+        tuned_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tuned_lenses", prism_clean)
+        tuned_diag_info["path"] = tuned_dir
+        if tuned_mode != "off":
+            if os.path.isdir(tuned_dir):
+                try:
+                    tuned_translator, tuned_provenance = load_tuned_lens(tuned_dir, map_location=device)
+                    tuned_translator = tuned_translator.to(device)
+                    tuned_translator.eval()
+                    tuned_adapter = TunedLensAdapter(translator=tuned_translator, strict=False)
+                    tuned_diag_info["status"] = "loaded"
+                except Exception as exc:
+                    tuned_diag_info["status"] = "error"
+                    tuned_diag_info["error"] = str(exc)
+                    tuned_translator = None
+                    tuned_adapter = None
+                    tuned_provenance = None
+                    if tuned_mode == "require":
+                        raise RuntimeError(f"Tuned lens load failed for {model_id}: {exc}") from exc
+            else:
+                if tuned_mode == "require":
+                    raise RuntimeError(
+                        f"Tuned lens not found for {prism_clean}; generate with tuned_lens_fit.py first"
+                    )
+                else:
+                    _vprint(f"⚠️ Tuned lens not found for {prism_clean}; run tuned_lens_fit.py --model-id {model_id}")
+
+        tuned_spec = None
+        json_data_tuned = None
+        window_mgr_tuned = None
+        if tuned_adapter is not None:
+            window_mgr_tuned = WindowManager(getattr(config, "copy_window_k", 1), extra_window_ks=copy_soft_window_ks)
+            json_data_tuned = {
+                "records": [],
+                "pure_next_token_records": [],
+                "copy_flag_columns": list(copy_flag_columns),
+            }
+            tuned_spec = {
+                "adapter": tuned_adapter,
+                "json_data": json_data_tuned,
+                "window_manager": window_mgr_tuned,
+            }
 
         # Robust single-id decode (tensor or int)
         decode_id = make_decode_id(model.tokenizer)
@@ -562,6 +620,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     head_softcap_cfg=head_softcap_cfg,
                     clean_model_name=clean_model_name(model_id),
                     enable_raw_lens_sampling=True,
+                    tuned_spec=tuned_spec,
                 )
                 diag.update(pass_summary)
                 diag["gold_alignment"] = "ok" if gold_info.get("status") == "ok" else "unresolved"
@@ -708,11 +767,12 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             ctx_ids_list=ctx_ids_nf,
             first_ans_token_id=first_ans_id_nf,
             important_words=IMPORTANT_WORDS,
-            head_scale_cfg=head_scale_cfg,
-            head_softcap_cfg=head_softcap_cfg,
-            clean_model_name=clean_model_name(model_id),
-            enable_raw_lens_sampling=False,
-        )
+                    head_scale_cfg=head_scale_cfg,
+                    head_softcap_cfg=head_softcap_cfg,
+                    clean_model_name=clean_model_name(model_id),
+                    enable_raw_lens_sampling=False,
+                    tuned_spec=tuned_spec,
+                )
         try:
             if isinstance(diag.get("prism_summary"), dict) and isinstance(prism_diag_nf, dict) and prism_diag_nf.get("placement_error"):
                 diag["prism_summary"]["placement_error_nf"] = prism_diag_nf["placement_error"]
@@ -760,12 +820,13 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             ctx_ids_list=ctx_ids_ctl,
             first_ans_token_id=first_ans_id_ctl,
             important_words=IMPORTANT_WORDS,
-            head_scale_cfg=head_scale_cfg,
-            head_softcap_cfg=head_softcap_cfg,
-            clean_model_name=clean_model_name(model_id),
-            control_ids=(first_ans_id_ctl, first_ans_id),
-            enable_raw_lens_sampling=False,
-        )
+                    head_scale_cfg=head_scale_cfg,
+                    head_softcap_cfg=head_softcap_cfg,
+                    clean_model_name=clean_model_name(model_id),
+                    control_ids=(first_ans_id_ctl, first_ans_id),
+                    enable_raw_lens_sampling=False,
+                    tuned_spec=tuned_spec,
+                )
         try:
             if isinstance(diag.get("prism_summary"), dict) and isinstance(prism_diag_ctl, dict) and prism_diag_ctl.get("placement_error"):
                 diag["prism_summary"]["placement_error_ctl"] = prism_diag_ctl["placement_error"]
@@ -801,6 +862,23 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             "max_control_margin": max_margin,
         }
 
+        if tuned_adapter is not None and tuned_spec is not None and json_data_tuned is not None:
+            tuned_diag_info = {**tuned_diag_info, "summaries": tuned_spec.get("summaries", [])}
+        diag["tuned_lens"] = tuned_diag_info
+        if tuned_adapter is not None and tuned_spec is not None and json_data_tuned is not None:
+            json_data["tuned_lens"] = {
+                "status": tuned_diag_info.get("status"),
+                "path": tuned_diag_info.get("path"),
+                "summaries": tuned_spec.get("summaries", []),
+                "provenance": tuned_provenance,
+            }
+        else:
+            json_data["tuned_lens"] = tuned_diag_info
+
+        json_data_tuned_outer = json_data_tuned
+        tuned_provenance_outer = tuned_provenance
+        tuned_diag_info_outer = tuned_diag_info
+
         # Restore prompt_id for any subsequent records
         current_prompt_id = "pos"
 
@@ -826,6 +904,11 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         }
         
         # Clean up model to free memory (though process will end anyway)
+        if tuned_translator is not None:
+            try:
+                tuned_translator.to("cpu")
+            except Exception:
+                pass
         del model
         gc.collect()  # Force garbage collection
         if torch.cuda.is_available():
@@ -869,6 +952,17 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     _vprint("ℹ️ Prism sidecar not written (no artifacts or empty buffers)")
         except Exception as e:
             print(f"⚠️ Failed to write Prism sidecar CSVs: {e}")
+
+        if json_data_tuned_outer is not None and (json_data_tuned_outer["records"] or json_data_tuned_outer["pure_next_token_records"]):
+            clean_name = clean_model_name(model_id)
+            tuned_records_path = os.path.join(os.path.dirname(csv_filepath), f"output-{clean_name}-records-tuned.csv")
+            tuned_pure_path = os.path.join(os.path.dirname(csv_filepath), f"output-{clean_name}-pure-next-token-tuned.csv")
+            try:
+                write_csv_files(json_data_tuned_outer, tuned_records_path, tuned_pure_path, TOP_K_VERBOSE)
+                _vprint(f"✅ Tuned Records CSV saved to: {tuned_records_path}")
+                _vprint(f"✅ Tuned Pure next-token CSV saved to: {tuned_pure_path}")
+            except Exception as e:
+                print(f"⚠️ Failed to write tuned lens CSVs: {e}")
 
         # Strip bulky per-token records from JSON to keep it compact
         json_data_compact = {k: v for k, v in json_data.items()
@@ -1010,6 +1104,7 @@ CLI_ARGS = SimpleNamespace(
     copy_soft_thresh=0.33,
     copy_soft_window_ks=[1, 2, 3],
     copy_soft_thresh_list=[],
+    tuned=os.environ.get("LOGOS_TUNED", "auto"),
 )
 
 if __name__ == "__main__":

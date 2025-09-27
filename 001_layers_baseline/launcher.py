@@ -63,6 +63,10 @@ def parse_cli():
     p.add_argument("--prism-dir",
                    default="prisms",
                    help="Prism artifacts root directory (default: prisms under this script directory)")
+    p.add_argument("--tuned",
+                   default=os.environ.get("LOGOS_TUNED", "auto"),
+                   choices=["auto", "off", "require"],
+                   help="Tuned lens mode: auto (use if present), off (skip entirely), require (error if missing)")
     return p.parse_args()
 
 
@@ -131,6 +135,7 @@ def main():
                 cmd.append("--keep-residuals")
             cmd.extend(["--copy-threshold", str(args.copy_threshold)])
             cmd.extend(["--copy-margin", str(args.copy_margin)])
+            cmd.extend(["--tuned", args.tuned])
             cmd.append(model_id)
 
             r = subprocess.run(cmd, capture_output=False, text=True, check=False)
