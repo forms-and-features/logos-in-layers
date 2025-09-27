@@ -333,14 +333,17 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
     )
 
     auto_fp32_unembed = should_auto_promote_unembed(dtype)
+    # For very large vocabularies, allow fp16/bf16 unembed to avoid O(V) fp32 GEMMs
+    large_vocab = bool(d_vocab and d_vocab >= 100_000)
+    force_fp32_weights = True if (auto_fp32_unembed and not large_vocab) else False
     W_U, b_U = prepare_unembed_weights(
         model.unembed.W_U,
         getattr(model.unembed, "b_U", None),
-        force_fp32=True if auto_fp32_unembed else False,
+        force_fp32=force_fp32_weights,
     )
     unembed_ctx = {
-        "W": W_U.to(device=device, dtype=torch.float32),
-        "b": None if b_U is None else b_U.to(device=device, dtype=torch.float32),
+        "W": W_U.to(device=device),
+        "b": None if b_U is None else b_U.to(device=device),
     }
 
     # Device-aware batching: on CUDA we can use larger micro-batches and reduce
@@ -407,7 +410,12 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
             cache_hook = build_cache_hook(residual_cache)
             handles, _ = attach_residual_hooks(model, cache_hook)
             with torch.no_grad():
-                logits = model(batch_tokens)
+                # Run forward to populate residual hooks. Skip building full logits
+                # when supported to avoid O(B·T·V) unembed cost.
+                try:
+                    _ = model(batch_tokens, return_type="none")  # transformer-lens API
+                except TypeError:
+                    _ = model(batch_tokens)
             detach_hooks(handles)
 
             total_layers = translator.num_layers
@@ -421,6 +429,19 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
             positions = sample_positions(SEQ_LEN, positions_per_seq, *POSITION_RANGE).to(device=device)
             batch_indices = torch.arange(batch_tokens.shape[0], device=device).unsqueeze(1).repeat(1, positions_per_seq)
             pos_indices = positions.unsqueeze(0).repeat(batch_tokens.shape[0], 1)
+
+            # Compute teacher logits only at sampled positions using the final normalized residual
+            last_idx = translator.num_layers - 1
+            resid_final = residual_cache.get(f"blocks.{last_idx}.hook_resid_post").to(device=device)
+            norm_final = get_correct_norm_module(model, last_idx, probe_after_block=True)
+            resid_final_norm = apply_norm_or_skip(resid_final, norm_final)
+            residF_sel = resid_final_norm[batch_indices, pos_indices, :]
+            residF_flat = residF_sel.reshape(-1, residF_sel.shape[-1])
+            teacher_logits = unembed_mm(
+                safe_cast_for_unembed(residF_flat, unembed_ctx["W"], force_fp32_unembed=False),
+                unembed_ctx["W"],
+                unembed_ctx["b"],
+            ).reshape(batch_tokens.shape[0], positions_per_seq, -1)
 
             loss_acc = None
             for layer_idx in sampled_layers:
@@ -442,8 +463,10 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
                 tau = translator.temperature(layer_idx)
                 logits_student = logits_student / tau.to(device=device, dtype=logits_student.dtype)
 
-                teacher = logits[batch_indices, pos_indices, :].reshape(batch_tokens.shape[0], positions_per_seq, -1)
-                ce = compute_ce(logits_student.reshape(-1, logits_student.shape[-1]), teacher.reshape(-1, teacher.shape[-1]))
+                ce = compute_ce(
+                    logits_student.reshape(-1, logits_student.shape[-1]),
+                    teacher_logits.reshape(-1, teacher_logits.shape[-1]),
+                )
 
                 reg = regularization_terms(translator, layer_idx)
                 loss_layer = ce + reg
