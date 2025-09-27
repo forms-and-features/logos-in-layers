@@ -46,7 +46,7 @@ import torch.nn as nn
 
 @dataclass
 class Preconditioner:
-    """Diagonal whitening with optional orthogonal rotation.
+    r"""Diagonal whitening with optional orthogonal rotation.
 
     Attributes are float32 CPU tensors; callers may move them to a specific
     device after loading. ``inv_scale`` stores :math:`1 / \sqrt{\mathrm{var}+ε}`
