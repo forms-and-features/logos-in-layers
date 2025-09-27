@@ -410,11 +410,21 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
             cache_hook = build_cache_hook(residual_cache)
             handles, _ = attach_residual_hooks(model, cache_hook)
             with torch.no_grad():
-                # Run forward to populate residual hooks. Skip building full logits
-                # when supported to avoid O(B·T·V) unembed cost.
+                # Run forward without invoking the unembedding head to avoid
+                # building full B×T×V logits. Traverse embed → (pos) → blocks.
                 try:
-                    _ = model(batch_tokens, return_type="none")  # transformer-lens API
-                except TypeError:
+                    x = model.embed(batch_tokens)
+                    # Optional absolute positional embedding (families without RoPE)
+                    if hasattr(model, "pos_embed"):
+                        try:
+                            x = x + model.pos_embed(batch_tokens)
+                        except Exception:
+                            # Some families compute positional information inside attention (RoPE)
+                            pass
+                    for blk in model.blocks:
+                        x = blk(x)
+                except Exception:
+                    # Fallback: call full forward (will compute logits); slower but safe
                     _ = model(batch_tokens)
             detach_hooks(handles)
 
