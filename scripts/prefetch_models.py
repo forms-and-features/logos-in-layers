@@ -24,7 +24,7 @@ import sys
 from typing import Iterable, List
 
 try:
-from huggingface_hub import snapshot_download, HfApi
+    from huggingface_hub import snapshot_download, HfApi
 except Exception as e:  # pragma: no cover
     print("❌ huggingface_hub is required. Install it in your venv:")
     print("   pip install huggingface_hub")
