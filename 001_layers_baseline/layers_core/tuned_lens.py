@@ -455,8 +455,10 @@ def clip_rank(d_model: int) -> int:
     """Utility implementing the default width-scaled rank schedule."""
 
     base = max(1, d_model // 32)
+    # For wide models (e.g., d_model >= 4096), prefer a higher default rank
+    # to leverage larger GPUs like H200 without extra flags.
     if d_model >= 4096:
-        base = max(base, 192)
+        base = max(base, 256)
     return int(max(64, min(base, 256)))
 
 
