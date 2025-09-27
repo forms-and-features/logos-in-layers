@@ -40,7 +40,7 @@ import random
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
@@ -504,12 +504,13 @@ def train_translator(cfg: TrainingConfig) -> Dict[str, float]:
             tok_per_sec = tokens_done / elapsed
             remaining_steps = total_steps - steps_done
             eta_seconds = remaining_steps * (elapsed / steps_done)
+            finish_utc = (datetime.utcnow() + timedelta(seconds=eta_seconds)).strftime("%Y-%m-%d %H:%M:%SZ")
             print(
                 f"[tuned-lens] step {steps_done}/{total_steps} "
                 f"loss={avg_recent_loss:.4f} "
                 f"tokens={tokens_done/1e6:.2f}M "
                 f"throughput={tok_per_sec:,.0f} tok/s "
-                f"ETA={_format_eta(eta_seconds)}"
+                f"ETA={_format_eta(eta_seconds)} finish≈{finish_utc} UTC"
             )
 
     translator.eval()
