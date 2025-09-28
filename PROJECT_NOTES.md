@@ -449,7 +449,7 @@ def collapse_soft_k(k):
 
 ---
 
-### 1.12. Integrate a Tuned Lens (translator‑in‑d)
+### [x] 1.12. Integrate a Tuned Lens (translator‑in‑d)
 
 See: `001_layers_baseline/TUNED_LENS_PLAN.md`
 
@@ -466,7 +466,9 @@ See: `001_layers_baseline/TUNED_LENS_PLAN.md`
 Notes
 - “Gates” (to prefer tuned in summaries) remain an evaluator‑level policy and are intentionally kept out of the probe script.
 
-### 1.13. Surface‑mass diagnostic (EchoMass vs AnswerMass)
+---
+
+### [x] 1.13. Surface‑mass diagnostic (EchoMass vs AnswerMass)
 
 **Why.** Strict prompt‑echo (“copy‑collapse”) almost never fires on the capital question; yet **surface‑form pull** can still exist as diffuse probability mass on **prompt tokens**. A lens‑agnostic, bag‑of‑tokens diagnostic captures the **surface→meaning** transition without requiring contiguous echo or top‑1 dominance.
 
@@ -489,9 +491,11 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
 * **Run JSON (summary).** Add: `L_surface_to_meaning_norm`, `L_surface_to_meaning_tuned`, and the corresponding **confidence margins** at those depths: `answer_mass_at_L`, `echo_mass_at_L`.
 * **Numerics.** Use fp32 softmaxes already in the pipeline; ignore tokens in ( \mathcal{S} ) exactly as in the copy detector.
 
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
 ---
 
-### 1.14. Geometric surface→meaning crossover (cosine to decoder vectors)
+### [x] 1.14. Geometric surface→meaning crossover (cosine to decoder vectors)
 
 **Why.** Decoding thresholds can be noisy; the **residual‑space geometry** provides a complementary, threshold‑light view of when the state aligns more with the **answer direction** than with **prompt directions**.
 
@@ -515,9 +519,11 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
 * **Run JSON (summary).** Add: `L_geom_norm`, `L_geom_tuned`, with `cos_to_answer_at_L`, `cos_to_prompt_max_at_L`.
 * **Numerics.** Normalize vectors with an ε‑stabilized L2 norm; for multi‑query prompts, ( \mathcal{V}_\text{prompt} ) includes **all** prompt tokens (minus ( \mathcal{S} )).
 
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
 ---
 
-### 1.15. Prompt‑token Top‑K coverage decay
+### [x] 1.15. Prompt‑token Top‑K coverage decay
 
 **Why.** Even when no single prompt token dominates, a **large share of high‑probability mass** can remain on prompt tokens early in depth. Tracking its **decay** gives a robust surface‑bias indicator.
 
@@ -537,9 +543,11 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
 * **Run JSON (summary).** Add: `L_topk_decay_norm`, `L_topk_decay_tuned`, with threshold τ and K.
 * **Defaults.** K=50, τ=0.33. No new CLI; constants live next to existing copy‑detector config.
 
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
 ---
 
-### 1.16. Norm‑lens per‑layer temperature control (diagnostic baseline)
+### [x] 1.16. Norm‑lens per‑layer temperature control (diagnostic baseline)
 
 **Why.** Tuned lenses include a learned per‑layer temperature; to attribute gains correctly to **rotation** (translator) rather than **calibration**, provide a **fair, temperature‑matched baseline** for the norm lens.
 
@@ -553,9 +561,11 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
   (i) **tuned vs norm**, and (ii) **norm_temp vs norm**.
 * **No new CLI.** Calibration stream is drawn automatically during the run; artifacts live under the run’s `diagnostics` block.
 
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
 ---
 
-### 1.17. Skip‑layers sanity (optional, fast)
+### [x] 1.17. Skip‑layers sanity (optional, fast)
 
 **Why.** A classic tuned‑lens check: **replace the last m blocks** with the translator and measure next‑token loss. If perplexity barely degrades for small m, the translator captures the **final computation** faithfully.
 
@@ -571,9 +581,12 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
 * **Reporting.** In run JSON: `skip_layers_sanity: {m: ppl_delta}` per m.
 * **Guardrail.** If `ppl_delta` > 5% for m=2, flag `tuned_lens_regression=true` in diagnostics (the lens may be overfitting or under‑capacity).
 
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
+
 ---
 
-### 1.18. Artifacts and schema changes (for §§1.13–1.17)
+### [x] 1.18. Artifacts and schema changes (for §§1.13–1.17)
 
 **What.** Extend outputs with new fields; **no new CLI**.
 
@@ -594,6 +607,9 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
   * `skip_layers_sanity: { "m=2": ppl_delta, "m=4": ..., "m=8": ... }`
 * **Defaults & provenance.** Record constants (`delta=0.05`, `gamma=0.02`, `K=50`, `tau=0.33`) in the run JSON under `surface_diagnostics_config`.
 
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
+---
 
 #### Wrap‑up
 
