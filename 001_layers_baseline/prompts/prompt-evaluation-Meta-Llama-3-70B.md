@@ -12,6 +12,7 @@ Note: this JSON is a compact version; the bulky per-token records live only in t
 Also read `diagnostics.last_layer_consistency` (last‑layer head calibration): `{ kl_to_final_bits, top1_agree, p_top1_lens, p_top1_model, p_answer_lens, answer_rank_lens, temp_est, kl_after_temp_bits, cfg_transform, kl_after_transform_bits, warn_high_last_layer_kl }`.
 
 If present, also read `diagnostics.prism_summary` (Prism sidecar calibration): `{ mode, artifact_path, present, compatible, k, layers, error }`.
+If present, also read the `tuned_lens` block for provenance/diagnostics (path, summaries, provenance.translator/use_temperature/temperatures).
 
 Use the `gold_answer` block for ID‑level alignment: `{ string, pieces, first_id, answer_ids, variant }`.
 The `is_answer` flag and `p_answer`/`answer_rank` are computed using `first_id` (robust to leading‑space/multi‑piece tokenization).
@@ -23,11 +24,23 @@ Ablation: read `ablation_summary` with `{ L_copy_orig, L_sem_orig, L_copy_nf, L_
 001_layers_baseline/run-latest/output-Meta-Llama-3-70B-records.csv
 001_layers_baseline/run-latest/output-Meta-Llama-3-70B-pure-next-token.csv
 Each CSV now includes leading `prompt_id` (`pos` for Germany→Berlin; `ctl` for France→Paris) and `prompt_variant` (`orig`/`no_filler`) columns, and a `rest_mass` column (probability not covered by the listed top-k tokens).
-The pure-next-token CSV adds boolean flags `copy_collapse`, `copy_strict@τ`, and `copy_soft_k{1,2,3}@τ_soft`, plus `entropy_collapse`, and `is_answer`, together with per-layer probability/calibration fields: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, `kl_to_final_bits` (bits), `cos_to_final` (cosine similarity to the final logits direction; PROJECT_NOTES §1.5), and `control_margin = p(Paris) − p(Berlin)` for control rows. Soft-copy defaults are τ_soft = 0.5 with windows k ∈ {1,2,3}; extra thresholds may appear when configured.
+ The pure-next-token CSV adds boolean flags `copy_collapse`, `copy_strict@τ`, and `copy_soft_k{1,2,3}@τ_soft`, plus `entropy_collapse`, and `is_answer`, together with per-layer fields:
+ - Prob/calibration: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, `kl_to_final_bits` (bits)
+ - Norm temperature (norm-only): `kl_to_final_bits_norm_temp` = KL(P(z/τ)||P_final)
+ - Geometry: `cos_to_final` (§1.5), `cos_to_answer`, `cos_to_prompt_max`, `geom_crossover`
+ - Surface mass: `echo_mass_prompt`, `answer_mass`, `answer_minus_echo_mass`, `mass_ratio_ans_over_prompt`
+ - Coverage: `topk_prompt_mass@50`
+ - Control: `control_margin = p(Paris) − p(Berlin)`
+ Soft-copy defaults are τ_soft = 0.33 with windows k ∈ {1,2,3}; extra thresholds may appear when configured. Treat soft-copy primarily as an early-layer (L0–L3) sensitivity check; de-emphasize late soft hits near semantic collapse.
 
 If present, include the Prism sidecar CSVs for calibration comparison:
 001_layers_baseline/run-latest/output-Meta-Llama-3-70B-records-prism.csv
 001_layers_baseline/run-latest/output-Meta-Llama-3-70B-pure-next-token-prism.csv
+
+If present, also include the Tuned‑Lens sidecar CSVs (same schema) for comparison:
+001_layers_baseline/run-latest/output-Meta-Llama-3-70B-records-tuned.csv
+001_layers_baseline/run-latest/output-Meta-Llama-3-70B-pure-next-token-tuned.csv
+The pure CSVs include `teacher_entropy_bits` (entropy of the teacher’s final distribution at NEXT). Use it to quantify entropy drift: `(entropy − teacher_entropy_bits)`.
 
 - Parameters (copy-collapse): copy_threshold = 0.95, copy_margin = 0.10
 
@@ -51,6 +64,19 @@ Cautions
 - If `raw_lens_check.summary.lens_artifact_risk` is `high` or `first_norm_only_semantic_layer` is present, treat any pre‑final “early semantics” cautiously and prefer rank milestones (`first_rank_le_{10,5,1}`) over absolute probabilities; report the risk tier and `max_kl_norm_vs_raw_bits`.
 - Cosine is a within‑model trajectory only; if citing thresholds (e.g., cos_to_final ≥ 0.2/0.4/0.6), include the layer indices from the pure CSV, and avoid cross‑family comparisons of absolute cosine values.
 - When “top‑1” does not refer to the answer (pre‑semantic layers), label it as generic top‑1 (not `p_answer`). Use `p_answer`/`answer_rank` for semantic claims and always include the layer index when citing milestones (KL, cosine, rank, probabilities).
+ - Interpret norm temperature fields (`tau_norm_per_layer`, `kl_to_final_bits_norm_temp`, `kl_to_final_bits_norm_temp@{25,50,75}%`) as calibration diagnostics vs the teacher; compare KL vs KL_temp to separate calibration from rotation.
+
+Tuned‑Lens usage (if present)
+- Do not “choose” a single lens. Present baseline (norm) and tuned side‑by‑side where relevant.
+- Report ΔKL medians at depth percentiles (e.g., L≈{25,50,75}%): `Δ = KL_norm − KL_tuned` from the pure CSVs.
+- Check last‑layer agreement (JSON `diagnostics.last_layer_consistency.kl_after_temp_bits` ≈ 0). Quote the line.
+- Entropy drift: compare `entropy` vs `teacher_entropy_bits` at mid‑depths; note sign/magnitude.
+- Rank earliness: treat as a per‑probe observation only (suite‑level metric elsewhere). If tuned does not improve `first_rank≤{10,5,1}`, simply report both.
+- Surface→meaning: Report `L_surface_to_meaning_{norm,tuned}` with (answer_mass_at_L, echo_mass_at_L) and consider `answer_minus_echo_mass` sign.
+- Geometry: Report `L_geom_{norm,tuned}` and the cosines at L if present. Treat as within‑model only.
+- Coverage: Report `L_topk_decay_{norm,tuned}` (K=50, τ=0.33).
+- Norm temp: Include `tau_norm_per_layer` presence and the `kl_to_final_bits_norm_temp@{25,50,75}%` snapshots; optionally note a few per‑layer KL vs KL_temp rows.
+- Skip‑layers sanity (advisory): Quote `diagnostics.skip_layers_sanity` if present; high m=2 deltas don’t invalidate TL (different objective).
 
 1. Overview  
 2 – 3 sentences: model name, size, run date, summary of what the probe captures.
@@ -58,7 +84,7 @@ Cautions
 2. Method sanity‑check  
 One paragraph: do JSON and CSV confirm that positional encodings and the intended norm lens are applied? Quote ≤ 2 console lines with line numbers.
 Verify context_prompt ends with “called simply” (no trailing space).
-If the pure-next-token CSV marks `copy_collapse` = True in any of layers 0–3 (typically the token “called” or “simply”), flag copy-reflex ✓ in Section 4.
+If the pure-next-token CSV marks `copy_collapse` = True in any of layers 0–3 (typically the token “called” or “simply”), or `copy_soft_k1@τ_soft` = True in layers 0–3 (τ_soft=0.33), flag copy-reflex ✓ in Section 4. Do not count soft-copy hits that first appear near L_semantic as copy-reflex evidence.
 Confirm that "L_copy", "L_copy_H", "L_semantic", "delta_layers", "L_copy_soft" (per k), and "delta_layers_soft" are present in diagnostics alongside the implementation flags (e.g. "use_norm_lens", "unembed_dtype"). The strict copy rule remains ID-level contiguous subsequence (k=1) with threshold τ=0.95 and margin δ=0.10; the soft detectors use τ_soft (default 0.5) with window_ks from `copy_soft_config.window_ks`. Cite `copy_thresh`, `copy_window_k`, `copy_match_level`, and `copy_soft_config` (threshold, window_ks, extra_thresholds); confirm `copy_flag_columns` mirrors these labels in the JSON/CSV. Gold‑token alignment: see `gold_answer`; alignment is ID-based. Confirm `diagnostics.gold_alignment` is `ok`. If `unresolved`, note fallback to string matching and prefer rank-based statements. Negative control: confirm `control_prompt` and `control_summary`. Ablation: confirm `ablation_summary` exists and that positive rows appear under both `prompt_variant = orig` and `no_filler`. For the main table, filter to `prompt_id = pos`, `prompt_variant = orig`.
 Report summary indices from diagnostics: `first_kl_below_0.5`, `first_kl_below_1.0`, `first_rank_le_1`, `first_rank_le_5`, `first_rank_le_10`. Confirm units for KL/entropy are bits. Last‑layer head calibration: verify CSV final `kl_to_final_bits` ≈ 0 and that `diagnostics.last_layer_consistency` exists. If not ≈ 0, quote `top1_agree`, `p_top1_lens` vs `p_top1_model`, `temp_est` and `kl_after_temp_bits`. If `warn_high_last_layer_kl` is true, flag final‑head calibration and prefer rank‑based statements over absolute probabilities. Note: this behaviour is expected for the Gemma family; be vigilant if the same signature appears in other families.
 Lens sanity (JSON `raw_lens_check`): note `mode` (sample/full) and summarize `summary`: `lens_artifact_risk`, `max_kl_norm_vs_raw_bits`, and `first_norm_only_semantic_layer` (if any). If `first_norm_only_semantic_layer` is not null, flag “norm‑only semantics” and caution that early semantics may be lens‑induced.
@@ -139,6 +165,7 @@ Anything that reduces confidence; keep to facts.
 Rest_mass > 0.3 after L_semantic indicates potential norm-lens mis-scale.
 KL is lens-sensitive; a non-zero final KL can reflect final‑head calibration. Prefer rank milestones for cross-model claims; treat KL trends qualitatively. If `warn_high_last_layer_kl` is true, treat final‑row probability calibration as family-specific; rely on rank milestones and KL thresholds; use within‑model trends for conclusions.
 Raw‑vs‑norm lens differences: consult `raw_lens_check` and note the `mode`; if only `sample`, treat findings as sampled sanity rather than exhaustive.
+ Surface‑mass relies on tokenizer‑level prompt vocab; cross‑model comparisons of absolute masses can be confounded by tokenization differences—prefer within‑model trends and rank milestones.
 
 6. Model fingerprint (one sentence)  
 Example: “Llama‑3‑8B: collapse at L 32; final entropy 1.8 bits; ‘Paris’ appears rank 2 mid‑stack.”

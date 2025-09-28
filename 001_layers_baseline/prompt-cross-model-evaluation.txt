@@ -48,7 +48,15 @@ Each JSON also includes a `gold_answer` block for ID‑level alignment: `{ strin
 001_layers_baseline/run-latest/output-Qwen2.5-72B-pure-next-token.csv
 001_layers_baseline/run-latest/output-Yi-34B-pure-next-token.csv
 
-Both CSV flavours contain a `rest_mass` column (probability mass not covered by the top-k tokens) and leading `prompt_id` (`pos`/`ctl`) and `prompt_variant` (`orig`/`no_filler`) columns. The pure-next-token CSV also adds boolean flags `copy_collapse`, `copy_strict@τ`, `copy_soft_k{1,2,3}@τ_soft`, `entropy_collapse`, and `is_answer`, plus per-layer probability/calibration fields: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, and `kl_to_final_bits` (bits). It also includes `cos_to_final` (cosine similarity to the final logits direction; PROJECT_NOTES §1.5). Treat `cos_to_final` as a within-model trend; avoid cross-family comparisons of absolute cosine values. Do not treat `rest_mass` as a lens-fidelity metric; diagnose fidelity/calibration via `diagnostics.last_layer_consistency` (final KL ≈ 0 for well-aligned heads) and `raw_lens_check.summary` (`lens_artifact_risk`, `max_kl_norm_vs_raw_bits`). For control rows, the pure CSV includes `control_margin = p(Paris) − p(Berlin)`. Soft-copy defaults in current runs: τ_soft=0.33 (k∈{1,2,3}); treat soft-copy primarily as an early-layer (L0–L3) sensitivity check and do not count first soft hits appearing near L_semantic as copy-reflex.
+ Both CSV flavours contain a `rest_mass` column (probability mass not covered by the top-k tokens) and leading `prompt_id` (`pos`/`ctl`) and `prompt_variant` (`orig`/`no_filler`) columns. The pure-next-token CSV also adds:
+ - Flags: `copy_collapse`, `copy_strict@τ`, `copy_soft_k{1,2,3}@τ_soft`, `entropy_collapse`, `is_answer`
+ - Prob/calibration: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, `kl_to_final_bits` (bits)
+ - Geometry: `cos_to_final` (within-model), `cos_to_answer`, `cos_to_prompt_max`, `geom_crossover`
+ - Surface mass: `echo_mass_prompt`, `answer_mass`, `answer_minus_echo_mass`, `mass_ratio_ans_over_prompt`
+ - Coverage: `topk_prompt_mass@50`
+ - Norm temp (norm-only): `kl_to_final_bits_norm_temp` = KL(P(z/τ)||P_final)
+ - Control: `control_margin = p(Paris) − p(Berlin)`
+ Treat cosines and top‑k coverage as within‑model trends; avoid cross‑family comparisons of absolute values. Do not treat `rest_mass` as a lens-fidelity metric; diagnose fidelity/calibration via `diagnostics.last_layer_consistency` and `raw_lens_check.summary`.
 
 If present for a model, include Prism sidecars for calibration comparison:
 001_layers_baseline/run-latest/output-<model>-records-prism.csv
@@ -148,11 +156,19 @@ STYLE GUIDELINES
 - Avoid normative language; focus on actionable analysis.
  - Ground every numeric milestone (layers, KL, cosine, probabilities) with a quoted CSV/JSON line from the model being discussed, and include the layer index. Do not reuse numbers across models.
 
-Tuned‑Lens guidance (multi‑model)
+ Tuned‑Lens guidance (multi‑model)
 - Present both baseline (norm) and tuned summaries for each model when tuned artifacts exist.
-- For each model, report ΔKL medians at depth percentiles (e.g., L≈{25,50,75}%) and last‑layer agreement (JSON `diagnostics.last_layer_consistency.kl_after_temp_bits`).
+- For each model, report ΔKL medians at depth percentiles (e.g., L≈{25,50,75}%) and last‑layer agreement (JSON `diagnostics.last_layer_consistency.kl_after_temp_bits`). When available, include norm temperature snapshots `kl_to_final_bits_norm_temp@{25,50,75}%` to separate calibration vs rotation.
 - Entropy drift: for each model, summarize `(entropy − teacher_entropy_bits)` at one mid‑depth layer.
 - Rank earliness (suite‑level intent): do not assert “earlier” across models based on a single probe; instead, note whether tuned rank milestones appear earlier/equal/later. Prefer per‑model notes over aggregate claims unless you have a prompt suite.
+
+ Surface/Geometry/Coverage (multi‑model)
+- Report `L_surface_to_meaning_{norm,tuned}` with the masses at L (answer_mass_at_L, echo_mass_at_L) and note `answer_minus_echo_mass` sign/magnitude.
+- Report `L_geom_{norm,tuned}` and the cosines at L if present. Treat as within‑model; avoid cross‑family thresholds.
+- Report `L_topk_decay_{norm,tuned}` (K=50, τ=0.33); note if prompt coverage is near‑zero early.
+
+ Skip‑layers sanity (advisory)
+- If present, quote `diagnostics.skip_layers_sanity` and note the m=2 delta. Treat this as advisory: large deltas do not necessarily contradict the TL design.
 
 Briefly relate a model's collapse-depth (Δ) to its public factual-reasoning scores (e.g. MMLU, ARC-C) or to whether it is base vs. instruction-tuned; see the following table for scores:
 
@@ -171,7 +187,7 @@ Briefly relate a model's collapse-depth (Δ) to its public factual-reasoning sco
 
 (The score table is provided for reference; do not add new tables.)
 
-Does a steeper ΔH (defined as: ΔH = entropy(L_copy) − entropy(L_semantic)) predict the higher MMLU score in the table above? Do softer detectors (ΔHₖ using L_copy_soft[k]) change the ranking?
+ Does a steeper ΔH (defined as: ΔH = entropy(L_copy) − entropy(L_semantic)) predict the higher MMLU score in the table above? Do softer detectors (ΔHₖ using L_copy_soft[k]) change the ranking? Additionally, does an earlier `L_surface_to_meaning` or `L_geom` correlate with higher scores within the same family? (Do not over‑interpret across families.)
 
 At the end of the markdown file, add the following:
 

@@ -5,7 +5,7 @@ import math
 
 import torch
 
-from .numerics import bits_entropy_from_logits
+from .numerics import bits_entropy_from_logits, kl_bits
 from .collapse_rules import (
     detect_copy_collapse_id_subseq,
     is_pure_whitespace_or_punct,
@@ -13,6 +13,11 @@ from .collapse_rules import (
     is_id_subseq,
 )
 from .metrics import compute_next_token_metrics
+from .surface import (
+    compute_surface_masses,
+    compute_geometric_cosines,
+    compute_topk_prompt_mass,
+)
 
 
 def compute_pure_next_token_info(
@@ -40,6 +45,14 @@ def compute_pure_next_token_info(
     prompt_id: str,
     prompt_variant: str,
     control_ids: Optional[Tuple[Optional[int], Optional[int]]] = None,
+    # Surface/geom diagnostics
+    prompt_vocab_ids: Optional[Iterable[int]] = None,
+    decoder_weight: Optional[torch.Tensor] = None,
+    geom_vec: Optional[torch.Tensor] = None,
+    topk_prompt_mass_k: int = 50,
+    geom_gamma: float = 0.02,
+    # Norm-lens per-layer temperature (norm-only)
+    norm_temp_tau: Optional[float] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
     """Compute pure next-token metrics and summary structures.
 
@@ -131,6 +144,45 @@ def compute_pure_next_token_info(
     except Exception:
         teacher_entropy_bits = None
 
+    # Surface masses
+    echo_mass_prompt = None
+    answer_mass = None
+    mass_ratio = None
+    if prompt_vocab_ids is not None:
+        echo_mass_prompt, answer_mass, mass_ratio = compute_surface_masses(
+            last_full_probs, prompt_vocab_ids, first_ans_token_id
+        )
+    answer_minus_echo = None
+    if answer_mass is not None and echo_mass_prompt is not None:
+        answer_minus_echo = float(answer_mass - echo_mass_prompt)
+
+    # Geometric cosines
+    cos_to_answer = None
+    cos_to_prompt_max = None
+    if geom_vec is not None and decoder_weight is not None:
+        cos_to_answer, cos_to_prompt_max = compute_geometric_cosines(
+            geom_vec, decoder_weight, prompt_vocab_ids or [], first_ans_token_id
+        )
+    geom_crossover = None
+    if cos_to_answer is not None and cos_to_prompt_max is not None:
+        geom_crossover = bool(cos_to_answer >= (cos_to_prompt_max + geom_gamma))
+
+    # Top-K prompt mass
+    topk_prompt_mass = None
+    if prompt_vocab_ids is not None:
+        topk_prompt_mass = compute_topk_prompt_mass(
+            last_full_probs, prompt_vocab_ids, topk_prompt_mass_k
+        )
+
+    # Norm temperature KL to teacher (norm-only): KL(P(z/τ) || P_final)
+    kl_norm_temp_bits = None
+    if norm_temp_tau is not None and norm_temp_tau > 0:
+        P = torch.softmax(last_logits / float(norm_temp_tau), dim=0)
+        try:
+            kl_norm_temp_bits = kl_bits(P, final_probs_tensor)
+        except Exception:
+            kl_norm_temp_bits = None
+
     record_extra = {
         "copy_collapse": copy_collapse,
         copy_strict_label: copy_collapse,
@@ -139,6 +191,16 @@ def compute_pure_next_token_info(
         **metrics,
         "cos_to_final": cos_to_final,
         "control_margin": control_margin,
+        # Surface and geom
+        "echo_mass_prompt": echo_mass_prompt,
+        "answer_mass": answer_mass,
+        "mass_ratio_ans_over_prompt": mass_ratio,
+        "answer_minus_echo_mass": answer_minus_echo,
+        "cos_to_answer": cos_to_answer,
+        "cos_to_prompt_max": cos_to_prompt_max,
+        "geom_crossover": geom_crossover,
+        "topk_prompt_mass@50": topk_prompt_mass,
+        "kl_to_final_bits_norm_temp": kl_norm_temp_bits,
     }
     if teacher_entropy_bits is not None:
         record_extra["teacher_entropy_bits"] = teacher_entropy_bits
@@ -159,6 +221,16 @@ def compute_pure_next_token_info(
         "kl_to_final_bits": metrics["kl_to_final_bits"],
         "answer_rank": metrics["answer_rank"],
         "copy_soft_hits": soft_hits,
+        # Surface and geom collected for summaries
+        "echo_mass_prompt": echo_mass_prompt,
+        "answer_mass": answer_mass,
+        "mass_ratio_ans_over_prompt": mass_ratio,
+        "answer_minus_echo_mass": answer_minus_echo,
+        "cos_to_answer": cos_to_answer,
+        "cos_to_prompt_max": cos_to_prompt_max,
+        "geom_crossover": geom_crossover,
+        "topk_prompt_mass@50": topk_prompt_mass,
+        "kl_to_final_bits_norm_temp": kl_norm_temp_bits,
     }
 
     dual_ctx = {

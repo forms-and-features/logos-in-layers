@@ -6,6 +6,7 @@ CPU-only, no model/HF. Uses deterministic tensors to compare outputs.
 
 import _pathfix  # noqa: F401
 
+import math
 import torch
 
 from layers_core.prism_sidecar import (
@@ -151,8 +152,21 @@ def test_prism_pure_next_token_helper_fields_match_manual_logic():
         "p_top5": p_metrics.get("p_top5"),
         "p_answer": p_metrics.get("p_answer"),
         "kl_to_final_bits": p_metrics.get("kl_to_final_bits"),
+        "kl_to_final_bits_norm_temp": None,
         "answer_rank": p_metrics.get("answer_rank"),
         "cos_to_final": p_cos,
+        # add surface/geom placeholders present in helper output
+        "cos_to_answer": None,
+        "cos_to_prompt_max": None,
+        "geom_crossover": None,
+        "echo_mass_prompt": None,
+        "answer_mass": None,
+        "answer_minus_echo_mass": None,
+        "mass_ratio_ans_over_prompt": None,
+        "topk_prompt_mass@50": None,
+        "teacher_entropy_bits": float(
+            -(final_probs * (final_probs + 1e-30).log()).sum().item() / math.log(2)
+        ),
         "control_margin": None,
     }
     for k_soft, label in COPY_SOFT_LABELS.items():

@@ -70,9 +70,21 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
             "p_answer",
             "teacher_entropy_bits",
             "kl_to_final_bits",
+            "kl_to_final_bits_norm_temp",
             "answer_rank",
             # Representation-drift cosine (PROJECT_NOTES §1.5)
             "cos_to_final",
+            # Geometric surface crossover (PROJECT_NOTES §1.14)
+            "cos_to_answer",
+            "cos_to_prompt_max",
+            "geom_crossover",
+            # Surface mass (PROJECT_NOTES §1.13)
+            "echo_mass_prompt",
+            "answer_mass",
+            "answer_minus_echo_mass",
+            "mass_ratio_ans_over_prompt",
+            # Top-K prompt coverage (PROJECT_NOTES §1.15)
+            "topk_prompt_mass@50",
             # Negative control margin (PROJECT_NOTES §1.8)
             "control_margin",
         ])
@@ -107,8 +119,17 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
                 _nz(rec.get("p_answer")),
                 _nz(rec.get("teacher_entropy_bits")),
                 _nz(rec.get("kl_to_final_bits")),
+                _nz(rec.get("kl_to_final_bits_norm_temp")),
                 _nz(rec.get("answer_rank")),
                 _nz(rec.get("cos_to_final")),
+                _nz(rec.get("cos_to_answer")),
+                _nz(rec.get("cos_to_prompt_max")),
+                _nz(rec.get("geom_crossover")),
+                _nz(rec.get("echo_mass_prompt")),
+                _nz(rec.get("answer_mass")),
+                _nz(rec.get("answer_minus_echo_mass")),
+                _nz(rec.get("mass_ratio_ans_over_prompt")),
+                _nz(rec.get("topk_prompt_mass@50")),
                 _nz(rec.get("control_margin")),
             ])
             writer.writerow(row)

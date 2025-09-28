@@ -60,6 +60,18 @@ from .records import (
     make_record,
     make_pure_record,
 )
+from .surface import (
+    build_prompt_vocab_ids,
+    compute_surface_masses,
+    compute_geometric_cosines,
+    compute_topk_prompt_mass,
+)
+from .temperature import (
+    fit_norm_temperatures,
+)
+from .skip_sanity import (
+    evaluate_skip_layers,
+)
 
 __all__ = [
     "_get_rms_scale",
@@ -103,4 +115,13 @@ __all__ = [
     # prism sidecar emitters
     "append_prism_record",
     "append_prism_pure_next_token",
+    # surface diagnostics
+    "build_prompt_vocab_ids",
+    "compute_surface_masses",
+    "compute_geometric_cosines",
+    "compute_topk_prompt_mass",
+    # temperature fit
+    "fit_norm_temperatures",
+    # skip-layers sanity
+    "evaluate_skip_layers",
 ]

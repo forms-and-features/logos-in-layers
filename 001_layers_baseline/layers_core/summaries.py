@@ -9,6 +9,10 @@ def summarize_pure_records(
     copy_soft_threshold: float,
     copy_soft_window_ks: Sequence[int],
     copy_match_level: str = "id_subsequence",
+    lens_tag: Optional[str] = None,
+    surface_delta: float = 0.05,
+    geom_gamma: float = 0.02,
+    topk_prompt_tau: float = 0.33,
 ) -> Dict[str, Any]:
     """Summarize collapse and threshold indices from per-layer pure next-token records.
 
@@ -28,6 +32,19 @@ def summarize_pure_records(
     first_rank_le_1: Optional[int] = None
     first_rank_le_5: Optional[int] = None
     first_rank_le_10: Optional[int] = None
+
+    # Surface/geom/top-k summaries
+    L_surface_to_meaning: Optional[int] = None
+    answer_mass_at_L_surface: Optional[float] = None
+    echo_mass_at_L_surface: Optional[float] = None
+    delta_mass_at_L_surface: Optional[float] = None
+
+    L_geom: Optional[int] = None
+    cos_answer_at_L_geom: Optional[float] = None
+    cos_prompt_at_L_geom: Optional[float] = None
+
+    L_topk_decay: Optional[int] = None
+    topk_mass_at_L: Optional[float] = None
 
     for rec in pure_records:
         layer = rec.get("layer")
@@ -58,6 +75,42 @@ def summarize_pure_records(
                 first_rank_le_5 = layer
             if first_rank_le_10 is None and ar <= 10:
                 first_rank_le_10 = layer
+
+        # Surface mass crossover
+        a_mass = rec.get("answer_mass")
+        e_mass = rec.get("echo_mass_prompt")
+        if (
+            L_surface_to_meaning is None
+            and a_mass is not None
+            and e_mass is not None
+            and a_mass >= (e_mass + surface_delta)
+        ):
+            L_surface_to_meaning = layer
+            answer_mass_at_L_surface = a_mass
+            echo_mass_at_L_surface = e_mass
+            dm = rec.get("answer_minus_echo_mass")
+            if dm is None:
+                dm = a_mass - e_mass
+            delta_mass_at_L_surface = dm
+
+        # Geometric crossover
+        ca = rec.get("cos_to_answer")
+        cp = rec.get("cos_to_prompt_max")
+        if (
+            L_geom is None
+            and ca is not None
+            and cp is not None
+            and ca >= (cp + geom_gamma)
+        ):
+            L_geom = layer
+            cos_answer_at_L_geom = ca
+            cos_prompt_at_L_geom = cp
+
+        # Top-K decay
+        tk = rec.get("topk_prompt_mass@50")
+        if L_topk_decay is None and tk is not None and tk <= topk_prompt_tau:
+            L_topk_decay = layer
+            topk_mass_at_L = tk
 
     delta_soft: Dict[int, Optional[int]] = {}
     for k, layer_idx in L_copy_soft.items():
@@ -102,5 +155,19 @@ def summarize_pure_records(
             },
         },
     }
+
+    # Surface/geom/top-k extras
+    suffix = f"_{lens_tag}" if lens_tag else ""
+    summary[f"L_surface_to_meaning{suffix}"] = L_surface_to_meaning
+    summary[f"answer_mass_at_L_surface{suffix}"] = answer_mass_at_L_surface
+    summary[f"echo_mass_at_L_surface{suffix}"] = echo_mass_at_L_surface
+    summary[f"L_geom{suffix}"] = L_geom
+    summary[f"cos_to_answer_at_L_geom{suffix}"] = cos_answer_at_L_geom
+    summary[f"cos_to_prompt_max_at_L_geom{suffix}"] = cos_prompt_at_L_geom
+    summary[f"L_topk_decay{suffix}"] = L_topk_decay
+    summary[f"topk_prompt_mass_at_L{suffix}"] = topk_mass_at_L
+    summary[f"topk_prompt_tau{suffix}"] = topk_prompt_tau
+    summary[f"surface_delta{suffix}"] = surface_delta
+    summary[f"geom_gamma{suffix}"] = geom_gamma
 
     return summary

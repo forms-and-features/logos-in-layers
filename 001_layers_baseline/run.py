@@ -71,6 +71,8 @@ from layers_core.contexts import UnembedContext, PrismContext
 from layers_core.probes import emit_test_prompts, emit_temperature_exploration
 from layers_core.token_utils import make_decode_id
 from layers_core.collapse_rules import format_copy_strict_label, format_copy_soft_label
+from layers_core.temperature import fit_norm_temperatures
+from layers_core.skip_sanity import evaluate_skip_layers
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -289,7 +291,13 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             "mixed_precision_fix": mixed_precision_fix,
             "layer0_position_info": layer0_position_info,
             "context_prompt": context_prompt,
-            "target_prediction": "first unseen token (likely 'Berlin')"
+            "target_prediction": "first unseen token (likely 'Berlin')",
+            "surface_diagnostics_config": {
+                "delta": 0.05,
+                "gamma": 0.02,
+                "K": 50,
+                "tau": 0.33,
+            },
         }
         # Prism sidecar setup (auto/on/off) and summary (filled below)
         prism_mode = getattr(CLI_ARGS, "prism", "auto")
@@ -391,6 +399,20 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
 
         # Baseline norm lens adapter (behavior-preserving)
         norm_lens = NormLensAdapter()
+
+        # Norm-lens temperature calibration (CPU fallback)
+        norm_temp_taus = None
+        try:
+            calibration_prompts = [context_prompt, context_prompt_nf, context_prompt_ctl]
+            norm_temp_taus = fit_norm_temperatures(
+                model,
+                calibration_prompts,
+                norm_lens,
+                unembed_ctx,
+            )
+            diag["tau_norm_per_layer"] = [float(t) for t in norm_temp_taus]
+        except Exception as exc:
+            diag["tau_norm_per_layer_error"] = str(exc)
 
         tuned_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tuned_lenses", prism_clean)
         tuned_diag_info["path"] = tuned_dir
@@ -621,6 +643,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     clean_model_name=clean_model_name(model_id),
                     enable_raw_lens_sampling=True,
                     tuned_spec=tuned_spec,
+                    norm_temp_taus=norm_temp_taus,
                 )
                 diag.update(pass_summary)
                 diag["gold_alignment"] = "ok" if gold_info.get("status") == "ok" else "unresolved"
@@ -629,6 +652,24 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 json_data["diagnostics"] = diag
                 if last_layer_consistency is not None:
                     json_data["diagnostics"]["last_layer_consistency"] = last_layer_consistency
+                # KL_temp percentile snapshots
+                try:
+                    if norm_temp_taus:
+                        layer_rec = {
+                            int(r.get("layer")): r
+                            for r in json_data.get("pure_next_token_records", [])
+                            if r.get("prompt_id") == current_prompt_id and r.get("prompt_variant") == current_prompt_variant
+                        }
+                        total_layers = int(model.cfg.n_layers)
+                        for pct, frac in ((25, 0.25), (50, 0.50), (75, 0.75)):
+                            li = max(0, min(total_layers, int(round(total_layers * frac))))
+                            rec = layer_rec.get(li)
+                            diag[f"kl_to_final_bits_norm_temp@{pct}%"] = None if rec is None else {
+                                "layer": li,
+                                "value": rec.get("kl_to_final_bits_norm_temp"),
+                            }
+                except Exception:
+                    pass
                 # Merge any runner-provided Prism diag deltas (e.g., placement_error)
                 try:
                     if isinstance(diag.get("prism_summary"), dict) and isinstance(prism_diag, dict):
@@ -772,6 +813,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     clean_model_name=clean_model_name(model_id),
                     enable_raw_lens_sampling=False,
                     tuned_spec=tuned_spec,
+                    norm_temp_taus=norm_temp_taus,
                 )
         try:
             if isinstance(diag.get("prism_summary"), dict) and isinstance(prism_diag_nf, dict) and prism_diag_nf.get("placement_error"):
@@ -826,6 +868,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     control_ids=(first_ans_id_ctl, first_ans_id),
                     enable_raw_lens_sampling=False,
                     tuned_spec=tuned_spec,
+                    norm_temp_taus=norm_temp_taus,
                 )
         try:
             if isinstance(diag.get("prism_summary"), dict) and isinstance(prism_diag_ctl, dict) and prism_diag_ctl.get("placement_error"):
@@ -874,6 +917,38 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             }
         else:
             json_data["tuned_lens"] = tuned_diag_info
+
+        # Mirror key tuned summaries into diagnostics for quick access
+        try:
+            prim = (tuned_spec.get("summaries", []) if tuned_spec is not None else [])
+            if prim:
+                s0 = prim[0]
+                for k, v in s0.items():
+                    if isinstance(k, str) and k.endswith("_tuned"):
+                        diag[k] = v
+        except Exception:
+            pass
+
+        # Skip-layers sanity (advisory; not an acceptance gate)
+        skip_results = {}
+        if tuned_adapter is not None:
+            try:
+                skip_prompts = [
+                    (context_prompt, first_ans_id),
+                    (context_prompt_nf, first_ans_id_nf),
+                    (context_prompt_ctl, first_ans_id_ctl),
+                ]
+                skip_results = evaluate_skip_layers(model, tuned_adapter, unembed_ctx, skip_prompts)
+            except Exception as exc:
+                diag["skip_layers_sanity_error"] = str(exc)
+        tuned_reg = False
+        if skip_results:
+            diag["skip_layers_sanity"] = skip_results
+            d2 = skip_results.get("m=2")
+            if d2 is not None and d2 > 0.20:
+                tuned_reg = True
+                diag["tuned_lens_skip_warning"] = d2
+        diag["tuned_lens_regression"] = tuned_reg
 
         json_data_tuned_outer = json_data_tuned
         tuned_provenance_outer = tuned_provenance

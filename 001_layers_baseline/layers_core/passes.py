@@ -16,6 +16,12 @@ from .summaries import summarize_pure_records
 from .consistency import compute_last_layer_consistency
 from .lenses import PrismLensAdapter
 from .contexts import UnembedContext, PrismContext
+from .surface import build_prompt_vocab_ids
+
+SURFACE_DELTA = 0.05
+GEOM_GAMMA = 0.02
+TOPK_PROMPT_MASS_K = 50
+TOPK_DECAY_TAU = 0.33
 
 
 def _is_verbose_position(pos: int, token_str: str, seq_len: int, important_words: Sequence[str]) -> bool:
@@ -63,12 +69,23 @@ def run_prompt_pass(
     control_ids: Optional[Tuple[Optional[int], Optional[int]]] = None,
     enable_raw_lens_sampling: bool = True,
     tuned_spec: Optional[Dict[str, Any]] = None,
+    norm_temp_taus: Optional[Sequence[Optional[float]]] = None,
 ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], str, Dict[str, Any]]:
     """Run a single prompt pass and append outputs into json_data structures.
 
     Returns (summary_diag, last_layer_consistency, detected_architecture, diag_delta).
     """
     window_manager.reset_variant(prompt_id, prompt_variant)
+
+    prompt_vocab_ids = build_prompt_vocab_ids(ctx_ids_list, decode_id_fn) if ctx_ids_list else []
+    decoder_weight = getattr(unembed_ctx, 'W', None)
+
+    def _tau_for(idx: int) -> Optional[float]:
+        if norm_temp_taus is None:
+            return None
+        if idx < 0 or idx >= len(norm_temp_taus):
+            return None
+        return norm_temp_taus[idx]
 
     tuned_enabled = bool(tuned_spec and tuned_spec.get("adapter"))
     if tuned_enabled:
@@ -157,6 +174,11 @@ def run_prompt_pass(
                         prism_ctx.placement_error = err
 
             # Per-position records at L0
+            last_pos = tokens.shape[1] - 1
+            norm_module_pre = get_correct_norm_module(model, 0, probe_after_block=False)
+            resid_norm_pre = apply_norm_or_skip(resid_raw, norm_module_pre)
+            geom_vec_norm_pre = resid_norm_pre[0, last_pos, :].detach()
+
             for pos in range(tokens.shape[1]):
                 layer_logits = norm_logits_all[pos]
                 entropy_bits = bits_entropy_from_logits(layer_logits)
@@ -239,6 +261,12 @@ def run_prompt_pass(
                 prompt_id=prompt_id,
                 prompt_variant=prompt_variant,
                 control_ids=control_ids,
+                prompt_vocab_ids=prompt_vocab_ids,
+                decoder_weight=decoder_weight,
+                geom_vec=geom_vec_norm_pre,
+                topk_prompt_mass_k=TOPK_PROMPT_MASS_K,
+                geom_gamma=GEOM_GAMMA,
+                norm_temp_tau=_tau_for(0),
             )
             json_data["pure_next_token_records"].append(
                 make_pure_record(
@@ -280,6 +308,12 @@ def run_prompt_pass(
                     prompt_id=prompt_id,
                     prompt_variant=prompt_variant,
                     control_ids=control_ids,
+                    prompt_vocab_ids=prompt_vocab_ids,
+                    decoder_weight=decoder_weight,
+                    geom_vec=None,
+                    topk_prompt_mass_k=TOPK_PROMPT_MASS_K,
+                    geom_gamma=GEOM_GAMMA,
+                    norm_temp_tau=None,
                 )
                 tuned_json_data["pure_next_token_records"].append(
                     make_pure_record(
@@ -367,6 +401,10 @@ def run_prompt_pass(
             for layer in range(n_layers):
                 resid_raw = get_residual_safely(residual_cache, layer)
 
+                norm_module_post = get_correct_norm_module(model, layer, probe_after_block=True)
+                resid_norm_post = apply_norm_or_skip(resid_raw, norm_module_post)
+                geom_vec_norm_post = resid_norm_post[0, last_pos, :].detach()
+
                 logits_all = norm_lens.forward(
                     model,
                     layer,
@@ -390,6 +428,13 @@ def run_prompt_pass(
                         force_fp32_unembed=unembed_ctx.force_fp32,
                         cache=tuned_cache,
                     )
+                    try:
+                        translated_seq = tuned_adapter.translator(
+                            resid_norm_post[0, :, :], layer
+                        )
+                        geom_vec_tuned_post = translated_seq[last_pos, :].detach()
+                    except Exception:
+                        geom_vec_tuned_post = None
 
                 # Prism sidecar logits via adapter for per-position record emission
                 prism_logits_all = None
@@ -492,6 +537,12 @@ def run_prompt_pass(
                     prompt_id=prompt_id,
                     prompt_variant=prompt_variant,
                     control_ids=control_ids,
+                    prompt_vocab_ids=prompt_vocab_ids,
+                    decoder_weight=decoder_weight,
+                    geom_vec=geom_vec_norm_post,
+                    topk_prompt_mass_k=TOPK_PROMPT_MASS_K,
+                    geom_gamma=GEOM_GAMMA,
+                    norm_temp_tau=_tau_for(layer + 1),
                 )
                 json_data["pure_next_token_records"].append(
                     make_pure_record(
@@ -533,6 +584,12 @@ def run_prompt_pass(
                         prompt_id=prompt_id,
                         prompt_variant=prompt_variant,
                         control_ids=control_ids,
+                        prompt_vocab_ids=prompt_vocab_ids,
+                        decoder_weight=decoder_weight,
+                        geom_vec=geom_vec_tuned_post,
+                        topk_prompt_mass_k=TOPK_PROMPT_MASS_K,
+                        geom_gamma=GEOM_GAMMA,
+                        norm_temp_tau=None,
                     )
                     tuned_json_data["pure_next_token_records"].append(
                         make_pure_record(
@@ -649,6 +706,10 @@ def run_prompt_pass(
                 copy_soft_threshold=copy_soft_threshold,
                 copy_soft_window_ks=copy_soft_window_ks,
                 copy_match_level="id_subsequence",
+                lens_tag="norm",
+                surface_delta=SURFACE_DELTA,
+                geom_gamma=GEOM_GAMMA,
+                topk_prompt_tau=TOPK_DECAY_TAU,
             )
             if tuned_enabled and tuned_summaries is not None:
                 summary_tuned = summarize_pure_records(
@@ -658,6 +719,10 @@ def run_prompt_pass(
                     copy_soft_threshold=copy_soft_threshold,
                     copy_soft_window_ks=copy_soft_window_ks,
                     copy_match_level="id_subsequence",
+                    lens_tag="tuned",
+                    surface_delta=SURFACE_DELTA,
+                    geom_gamma=GEOM_GAMMA,
+                    topk_prompt_tau=TOPK_DECAY_TAU,
                 )
                 tuned_summaries.append(summary_tuned)
             return summary_diag, last_layer_consistency, detected_architecture, diag_delta
