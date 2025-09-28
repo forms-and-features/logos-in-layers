@@ -466,6 +466,135 @@ See: `001_layers_baseline/TUNED_LENS_PLAN.md`
 Notes
 - “Gates” (to prefer tuned in summaries) remain an evaluator‑level policy and are intentionally kept out of the probe script.
 
+### 1.13. Surface‑mass diagnostic (EchoMass vs AnswerMass)
+
+**Why.** Strict prompt‑echo (“copy‑collapse”) almost never fires on the capital question; yet **surface‑form pull** can still exist as diffuse probability mass on **prompt tokens**. A lens‑agnostic, bag‑of‑tokens diagnostic captures the **surface→meaning** transition without requiring contiguous echo or top‑1 dominance.
+
+**What.** For each layer ℓ and chosen lens (norm & tuned), compute:
+
+* **Prompt token set** ( \mathcal{V}_\text{prompt} ): the **unique token IDs** present anywhere in the prompt, **minus** the project’s ignore set ( \mathcal{S} ) (whitespace, punctuation, etc., reusing the copy detector mask).
+* **Answer mass** ( \text{AnsMass}^{(\ell)} = P^{(\ell)}(\text{answer_first_id}) ) (the probability of the **gold answer’s first token ID** used by `L_semantic`).
+* **Echo mass** ( \text{EchoMass}^{(\ell)} = \sum_{t \in \mathcal{V}_\text{prompt}} P^{(\ell)}(t) ).
+
+Define the **surface→meaning crossover depth** ( L_{\text{surface}\to\text{meaning}} ) as the smallest ℓ such that
+[
+\text{AnsMass}^{(\ell)} \ge \text{EchoMass}^{(\ell)} + \delta \quad \text{with}\ \delta = 0.05.
+]
+Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\ell)} + 10^{-9}) ).
+
+**How.**
+
+* **Integration point.** In the per‑layer decode loop (already computing (P^{(\ell)}) for norm and tuned), construct ( \mathcal{V}_\text{prompt} ) once per run using the prompt’s token IDs and the existing ignore mask; cache it.
+* **CSV (per layer).** Add: `echo_mass_prompt`, `answer_mass`, `mass_ratio_ans_over_prompt` **for each lens** (prefix columns with `norm_`/`tuned_` or write to the respective sidecar).
+* **Run JSON (summary).** Add: `L_surface_to_meaning_norm`, `L_surface_to_meaning_tuned`, and the corresponding **confidence margins** at those depths: `answer_mass_at_L`, `echo_mass_at_L`.
+* **Numerics.** Use fp32 softmaxes already in the pipeline; ignore tokens in ( \mathcal{S} ) exactly as in the copy detector.
+
+---
+
+### 1.14. Geometric surface→meaning crossover (cosine to decoder vectors)
+
+**Why.** Decoding thresholds can be noisy; the **residual‑space geometry** provides a complementary, threshold‑light view of when the state aligns more with the **answer direction** than with **prompt directions**.
+
+**What.** Let ( W_U \in \mathbb{R}^{d \times |\mathcal{V}|} ) be the unembedding (already tied and fp32 in the analysis path). For each layer ℓ:
+
+* Let ( h_\text{geom}^{(\ell)} ) be the **state whose logits are decoded** at layer ℓ:
+  – **norm lens:** the **normalized** post‑block residual used by the norm lens;
+  – **tuned lens:** the **translated** residual ( \tilde h^{(\ell)} ).
+* Define **cosines** against **decoder columns**:
+  ( \text{cos_to_answer}^{(\ell)} = \cos\big(h_\text{geom}^{(\ell)}, W_U[:, \text{answer_first_id}]\big) ).
+  ( \text{cos_to_prompt_max}^{(\ell)} = \max_{t \in \mathcal{V}*\text{prompt}} \cos\big(h*\text{geom}^{(\ell)}, W_U[:, t]\big) ).
+* Define the **geometric crossover depth** ( L_{\text{geom}} ) as the smallest ℓ where
+  [
+  \text{cos_to_answer}^{(\ell)} \ge \text{cos_to_prompt_max}^{(\ell)} + \gamma,\quad \gamma = 0.02.
+  ]
+
+**How.**
+
+* **Integration point.** Reuse the same ( \mathcal{V}_\text{prompt} ) and ignore mask from §1.13. Compute the two cosines per layer and per lens before unembedding (use the fp32 `W_U`).
+* **CSV (per layer).** Add: `cos_to_answer`, `cos_to_prompt_max`, and a boolean `geom_crossover` **for each lens**.
+* **Run JSON (summary).** Add: `L_geom_norm`, `L_geom_tuned`, with `cos_to_answer_at_L`, `cos_to_prompt_max_at_L`.
+* **Numerics.** Normalize vectors with an ε‑stabilized L2 norm; for multi‑query prompts, ( \mathcal{V}_\text{prompt} ) includes **all** prompt tokens (minus ( \mathcal{S} )).
+
+---
+
+### 1.15. Prompt‑token Top‑K coverage decay
+
+**Why.** Even when no single prompt token dominates, a **large share of high‑probability mass** can remain on prompt tokens early in depth. Tracking its **decay** gives a robust surface‑bias indicator.
+
+**What.** For each layer ℓ and lens:
+
+* Take the **Top‑K** tokens by ( P^{(\ell)} ) (default **K=50**).
+* Define **prompt Top‑K mass share**:
+  [
+  \text{TopKPromptMass}^{(\ell)} = \sum_{t \in \text{TopK}^{(\ell)} \cap \mathcal{V}_\text{prompt}} P^{(\ell)}(t).
+  ]
+* Define the **half‑coverage depth** ( L_{\text{topK},\downarrow} ) as the smallest ℓ with ( \text{TopKPromptMass}^{(\ell)} \le \tau ) (default **τ=0.33**).
+
+**How.**
+
+* **Integration point.** In the per‑layer decode loop, after logits→probabilities, compute Top‑K once, intersect with ( \mathcal{V}_\text{prompt} ), and sum.
+* **CSV (per layer).** Add: `topk_prompt_mass@50` **for each lens**.
+* **Run JSON (summary).** Add: `L_topk_decay_norm`, `L_topk_decay_tuned`, with threshold τ and K.
+* **Defaults.** K=50, τ=0.33. No new CLI; constants live next to existing copy‑detector config.
+
+---
+
+### 1.16. Norm‑lens per‑layer temperature control (diagnostic baseline)
+
+**Why.** Tuned lenses include a learned per‑layer temperature; to attribute gains correctly to **rotation** (translator) rather than **calibration**, provide a **fair, temperature‑matched baseline** for the norm lens.
+
+**What.** For each layer ℓ, learn a **scalar temperature** ( \tau_\ell^\text{norm} > 0 ) that minimizes
+( \mathrm{CE}\big(\text{softmax}(\frac{z_\text{norm}^{(\ell)}}{\tau}),\ P_\text{final}\big) ) on a small **calibration stream** (e.g., the first **256k** tokens consumed by the TL fitter). Keep a **hold‑out stream** for reporting.
+
+**How.**
+
+* **Fitting.** One‑dimensional optimize ( \tau ) per layer by line search or Adam on the calibration stream; clamp (\tau\in[0.2,5.0]). Persist the vector `tau_norm_per_layer` in the run JSON.
+* **Reporting.** Alongside existing `kl_to_final_bits`, add `kl_to_final_bits_norm_temp` per layer; in summaries, report **ΔKL** for:
+  (i) **tuned vs norm**, and (ii) **norm_temp vs norm**.
+* **No new CLI.** Calibration stream is drawn automatically during the run; artifacts live under the run’s `diagnostics` block.
+
+---
+
+### 1.17. Skip‑layers sanity (optional, fast)
+
+**Why.** A classic tuned‑lens check: **replace the last m blocks** with the translator and measure next‑token loss. If perplexity barely degrades for small m, the translator captures the **final computation** faithfully.
+
+**What.** For **m ∈ {2, 4, 8}**, at each evaluation position:
+
+* Run the model **up to layer L−m** normally;
+* Apply the translator at layer L−m to produce tuned logits;
+* Compute CE to the gold next token; aggregate across an **evaluation shard** (~128k tokens).
+
+**How.**
+
+* **Implementation.** Add a light evaluation pass that short‑circuits the forward at L−m and calls the lens adapter for logits.
+* **Reporting.** In run JSON: `skip_layers_sanity: {m: ppl_delta}` per m.
+* **Guardrail.** If `ppl_delta` > 5% for m=2, flag `tuned_lens_regression=true` in diagnostics (the lens may be overfitting or under‑capacity).
+
+---
+
+### 1.18. Artifacts and schema changes (for §§1.13–1.17)
+
+**What.** Extend outputs with new fields; **no new CLI**.
+
+**How.**
+
+* **Per‑layer CSVs** (norm & tuned sidecars):
+
+  * `echo_mass_prompt`, `answer_mass`, `mass_ratio_ans_over_prompt`
+  * `cos_to_answer`, `cos_to_prompt_max`, `geom_crossover`
+  * `topk_prompt_mass@50`
+  * `kl_to_final_bits_norm_temp` (in **norm** CSV only)
+* **Run JSON additions** (top‑level `diagnostics` and `summary`):
+
+  * `L_surface_to_meaning_{norm,tuned}`, `answer_mass_at_L`, `echo_mass_at_L`, `delta=answer_mass-echo_mass`
+  * `L_geom_{norm,tuned}`, `cos_to_answer_at_L`, `cos_to_prompt_max_at_L`
+  * `L_topk_decay_{norm,tuned}`, with `K=50`, `tau=0.33`
+  * `tau_norm_per_layer` vector and `kl_to_final_bits_norm_temp@{25,50,75}%`
+  * `skip_layers_sanity: { "m=2": ppl_delta, "m=4": ..., "m=8": ... }`
+* **Defaults & provenance.** Record constants (`delta=0.05`, `gamma=0.02`, `K=50`, `tau=0.33`) in the run JSON under `surface_diagnostics_config`.
+
+
 #### Wrap‑up
 
 Executing the items in **Group 1** upgrades the measurement pipeline from an informative prototype to a rigour‑grade toolchain. Only after this foundation is secure should we move on to the broader prompt battery and causal‑intervention work.
