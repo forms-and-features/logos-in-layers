@@ -14,6 +14,12 @@ Also read `diagnostics.last_layer_consistency` (last‑layer head calibration): 
 If present, also read `diagnostics.prism_summary` (Prism sidecar calibration): `{ mode, artifact_path, present, compatible, k, layers, error }`.
 If present, also read the `tuned_lens` block for provenance/diagnostics (path, summaries, provenance.translator/use_temperature/temperatures).
 
+Also read:
+* diagnostics.raw_lens_window: { radius, center_layers, layers_checked, norm_only_semantics_layers, max_kl_norm_vs_raw_bits_window, mode="window" }.
+* summary.cos_milestones and summary.depth_fractions.
+* diagnostics.prism_summary.metrics and tuned_lens.summary.metrics.
+* measurement_guidance: { prefer_ranks, suppress_abs_probs, reasons[], notes }.
+
 Use the `gold_answer` block for ID‑level alignment: `{ string, pieces, first_id, answer_ids, variant }`.
 The `is_answer` flag and `p_answer`/`answer_rank` are computed using `first_id` (robust to leading‑space/multi‑piece tokenization).
 
@@ -42,6 +48,10 @@ If present, also include the Tuned‑Lens sidecar CSVs (same schema) for compari
 001_layers_baseline/run-latest/output-Meta-Llama-3-8B-pure-next-token-tuned.csv
 The pure CSVs include `teacher_entropy_bits` (entropy of the teacher’s final distribution at NEXT). Use it to quantify entropy drift: `(entropy − teacher_entropy_bits)`.
 
+If present, also include Windowed Raw‑vs‑Norm sidecar:
+001_layers_baseline/run-latest/output-Meta-Llama-3-8B-pure-next-token-rawlens-window.csv
+Columns: layer, lens ∈ {raw,norm}, p_top1, top1_token_id, top1_token_str, p_answer, answer_rank, kl_norm_vs_raw_bits.
+
 - Parameters (copy-collapse): copy_threshold = 0.95, copy_margin = 0.10
 
 - Your own research knowledge.
@@ -61,6 +71,7 @@ The brevity instruction is intentionally preserved to
 
 Cautions
 - Do not treat `rest_mass` as a lens-fidelity metric; it is top‑k coverage only. Diagnose fidelity/calibration via `diagnostics.last_layer_consistency` (final `kl_to_final_bits` ≈ 0 for well‑aligned heads) and `raw_lens_check.summary` (`lens_artifact_risk`, `max_kl_norm_vs_raw_bits`).
+- Honor `measurement_guidance`: if `prefer_ranks = true` or `suppress_abs_probs = true`, lead with rank thresholds and avoid absolute probability comparisons.
 - If `raw_lens_check.summary.lens_artifact_risk` is `high` or `first_norm_only_semantic_layer` is present, treat any pre‑final “early semantics” cautiously and prefer rank milestones (`first_rank_le_{10,5,1}`) over absolute probabilities; report the risk tier and `max_kl_norm_vs_raw_bits`.
 - Cosine is a within‑model trajectory only; if citing thresholds (e.g., cos_to_final ≥ 0.2/0.4/0.6), include the layer indices from the pure CSV, and avoid cross‑family comparisons of absolute cosine values.
 - When “top‑1” does not refer to the answer (pre‑semantic layers), label it as generic top‑1 (not `p_answer`). Use `p_answer`/`answer_rank` for semantic claims and always include the layer index when citing milestones (KL, cosine, rank, probabilities).
@@ -85,8 +96,12 @@ Tuned‑Lens usage (if present)
 One paragraph: do JSON and CSV confirm that positional encodings and the intended norm lens are applied? Quote ≤ 2 console lines with line numbers.
 Verify context_prompt ends with “called simply” (no trailing space).
 If the pure-next-token CSV marks `copy_collapse` = True in any of layers 0–3 (typically the token “called” or “simply”), or `copy_soft_k1@τ_soft` = True in layers 0–3 (τ_soft=0.33), flag copy-reflex ✓ in Section 4. Do not count soft-copy hits that first appear near L_semantic as copy-reflex evidence.
-Confirm that "L_copy", "L_copy_H", "L_semantic", "delta_layers", "L_copy_soft" (per k), and "delta_layers_soft" are present in diagnostics alongside the implementation flags (e.g. "use_norm_lens", "unembed_dtype"). The strict copy rule remains ID-level contiguous subsequence (k=1) with threshold τ=0.95 and margin δ=0.10; the soft detectors use τ_soft (default 0.5) with window_ks from `copy_soft_config.window_ks`. Cite `copy_thresh`, `copy_window_k`, `copy_match_level`, and `copy_soft_config` (threshold, window_ks, extra_thresholds); confirm `copy_flag_columns` mirrors these labels in the JSON/CSV. Gold‑token alignment: see `gold_answer`; alignment is ID-based. Confirm `diagnostics.gold_alignment` is `ok`. If `unresolved`, note fallback to string matching and prefer rank-based statements. Negative control: confirm `control_prompt` and `control_summary`. Ablation: confirm `ablation_summary` exists and that positive rows appear under both `prompt_variant = orig` and `no_filler`. For the main table, filter to `prompt_id = pos`, `prompt_variant = orig`.
+Confirm that "L_copy", "L_copy_soft[k], "L_semantic", "delta_layers", "L_copy_soft" (per k), and "delta_layers_soft" are present in diagnostics alongside the implementation flags (e.g. "use_norm_lens", "unembed_dtype").
+The strict copy rule remains ID‑level contiguous subsequence (k=1) with threshold τ=0.95 and margin δ=0.10. Soft detectors use τ_soft = 0.33 with window_ks from `copy_soft_config.window_ks`. When `L_copy_strict` is null, compute Δ using the earliest `L_copy_soft[k]` (report k).
+Cite `copy_thresh`, `copy_window_k`, `copy_match_level`, and `copy_soft_config` (threshold, window_ks, extra_thresholds); confirm `copy_flag_columns` mirrors these labels in the JSON/CSV. Gold‑token alignment: see `gold_answer`; alignment is ID-based. Confirm `diagnostics.gold_alignment` is `ok`. If `unresolved`, note fallback to string matching and prefer rank-based statements. Negative control: confirm `control_prompt` and `control_summary`. Ablation: confirm `ablation_summary` exists and that positive rows appear under both `prompt_variant = orig` and `no_filler`. For the main table, filter to `prompt_id = pos`, `prompt_variant = orig`.
 Report summary indices from diagnostics: `first_kl_below_0.5`, `first_kl_below_1.0`, `first_rank_le_1`, `first_rank_le_5`, `first_rank_le_10`. Confirm units for KL/entropy are bits. Last‑layer head calibration: verify CSV final `kl_to_final_bits` ≈ 0 and that `diagnostics.last_layer_consistency` exists. If not ≈ 0, quote `top1_agree`, `p_top1_lens` vs `p_top1_model`, `temp_est` and `kl_after_temp_bits`. If `warn_high_last_layer_kl` is true, flag final‑head calibration and prefer rank‑based statements over absolute probabilities. Note: this behaviour is expected for the Gemma family; be vigilant if the same signature appears in other families.
+Measurement guidance: quote `measurement_guidance` (prefer_ranks/suppress_abs_probs and reasons).
+Raw‑vs‑Norm window (if present): list `center_layers`, `radius`, and any `norm_only_semantics_layers`; cite the largest `kl_norm_vs_raw_bits_window`.
 Lens sanity (JSON `raw_lens_check`): note `mode` (sample/full) and summarize `summary`: `lens_artifact_risk`, `max_kl_norm_vs_raw_bits`, and `first_norm_only_semantic_layer` (if any). If `first_norm_only_semantic_layer` is not null, flag “norm‑only semantics” and caution that early semantics may be lens‑induced.
 Copy-collapse flag check: first row with `copy_collapse = True`  
   layer = … , token_id₁ = … , p₁ = … , token_id₂ = … , p₂ = …  
@@ -120,10 +135,13 @@ Rank milestones (from diagnostics):
 rank ≤ 10 at layer …, rank ≤ 5 at layer …, rank ≤ 1 at layer …
 KL milestones (from diagnostics):  
 first_kl_below_1.0 at layer …, first_kl_below_0.5 at layer …; comment on whether KL decreases with depth and is ≈ 0 at final. If not ≈ 0 at final, annotate it, reference `diagnostics.last_layer_consistency`, and do not treat final `p_top1` as directly comparable across families.
- Cosine milestones (from pure CSV):
- first `cos_to_final ≥ 0.2` at layer …, `≥ 0.4` at layer …, `≥ 0.6` at layer …; final `cos_to_final = …`.
+Cosine milestones (from pure CSV): first `cos_to_final ≥ 0.2` at layer …, `≥ 0.4` at layer …, `≥ 0.6` at layer …; final `cos_to_final = …`.
+If `cos_milestones` is present in JSON, prefer those layer indices for thresholds ge_{0.2,0.4,0.6}; otherwise compute from the CSV.
+
+Use `summary.depth_fractions` (if present) to report normalized depths (e.g., `L_semantic_frac`), and `summary.cos_milestones` to reference cosine thresholds without scanning the CSV; still include the corresponding layer indices.
 
 Prism Sidecar Analysis (if present)
+Prism is a shared‑decoder diagnostic for robustness/comparability, not the model’s head. Judge Helpful/Neutral/Regressive strictly relative to the norm lens baseline, not vs the final head.
 - Presence: if `diagnostics.prism_summary.compatible != true`, skip Prism analysis and note unavailability.
 - Early-depth stability: at L≈0, ⌊n/4⌋, ⌊n/2⌋, ⌊3n/4⌋, compare KL(P_layer||P_final) from baseline vs `*-pure-next-token-prism.csv`.
 - Rank milestones: compute `first_rank_le_{10,5,1}` from Prism pure CSV and report deltas vs baseline.

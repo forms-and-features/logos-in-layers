@@ -611,6 +611,166 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
 
 ---
 
+### 1.19. Windowed Raw‑vs‑Norm Escalation around Collapse Layers (automatic)
+
+**Why.** The sampled dual‑lens sanity check (§1.4) can miss a narrow early window where “semantics” are induced by normalization. A lightweight, targeted escalation around candidate collapse layers prevents over‑reading early rank improvements.
+
+**What.** After the baseline sweep, automatically perform a *windowed* dual‑lens pass (raw vs normalized) on a small set of *center layers*, covering a radius of ±4 layers (clipped to valid indices). Persist both a JSON summary and a compact sidecar CSV.
+
+**How.**
+
+1. **Center layers (union of available indices):**
+
+   * `L_semantic` (first `answer_rank == 1` under the norm lens),
+   * `first_rank_le_5` (norm lens),
+   * `first_kl_below_1.0` (norm lens),
+   * `L_copy_strict` (if not null),
+   * earliest among `L_copy_soft[k]` for `k ∈ {1,2,3}` (if any).
+2. **Window & decode.** For each center layer `c`, decode layers `ℓ ∈ [c−R, c+R]` (default **R = 4**) twice: **raw** (pre‑norm residual) and **norm** (post‑norm residual). Record for the pure next‑token:
+
+   * `p_top1`, `top1_token_id`, `top1_token_str`,
+   * `p_answer`, `answer_rank`,
+   * `kl_norm_vs_raw_bits = KL(P_norm || P_raw)` (bits).
+3. **Artifacts.**
+
+   * **Sidecar CSV:** `output-<MODEL>-pure-next-token-rawlens-window.csv` with columns
+     `layer, lens ∈ {raw,norm}, p_top1, top1_token_id, top1_token_str, p_answer, answer_rank, kl_norm_vs_raw_bits`.
+   * **Run JSON (`diagnostics.raw_lens_window`):**
+
+     ```json
+     {
+       "radius": 4,
+       "center_layers": [ ... ],
+       "layers_checked": [ ... ],
+       "norm_only_semantics_layers": [ ... ],   // layers where is_answer_norm && !is_answer_raw
+       "max_kl_norm_vs_raw_bits_window": <float>,
+       "mode": "window"
+     }
+     ```
+4. **Escalation gates.** If `raw_lens_check.summary.lens_artifact_risk == "high"` or any sampled layer had `kl_norm_vs_raw_bits ≥ 1.0`, set **R = 8**.
+5. **CLI & cost.** No new CLI flags. Overhead is one extra unembed+softmax per layer in a narrow window.
+
+---
+
+### 1.20. Cosine Milestones & Normalized Depth Summaries
+
+**Why.** Evaluations currently scan CSVs to find when `cos_to_final` crosses useful thresholds and to normalize depths by `n_layers`. Publishing these as summary fields reduces friction and prevents arithmetic drift across evaluators.
+
+**What.** Add milestone and normalized‑depth summaries to run JSON.
+
+**How.**
+
+* **Cosine milestones (per lens present: `norm`, `tuned`):**
+
+  ```json
+  "summary": {
+    "cos_milestones": {
+      "norm": { "ge_0.2": L, "ge_0.4": L, "ge_0.6": L },
+      "tuned": { "ge_0.2": L, "ge_0.4": L, "ge_0.6": L }
+    }
+  }
+  ```
+
+  (Use the smallest `L` where the inequality holds; `null` if never reached.)
+* **Normalized depths (`/ n_layers`, rounded to 3 decimals):**
+
+  ```json
+  "summary": {
+    "depth_fractions": {
+      "L_semantic_frac": L_semantic / n_layers,
+      "first_rank_le_5_frac": first_rank_le_5 / n_layers,
+      "L_copy_strict_frac": L_copy_strict ? L_copy_strict / n_layers : null,
+      "L_copy_soft_k1_frac": ...,
+      "L_copy_soft_k2_frac": ...,
+      "L_copy_soft_k3_frac": ...
+    }
+  }
+  ```
+* **No CLI changes.** Computed post‑sweep from existing per‑layer arrays.
+
+---
+
+### 1.21. Unified Sidecar Summaries for Prism & Tuned‑Lens
+
+**Why.** Evaluations now recompute tuned/prism rank milestones and KL deltas from sidecar CSVs. Publishing a compact, consistent summary block avoids duplication and errors, and clarifies that Prism is a *shared‑decoder diagnostic*, not the model’s head.
+
+**What.** Augment the run JSON with per‑lens summaries computed from the sidecars.
+
+**How.**
+
+* **Prism (`diagnostics.prism_summary.metrics`):**
+
+  ```json
+  "diagnostics": {
+    "prism_summary": {
+      "present": true,
+      "compatible": true,
+      "k": <int>,
+      "metrics": {
+        "rank_milestones": {
+          "baseline": { "le_10": L, "le_5": L, "le_1": L },
+          "prism":    { "le_10": Lp, "le_5": Lp, "le_1": Lp },
+          "delta":    { "le_10": Lp-L, "le_5": Lp-L, "le_1": Lp-L }
+        },
+        "kl_bits_at_percentiles": {
+          "baseline": { "p25": x, "p50": y, "p75": z },
+          "prism":    { "p25": x', "p50": y', "p75": z' },
+          "delta":    { "p25": x-x', "p50": y-y', "p75": z-z' }
+        },
+        "first_kl_le_1.0": { "baseline": Lb, "prism": Lp, "delta": Lp-Lb }
+      }
+    }
+  }
+  ```
+* **Tuned (`tuned_lens.summary.metrics`):**
+
+  ```json
+  "tuned_lens": {
+    "summary": {
+      "rank_milestones": {
+        "baseline": { "le_10": L, "le_5": L, "le_1": L },
+        "tuned":    { "le_10": Lt, "le_5": Lt, "le_1": Lt },
+        "delta":    { "le_10": Lt-L, "le_5": Lt-L, "le_1": Lt-L }
+      },
+      "kl_bits_at_percentiles": {
+        "baseline": { "p25": x, "p50": y, "p75": z },
+        "tuned":    { "p25": x', "p50": y', "p75": z' },
+        "delta":    { "p25": x-x', "p50": y-y', "p75": z-z' }
+      },
+      "first_kl_le_1.0": { "baseline": Lb, "tuned": Lt, "delta": Lt-Lb }
+    }
+  }
+  ```
+* **Notes.** Keep these summaries *additive*; do not change CSV schemas.
+
+---
+
+### 1.22. Machine‑Readable Measurement Guidance (Evaluation Hints)
+
+**Why.** Some models/families require rank‑first reporting (e.g., head‑calibrated final layers; norm‑only semantics). A small, machine‑readable block helps evaluators apply consistent guardrails.
+
+**What.** Add a `measurement_guidance` block to run JSON with boolean gates and reasons.
+
+**How.**
+
+```json
+"measurement_guidance": {
+  "prefer_ranks": true,               // set if any gate below is true
+  "suppress_abs_probs": true,         // same as prefer_ranks; kept explicit for clarity
+  "reasons": [
+    "warn_high_last_layer_kl",        // from last_layer_consistency
+    "norm_only_semantics_window",     // from §1.19 window check
+    "high_lens_artifact_risk"         // from raw_lens_check.summary
+  ],
+  "notes": "Family-level head calibration; treat probabilities comparatively only within model."
+}
+```
+
+* **Setting logic.**
+  `prefer_ranks = (warn_high_last_layer_kl == true) OR (raw_lens_check.summary.lens_artifact_risk == 'high') OR (diagnostics.raw_lens_window.norm_only_semantics_layers not empty)`.
+  Mirror to `suppress_abs_probs`.
+* **No CLI.** Purely an advisory for downstream evaluation prompts.
+
 #### Wrap‑up
 
 Executing the items in **Group 1** upgrades the measurement pipeline from an informative prototype to a rigour‑grade toolchain. Only after this foundation is secure should we move on to the broader prompt battery and causal‑intervention work.

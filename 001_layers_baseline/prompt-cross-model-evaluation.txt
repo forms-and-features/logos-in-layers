@@ -23,6 +23,12 @@ Diagnostics now also include last-layer head-calibration fields under `diagnosti
 Prism (if present): also read `diagnostics.prism_summary` for each model: `{ mode, artifact_path, present, compatible, k, layers, error }`.
 
 Each JSON also includes a `gold_answer` block for ID‑level alignment: `{ string, pieces, first_id, answer_ids, variant }`, and `diagnostics.gold_alignment` (ok/unresolved). Treat `is_answer`/`p_answer`/`answer_rank` as computed against `gold_answer.first_id`. JSON additionally includes the negative-control fields: `control_prompt` (context, control gold alignment) and `control_summary` `{ first_control_margin_pos, max_control_margin }`. Ablation: read `ablation_summary` with `{ L_copy_orig, L_sem_orig, L_copy_nf, L_sem_nf, delta_L_copy, delta_L_sem }`.
+Other JSON fields:
+* diagnostics.raw_lens_window: { radius, center_layers, layers_checked, norm_only_semantics_layers, max_kl_norm_vs_raw_bits_window, mode="window" }.
+* summary.cos_milestones: cosine thresholds ge_{0.2,0.4,0.6} per lens (norm/tuned).
+* summary.depth_fractions: normalized depths for L_semantic, first_rank_le_{10,5,1}, L_copy_strict, and L_copy_soft[k].
+* diagnostics.prism_summary.metrics and tuned_lens.summary.metrics: rank milestones and KL at {25,50,75}% with deltas vs baseline.
+* measurement_guidance: { prefer_ranks, suppress_abs_probs, reasons[], notes }.
 
 - CSV - layer-level results of the probe (part of the results of each probe), one per model:
 001_layers_baseline/run-latest/output-gemma-2-9b-records.csv
@@ -67,7 +73,13 @@ If present for a model, also include Tuned‑Lens sidecars (same schema):
 001_layers_baseline/run-latest/output-<model>-pure-next-token-tuned.csv
 The pure CSVs also include `teacher_entropy_bits`; use it to report entropy drift `(entropy − teacher_entropy_bits)` at representative depths.
 
+If present for a model, also include Windowed Raw‑vs‑Norm sidecar:
+001_layers_baseline/run-latest/output-<MODEL>-pure-next-token-rawlens-window.csv
+Columns: layer, lens ∈ {raw,norm}, p_top1, top1_token_id, top1_token_str, p_answer, answer_rank, kl_norm_vs_raw_bits.
+
 Final-row caveat (head calibration): When comparing final rows across models, prefer rank/KL thresholds. If a model’s JSON has `warn_high_last_layer_kl = true`, treat final probability differences as head‑calibration artefacts and do not infer regressions. Known pattern: the Gemma family often shows non‑zero last‑layer KL due to a calibrated final head; be on the lookout for similar signatures in other families. If `raw_lens_check.summary.lens_artifact_risk` is `high` or `first_norm_only_semantic_layer` is present, downgrade confidence in pre‑final “early semantics” and lean on rank milestones over probabilities.
+
+Also honor `measurement_guidance`: if `prefer_ranks = true` or `suppress_abs_probs = true`, lead with rank thresholds and avoid absolute probability claims except as within‑model qualitative trends.
 
 Gold‑token alignment caveat: Verify `gold_alignment` across models. For any model with `unresolved`, flag reduced comparability, rely on rank thresholds (`first_rank_le_{1,5,10}`), and avoid absolute probability claims. Stylistic ablation caveat: Filter depth summaries to `prompt_id = pos`, `prompt_variant = orig`. Compare `ΔL_sem`, `ΔL_copy`, and `ΔL_copy_soft[k]` (optionally normalized by `n_layers`); treat large positive shifts as stronger stylistic‑cue sensitivity and keep comparisons within-family when in doubt. When “top‑1” does not refer to the answer, label it as generic top‑1 (not `p_answer`), and include layer indices when citing any milestones (KL, cosine, rank, probabilities).
 
@@ -106,11 +118,14 @@ Use rank‑based milestones (`first_rank_le_1`, `first_rank_le_5`, `first_rank_l
 
 Include lens sanity from each model’s JSON `raw_lens_check.summary`: list models with `first_norm_only_semantic_layer` present (norm‑only semantics) and report `lens_artifact_risk` and `max_kl_norm_vs_raw_bits`. For models with `high` risk, downgrade confidence in early‑semantics claims and prefer rank‑based statements; note the `mode` (sample/full) for context.
 
+Raw‑vs‑Norm window (if present): report any `norm_only_semantics_layers` from `diagnostics.raw_lens_window` and the `max_kl_norm_vs_raw_bits_window`. Treat early “semantics” that disappear under the raw lens within ±4–8 layers as lens‑induced and downgrade those claims.
+
 Investigate and write a paragraph about notable similarities and differences between models of the same family (Qwen, gemma).
 
-Use `L_copy` (or fallback `L_copy_H`) and `L_semantic` from each model's `diagnostics` block for consistent Δ calculation. When discussing soft detectors, report `L_copy_soft[k]` before computing Δ.
+Use `L_copy_strict` if present; otherwise compute Δ using the earliest `L_copy_soft[k]` (k ∈ {1,2,3}) and report the k used. Normalize Δ by depth: Δ̂ = (L_semantic − L_copy_variant) / n_layers.
 
-Δ̂ = delta_layers / n_layers (relative depth); note this when discussing size effects. Summarize emergence timing with Δ̂, rank milestones, and whether KL decreases with depth alongside rank improvements. You may mention within‑model rises in `cos_to_final` as evidence of direction alignment, but do not draw cross‑family comparisons from cosine.
+Summarize emergence timing with Δ̂, rank milestones, and whether KL decreases with depth alongside rank improvements. You may mention within‑model rises in `cos_to_final` as evidence of direction alignment, but do not draw cross‑family comparisons from cosine.
+
 For each model describe the entropy drop between L_copy and L_semantic (e.g. ‘sharp 13-bit plunge’, ‘gradual 6-bit taper’). Use the entropy column in pure-next-token CSV.
 
 Group models into “meaning emerges at early (< 70 % depth) vs late (≥ 70 %)” instead of citing raw layer numbers.
@@ -120,6 +135,8 @@ Does sharper collapse coincide with wider d_model or more heads (information alr
 Quote EVAL line numbers or raw JSON or CSV snippets as needed.
 
 Prism Summary Across Models (if present)
+Prism is a shared‑decoder diagnostic for robustness/comparability, not the model’s head. Interpret “Helpful/Neutral/Regressive” strictly relative to the norm lens baseline, not as regressions vs the final head.
+
 - Build a compact comparison (paragraph, no tables) across models with Prism artifacts (`compatible = true`): mention for each model k, Δ in `first_rank_le_{10,5,1}` (Prism vs baseline), and ΔKL at ~25/50/75% depths.
 - Interpret patterns: are Prism gains larger when `raw_lens_check.summary.lens_artifact_risk` is high? Concentrated at early/mid layers? Any regressions?
 - Keep claims within‑model; avoid absolute probability comparisons across models. Note any missing Prism artifacts without speculation.
@@ -166,6 +183,8 @@ STYLE GUIDELINES
 - Report `L_surface_to_meaning_{norm,tuned}` with the masses at L (answer_mass_at_L, echo_mass_at_L) and note `answer_minus_echo_mass` sign/magnitude.
 - Report `L_geom_{norm,tuned}` and the cosines at L if present. Treat as within‑model; avoid cross‑family thresholds.
 - Report `L_topk_decay_{norm,tuned}` (K=50, τ=0.33); note if prompt coverage is near‑zero early.
+
+When available, use `summary.depth_fractions` and `summary.cos_milestones` instead of recomputing from CSVs; still cite layer indices when quoting milestones.
 
  Skip‑layers sanity (advisory)
 - If present, quote `diagnostics.skip_layers_sanity` and note the m=2 delta. Treat this as advisory: large deltas do not necessarily contradict the TL design.
