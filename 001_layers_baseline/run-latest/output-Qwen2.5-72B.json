@@ -816,6 +816,12 @@
     "layer0_position_info": "token_only_rotary_model",
     "context_prompt": "Give the city name only, plain text. The capital of Germany is called simply",
     "target_prediction": "first unseen token (likely 'Berlin')",
+    "surface_diagnostics_config": {
+      "delta": 0.05,
+      "gamma": 0.02,
+      "K": 50,
+      "tau": 0.33
+    },
     "prism_summary": {
       "mode": "auto",
       "artifact_path": "/home/kkonstant/logos-in-layers/001_layers_baseline/prisms/Qwen2.5-72B",
@@ -839,6 +845,89 @@
       ],
       "extra_thresholds": []
     },
+    "tau_norm_per_layer": [
+      0.19999998807907104,
+      0.19999998807907104,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      0.6687402725219727,
+      0.4472135901451111,
+      0.4472135901451111,
+      0.29906976222991943,
+      0.3419951796531677,
+      0.3419951796531677,
+      0.29906976222991943,
+      0.39108169078826904,
+      0.39108169078826904,
+      0.39108169078826904,
+      0.3419951796531677,
+      0.4472135901451111,
+      0.39108169078826904,
+      0.39108169078826904,
+      0.39108169078826904,
+      0.39108169078826904,
+      0.5114020705223083,
+      0.4472135901451111,
+      0.39108169078826904,
+      0.4472135901451111,
+      0.4472135901451111,
+      0.39108169078826904,
+      0.5114020705223083,
+      0.4472135901451111,
+      0.5114020705223083,
+      0.5848035216331482,
+      0.5848035216331482,
+      0.6687402725219727,
+      0.5848035216331482,
+      0.7647244930267334,
+      0.7647244930267334,
+      0.8744852542877197,
+      0.6687402725219727,
+      0.5114020705223083,
+      1.0
+    ],
     "L_copy": null,
     "L_copy_H": null,
     "L_semantic": 80,
@@ -895,6 +984,17 @@
         }
       }
     },
+    "L_surface_to_meaning_norm": 80,
+    "answer_mass_at_L_surface_norm": 0.3394583463668823,
+    "echo_mass_at_L_surface_norm": 0.04461341293926324,
+    "L_geom_norm": null,
+    "cos_to_answer_at_L_geom_norm": null,
+    "cos_to_prompt_max_at_L_geom_norm": null,
+    "L_topk_decay_norm": 0,
+    "topk_prompt_mass_at_L_norm": 0.0,
+    "topk_prompt_tau_norm": 0.33,
+    "surface_delta_norm": 0.05,
+    "geom_gamma_norm": 0.02,
     "gold_alignment": "ok",
     "last_layer_consistency": {
       "kl_to_final_bits": 0.00010909087118927091,
@@ -915,7 +1015,25 @@
         "scale_then_softcap": null
       },
       "warn_high_last_layer_kl": false
-    }
+    },
+    "kl_to_final_bits_norm_temp@25%": {
+      "layer": 20,
+      "value": 9.843870049441476
+    },
+    "kl_to_final_bits_norm_temp@50%": {
+      "layer": 40,
+      "value": 9.813877650992207
+    },
+    "kl_to_final_bits_norm_temp@75%": {
+      "layer": 60,
+      "value": 7.634313999383696
+    },
+    "tuned_lens": {
+      "status": "missing",
+      "mode": "auto",
+      "path": "/home/kkonstant/logos-in-layers/001_layers_baseline/tuned_lenses/Qwen2.5-72B"
+    },
+    "tuned_lens_regression": false
   },
   "final_prediction": {
     "type": "final_prediction",
@@ -1106,6 +1224,11 @@
   "control_summary": {
     "first_control_margin_pos": 0,
     "max_control_margin": 0.2070367018786783
+  },
+  "tuned_lens": {
+    "status": "missing",
+    "mode": "auto",
+    "path": "/home/kkonstant/logos-in-layers/001_layers_baseline/tuned_lenses/Qwen2.5-72B"
   },
   "gold_answer": {
     "string": "Berlin",

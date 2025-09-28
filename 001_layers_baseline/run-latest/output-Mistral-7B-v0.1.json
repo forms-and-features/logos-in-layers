@@ -816,6 +816,12 @@
     "layer0_position_info": "token_only_rotary_model",
     "context_prompt": "Give the city name only, plain text. The capital of Germany is called simply",
     "target_prediction": "first unseen token (likely 'Berlin')",
+    "surface_diagnostics_config": {
+      "delta": 0.05,
+      "gamma": 0.02,
+      "K": 50,
+      "tau": 0.33
+    },
     "prism_summary": {
       "mode": "auto",
       "artifact_path": "/home/kkonstant/logos-in-layers/001_layers_baseline/prisms/Mistral-7B-v0.1",
@@ -839,6 +845,41 @@
       ],
       "extra_thresholds": []
     },
+    "tau_norm_per_layer": [
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      5.0,
+      1.307660460472107,
+      0.5114020705223083,
+      0.5848035216331482,
+      0.5848035216331482,
+      0.7647244930267334,
+      1.307660460472107,
+      0.7647244930267334,
+      1.0,
+      0.7647244930267334,
+      1.0,
+      0.8744852542877197,
+      0.6687402725219727,
+      0.5848035216331482,
+      0.6687402725219727,
+      0.5848035216331482,
+      0.5114020705223083,
+      0.5114020705223083,
+      0.4472135901451111,
+      0.4472135901451111,
+      0.5114020705223083,
+      0.7647244930267334,
+      0.6687402725219727,
+      0.7647244930267334,
+      0.6687402725219727,
+      0.7647244930267334,
+      0.6687402725219727,
+      0.5848035216331482,
+      1.0
+    ],
     "L_copy": null,
     "L_copy_H": null,
     "L_semantic": 25,
@@ -895,6 +936,17 @@
         }
       }
     },
+    "L_surface_to_meaning_norm": 32,
+    "answer_mass_at_L_surface_norm": 0.38216397166252136,
+    "echo_mass_at_L_surface_norm": 0.060977572533147395,
+    "L_geom_norm": null,
+    "cos_to_answer_at_L_geom_norm": null,
+    "cos_to_prompt_max_at_L_geom_norm": null,
+    "L_topk_decay_norm": 0,
+    "topk_prompt_mass_at_L_norm": 0.0,
+    "topk_prompt_tau_norm": 0.33,
+    "surface_delta_norm": 0.05,
+    "geom_gamma_norm": 0.02,
     "gold_alignment": "ok",
     "last_layer_consistency": {
       "kl_to_final_bits": 0.0,
@@ -915,7 +967,251 @@
         "scale_then_softcap": null
       },
       "warn_high_last_layer_kl": false
-    }
+    },
+    "kl_to_final_bits_norm_temp@25%": {
+      "layer": 8,
+      "value": 10.488851769458043
+    },
+    "kl_to_final_bits_norm_temp@50%": {
+      "layer": 16,
+      "value": 10.607212293573637
+    },
+    "kl_to_final_bits_norm_temp@75%": {
+      "layer": 24,
+      "value": 4.825869643532394
+    },
+    "tuned_lens": {
+      "status": "loaded",
+      "mode": "auto",
+      "path": "/home/kkonstant/logos-in-layers/001_layers_baseline/tuned_lenses/Mistral-7B-v0.1",
+      "summaries": [
+        {
+          "L_copy": null,
+          "L_copy_H": null,
+          "L_semantic": 32,
+          "delta_layers": null,
+          "copy_thresh": 0.95,
+          "copy_window_k": 1,
+          "copy_match_level": "id_subsequence",
+          "first_kl_below_0.5": 32,
+          "first_kl_below_1.0": 26,
+          "first_rank_le_1": 32,
+          "first_rank_le_5": 25,
+          "first_rank_le_10": 25,
+          "copy_soft_threshold": 0.5,
+          "copy_soft_window_ks": [
+            1,
+            2,
+            3
+          ],
+          "L_copy_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "delta_layers_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "copy_detector": {
+            "strict": {
+              "thresh": 0.95,
+              "k": 1,
+              "L_copy_strict": null
+            },
+            "soft": {
+              "thresh": 0.5,
+              "window_ks": [
+                1,
+                2,
+                3
+              ],
+              "L_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            },
+            "deltas": {
+              "Δ_sem_minus_copy_strict": null,
+              "Δ_sem_minus_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            }
+          },
+          "L_surface_to_meaning_tuned": 27,
+          "answer_mass_at_L_surface_tuned": 0.13652457296848297,
+          "echo_mass_at_L_surface_tuned": 0.07016637477636323,
+          "L_geom_tuned": null,
+          "cos_to_answer_at_L_geom_tuned": null,
+          "cos_to_prompt_max_at_L_geom_tuned": null,
+          "L_topk_decay_tuned": 1,
+          "topk_prompt_mass_at_L_tuned": 0.04441386694088578,
+          "topk_prompt_tau_tuned": 0.33,
+          "surface_delta_tuned": 0.05,
+          "geom_gamma_tuned": 0.02
+        },
+        {
+          "L_copy": null,
+          "L_copy_H": null,
+          "L_semantic": 25,
+          "delta_layers": null,
+          "copy_thresh": 0.95,
+          "copy_window_k": 1,
+          "copy_match_level": "id_subsequence",
+          "first_kl_below_0.5": 32,
+          "first_kl_below_1.0": 27,
+          "first_rank_le_1": 25,
+          "first_rank_le_5": 24,
+          "first_rank_le_10": 22,
+          "copy_soft_threshold": 0.5,
+          "copy_soft_window_ks": [
+            1,
+            2,
+            3
+          ],
+          "L_copy_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "delta_layers_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "copy_detector": {
+            "strict": {
+              "thresh": 0.95,
+              "k": 1,
+              "L_copy_strict": null
+            },
+            "soft": {
+              "thresh": 0.5,
+              "window_ks": [
+                1,
+                2,
+                3
+              ],
+              "L_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            },
+            "deltas": {
+              "Δ_sem_minus_copy_strict": null,
+              "Δ_sem_minus_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            }
+          },
+          "L_surface_to_meaning_tuned": 26,
+          "answer_mass_at_L_surface_tuned": 0.35799697041511536,
+          "echo_mass_at_L_surface_tuned": 0.20961164054187975,
+          "L_geom_tuned": null,
+          "cos_to_answer_at_L_geom_tuned": null,
+          "cos_to_prompt_max_at_L_geom_tuned": null,
+          "L_topk_decay_tuned": 1,
+          "topk_prompt_mass_at_L_tuned": 0.05109489266760647,
+          "topk_prompt_tau_tuned": 0.33,
+          "surface_delta_tuned": 0.05,
+          "geom_gamma_tuned": 0.02
+        },
+        {
+          "L_copy": null,
+          "L_copy_H": 25,
+          "L_semantic": 25,
+          "delta_layers": null,
+          "copy_thresh": 0.95,
+          "copy_window_k": 1,
+          "copy_match_level": "id_subsequence",
+          "first_kl_below_0.5": 25,
+          "first_kl_below_1.0": 25,
+          "first_rank_le_1": 25,
+          "first_rank_le_5": 24,
+          "first_rank_le_10": 22,
+          "copy_soft_threshold": 0.5,
+          "copy_soft_window_ks": [
+            1,
+            2,
+            3
+          ],
+          "L_copy_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "delta_layers_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "copy_detector": {
+            "strict": {
+              "thresh": 0.95,
+              "k": 1,
+              "L_copy_strict": null
+            },
+            "soft": {
+              "thresh": 0.5,
+              "window_ks": [
+                1,
+                2,
+                3
+              ],
+              "L_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            },
+            "deltas": {
+              "Δ_sem_minus_copy_strict": null,
+              "Δ_sem_minus_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            }
+          },
+          "L_surface_to_meaning_tuned": 25,
+          "answer_mass_at_L_surface_tuned": 0.8768277168273926,
+          "echo_mass_at_L_surface_tuned": 0.028615774617307466,
+          "L_geom_tuned": 25,
+          "cos_to_answer_at_L_geom_tuned": 0.19997936487197876,
+          "cos_to_prompt_max_at_L_geom_tuned": 0.16406096518039703,
+          "L_topk_decay_tuned": 1,
+          "topk_prompt_mass_at_L_tuned": 0.044430757872760296,
+          "topk_prompt_tau_tuned": 0.33,
+          "surface_delta_tuned": 0.05,
+          "geom_gamma_tuned": 0.02
+        }
+      ]
+    },
+    "L_surface_to_meaning_tuned": 27,
+    "answer_mass_at_L_surface_tuned": 0.13652457296848297,
+    "echo_mass_at_L_surface_tuned": 0.07016637477636323,
+    "L_geom_tuned": null,
+    "cos_to_answer_at_L_geom_tuned": null,
+    "cos_to_prompt_max_at_L_geom_tuned": null,
+    "L_topk_decay_tuned": 1,
+    "topk_prompt_mass_at_L_tuned": 0.04441386694088578,
+    "topk_prompt_tau_tuned": 0.33,
+    "surface_delta_tuned": 0.05,
+    "geom_gamma_tuned": 0.02,
+    "skip_layers_sanity": {
+      "m=2": 3.2524816068393125,
+      "m=4": 2.708906825690298,
+      "m=8": 0.902575634750865
+    },
+    "tuned_lens_skip_warning": 3.2524816068393125,
+    "tuned_lens_regression": true
   },
   "final_prediction": {
     "type": "final_prediction",
@@ -1106,6 +1402,311 @@
   "control_summary": {
     "first_control_margin_pos": 2,
     "max_control_margin": 0.6539100579732349
+  },
+  "tuned_lens": {
+    "status": "loaded",
+    "path": "/home/kkonstant/logos-in-layers/001_layers_baseline/tuned_lenses/Mistral-7B-v0.1",
+    "summaries": [
+      {
+        "L_copy": null,
+        "L_copy_H": null,
+        "L_semantic": 32,
+        "delta_layers": null,
+        "copy_thresh": 0.95,
+        "copy_window_k": 1,
+        "copy_match_level": "id_subsequence",
+        "first_kl_below_0.5": 32,
+        "first_kl_below_1.0": 26,
+        "first_rank_le_1": 32,
+        "first_rank_le_5": 25,
+        "first_rank_le_10": 25,
+        "copy_soft_threshold": 0.5,
+        "copy_soft_window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "delta_layers_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "copy_detector": {
+          "strict": {
+            "thresh": 0.95,
+            "k": 1,
+            "L_copy_strict": null
+          },
+          "soft": {
+            "thresh": 0.5,
+            "window_ks": [
+              1,
+              2,
+              3
+            ],
+            "L_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          },
+          "deltas": {
+            "Δ_sem_minus_copy_strict": null,
+            "Δ_sem_minus_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          }
+        },
+        "L_surface_to_meaning_tuned": 27,
+        "answer_mass_at_L_surface_tuned": 0.13652457296848297,
+        "echo_mass_at_L_surface_tuned": 0.07016637477636323,
+        "L_geom_tuned": null,
+        "cos_to_answer_at_L_geom_tuned": null,
+        "cos_to_prompt_max_at_L_geom_tuned": null,
+        "L_topk_decay_tuned": 1,
+        "topk_prompt_mass_at_L_tuned": 0.04441386694088578,
+        "topk_prompt_tau_tuned": 0.33,
+        "surface_delta_tuned": 0.05,
+        "geom_gamma_tuned": 0.02
+      },
+      {
+        "L_copy": null,
+        "L_copy_H": null,
+        "L_semantic": 25,
+        "delta_layers": null,
+        "copy_thresh": 0.95,
+        "copy_window_k": 1,
+        "copy_match_level": "id_subsequence",
+        "first_kl_below_0.5": 32,
+        "first_kl_below_1.0": 27,
+        "first_rank_le_1": 25,
+        "first_rank_le_5": 24,
+        "first_rank_le_10": 22,
+        "copy_soft_threshold": 0.5,
+        "copy_soft_window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "delta_layers_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "copy_detector": {
+          "strict": {
+            "thresh": 0.95,
+            "k": 1,
+            "L_copy_strict": null
+          },
+          "soft": {
+            "thresh": 0.5,
+            "window_ks": [
+              1,
+              2,
+              3
+            ],
+            "L_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          },
+          "deltas": {
+            "Δ_sem_minus_copy_strict": null,
+            "Δ_sem_minus_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          }
+        },
+        "L_surface_to_meaning_tuned": 26,
+        "answer_mass_at_L_surface_tuned": 0.35799697041511536,
+        "echo_mass_at_L_surface_tuned": 0.20961164054187975,
+        "L_geom_tuned": null,
+        "cos_to_answer_at_L_geom_tuned": null,
+        "cos_to_prompt_max_at_L_geom_tuned": null,
+        "L_topk_decay_tuned": 1,
+        "topk_prompt_mass_at_L_tuned": 0.05109489266760647,
+        "topk_prompt_tau_tuned": 0.33,
+        "surface_delta_tuned": 0.05,
+        "geom_gamma_tuned": 0.02
+      },
+      {
+        "L_copy": null,
+        "L_copy_H": 25,
+        "L_semantic": 25,
+        "delta_layers": null,
+        "copy_thresh": 0.95,
+        "copy_window_k": 1,
+        "copy_match_level": "id_subsequence",
+        "first_kl_below_0.5": 25,
+        "first_kl_below_1.0": 25,
+        "first_rank_le_1": 25,
+        "first_rank_le_5": 24,
+        "first_rank_le_10": 22,
+        "copy_soft_threshold": 0.5,
+        "copy_soft_window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "delta_layers_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "copy_detector": {
+          "strict": {
+            "thresh": 0.95,
+            "k": 1,
+            "L_copy_strict": null
+          },
+          "soft": {
+            "thresh": 0.5,
+            "window_ks": [
+              1,
+              2,
+              3
+            ],
+            "L_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          },
+          "deltas": {
+            "Δ_sem_minus_copy_strict": null,
+            "Δ_sem_minus_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          }
+        },
+        "L_surface_to_meaning_tuned": 25,
+        "answer_mass_at_L_surface_tuned": 0.8768277168273926,
+        "echo_mass_at_L_surface_tuned": 0.028615774617307466,
+        "L_geom_tuned": 25,
+        "cos_to_answer_at_L_geom_tuned": 0.19997936487197876,
+        "cos_to_prompt_max_at_L_geom_tuned": 0.16406096518039703,
+        "L_topk_decay_tuned": 1,
+        "topk_prompt_mass_at_L_tuned": 0.044430757872760296,
+        "topk_prompt_tau_tuned": 0.33,
+        "surface_delta_tuned": 0.05,
+        "geom_gamma_tuned": 0.02
+      }
+    ],
+    "provenance": {
+      "model_id": "mistralai/Mistral-7B-v0.1",
+      "clean_model_name": "Mistral-7B-v0.1",
+      "tl_version": "20250927T1055Z",
+      "model_commit": null,
+      "tokenizer_commit": null,
+      "translator": {
+        "num_layers": 32,
+        "d_model": 4096,
+        "rank": 256,
+        "final_identity": true,
+        "has_preconditioner": false,
+        "use_temperature": true,
+        "temperature_eps": 0.001,
+        "temperatures": [
+          0.5417106747627258,
+          0.5594348907470703,
+          0.5501015782356262,
+          0.5550389885902405,
+          0.5602449774742126,
+          0.555524468421936,
+          0.5676563382148743,
+          0.5547831058502197,
+          0.5574464797973633,
+          0.5587248206138611,
+          0.5620192289352417,
+          0.5764708518981934,
+          0.5574904084205627,
+          0.564119815826416,
+          0.5714547634124756,
+          0.5557764172554016,
+          0.5570209622383118,
+          0.5770258903503418,
+          0.573650062084198,
+          0.5934755206108093,
+          0.6052662134170532,
+          0.6256645917892456,
+          0.6277667880058289,
+          0.6693227291107178,
+          0.6943076252937317,
+          0.6882844567298889,
+          0.695988118648529,
+          0.685123085975647,
+          0.730763852596283,
+          0.6976750493049622,
+          0.6762107610702515,
+          1.0
+        ]
+      },
+      "training": {
+        "seed": 316,
+        "total_steps": 1954,
+        "warmup_steps": 196,
+        "micro_batch": 8,
+        "grad_accum": 4,
+        "effective_batch": 32,
+        "tokens_per_step": 16384,
+        "layers_sampled_per_step": 24,
+        "use_temperature": true,
+        "temperature_eps": 0.001,
+        "dataset": {
+          "repo_id": "HuggingFaceFW/fineweb-edu",
+          "name": "CC-MAIN-2025-26",
+          "split": "train",
+          "revision": "v1.4.0",
+          "seq_len": 512,
+          "positions_per_seq": 16,
+          "position_fraction_range": [
+            0.6,
+            0.95
+          ],
+          "content_hash": "74bb197d43dd6a9effd5d15bed46b8ffdaec3372bac23b3c1272144d707c1c3f",
+          "samples_streamed": 27058
+        },
+        "optimizer": {
+          "type": "AdamW",
+          "lr": 0.001,
+          "betas": [
+            0.9,
+            0.999
+          ],
+          "weight_decay": 0.0001
+        },
+        "regularization": {
+          "l2": 0.0001,
+          "smooth": 0.0001
+        },
+        "device": "cuda",
+        "dtype": "torch.float16",
+        "final_loss": 5.5444625127315526
+      }
+    }
   },
   "gold_answer": {
     "string": "Berlin",

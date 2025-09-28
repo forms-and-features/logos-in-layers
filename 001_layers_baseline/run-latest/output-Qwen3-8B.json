@@ -816,6 +816,12 @@
     "layer0_position_info": "token_only_rotary_model",
     "context_prompt": "Give the city name only, plain text. The capital of Germany is called simply",
     "target_prediction": "first unseen token (likely 'Berlin')",
+    "surface_diagnostics_config": {
+      "delta": 0.05,
+      "gamma": 0.02,
+      "K": 50,
+      "tau": 0.33
+    },
     "prism_summary": {
       "mode": "auto",
       "artifact_path": "/home/kkonstant/logos-in-layers/001_layers_baseline/prisms/Qwen3-8B",
@@ -839,6 +845,45 @@
       ],
       "extra_thresholds": []
     },
+    "tau_norm_per_layer": [
+      5.0,
+      4.372426509857178,
+      0.19999998807907104,
+      0.19999998807907104,
+      0.19999998807907104,
+      0.19999998807907104,
+      0.19999998807907104,
+      0.19999998807907104,
+      0.22870595753192902,
+      0.26153209805488586,
+      0.4472135901451111,
+      0.26153209805488586,
+      0.22870595753192902,
+      0.22870595753192902,
+      0.26153209805488586,
+      0.26153209805488586,
+      0.3419951796531677,
+      0.29906976222991943,
+      0.3419951796531677,
+      0.4472135901451111,
+      0.39108169078826904,
+      0.5114020705223083,
+      0.7647244930267334,
+      0.8744852542877197,
+      1.1435298919677734,
+      0.8744852542877197,
+      1.307660460472107,
+      1.307660460472107,
+      1.1435298919677734,
+      1.7099759578704834,
+      1.9554085731506348,
+      2.2360680103302,
+      3.823622465133667,
+      3.823622465133667,
+      3.3437016010284424,
+      2.2360680103302,
+      1.0
+    ],
     "L_copy": null,
     "L_copy_H": 31,
     "L_semantic": 31,
@@ -895,6 +940,17 @@
         }
       }
     },
+    "L_surface_to_meaning_norm": 31,
+    "answer_mass_at_L_surface_norm": 0.9359333515167236,
+    "echo_mass_at_L_surface_norm": 0.011411460456533767,
+    "L_geom_norm": 34,
+    "cos_to_answer_at_L_geom_norm": 0.11116524040699005,
+    "cos_to_prompt_max_at_L_geom_norm": 0.08861403167247772,
+    "L_topk_decay_norm": 0,
+    "topk_prompt_mass_at_L_norm": 0.0,
+    "topk_prompt_tau_norm": 0.33,
+    "surface_delta_norm": 0.05,
+    "geom_gamma_norm": 0.02,
     "gold_alignment": "ok",
     "last_layer_consistency": {
       "kl_to_final_bits": 0.0,
@@ -915,7 +971,251 @@
         "scale_then_softcap": null
       },
       "warn_high_last_layer_kl": false
-    }
+    },
+    "kl_to_final_bits_norm_temp@25%": {
+      "layer": 9,
+      "value": 13.137787720078917
+    },
+    "kl_to_final_bits_norm_temp@50%": {
+      "layer": 18,
+      "value": 12.490363846420099
+    },
+    "kl_to_final_bits_norm_temp@75%": {
+      "layer": 27,
+      "value": 7.391069993170581
+    },
+    "tuned_lens": {
+      "status": "loaded",
+      "mode": "auto",
+      "path": "/home/kkonstant/logos-in-layers/001_layers_baseline/tuned_lenses/Qwen3-8B",
+      "summaries": [
+        {
+          "L_copy": null,
+          "L_copy_H": null,
+          "L_semantic": 34,
+          "delta_layers": null,
+          "copy_thresh": 0.95,
+          "copy_window_k": 1,
+          "copy_match_level": "id_subsequence",
+          "first_kl_below_0.5": 36,
+          "first_kl_below_1.0": 36,
+          "first_rank_le_1": 34,
+          "first_rank_le_5": 31,
+          "first_rank_le_10": 30,
+          "copy_soft_threshold": 0.5,
+          "copy_soft_window_ks": [
+            1,
+            2,
+            3
+          ],
+          "L_copy_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "delta_layers_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "copy_detector": {
+            "strict": {
+              "thresh": 0.95,
+              "k": 1,
+              "L_copy_strict": null
+            },
+            "soft": {
+              "thresh": 0.5,
+              "window_ks": [
+                1,
+                2,
+                3
+              ],
+              "L_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            },
+            "deltas": {
+              "Δ_sem_minus_copy_strict": null,
+              "Δ_sem_minus_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            }
+          },
+          "L_surface_to_meaning_tuned": 31,
+          "answer_mass_at_L_surface_tuned": 0.10102814435958862,
+          "echo_mass_at_L_surface_tuned": 0.005231814409283192,
+          "L_geom_tuned": 34,
+          "cos_to_answer_at_L_geom_tuned": 0.10646726191043854,
+          "cos_to_prompt_max_at_L_geom_tuned": 0.08435870707035065,
+          "L_topk_decay_tuned": 1,
+          "topk_prompt_mass_at_L_tuned": 0.08085965283680707,
+          "topk_prompt_tau_tuned": 0.33,
+          "surface_delta_tuned": 0.05,
+          "geom_gamma_tuned": 0.02
+        },
+        {
+          "L_copy": null,
+          "L_copy_H": 32,
+          "L_semantic": 32,
+          "delta_layers": null,
+          "copy_thresh": 0.95,
+          "copy_window_k": 1,
+          "copy_match_level": "id_subsequence",
+          "first_kl_below_0.5": 36,
+          "first_kl_below_1.0": 32,
+          "first_rank_le_1": 32,
+          "first_rank_le_5": 31,
+          "first_rank_le_10": 29,
+          "copy_soft_threshold": 0.5,
+          "copy_soft_window_ks": [
+            1,
+            2,
+            3
+          ],
+          "L_copy_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "delta_layers_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "copy_detector": {
+            "strict": {
+              "thresh": 0.95,
+              "k": 1,
+              "L_copy_strict": null
+            },
+            "soft": {
+              "thresh": 0.5,
+              "window_ks": [
+                1,
+                2,
+                3
+              ],
+              "L_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            },
+            "deltas": {
+              "Δ_sem_minus_copy_strict": null,
+              "Δ_sem_minus_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            }
+          },
+          "L_surface_to_meaning_tuned": 31,
+          "answer_mass_at_L_surface_tuned": 0.17943741381168365,
+          "echo_mass_at_L_surface_tuned": 0.002477908056751507,
+          "L_geom_tuned": 31,
+          "cos_to_answer_at_L_geom_tuned": 0.107005774974823,
+          "cos_to_prompt_max_at_L_geom_tuned": 0.08525310456752777,
+          "L_topk_decay_tuned": 1,
+          "topk_prompt_mass_at_L_tuned": 0.0866031744517386,
+          "topk_prompt_tau_tuned": 0.33,
+          "surface_delta_tuned": 0.05,
+          "geom_gamma_tuned": 0.02
+        },
+        {
+          "L_copy": null,
+          "L_copy_H": 31,
+          "L_semantic": 30,
+          "delta_layers": null,
+          "copy_thresh": 0.95,
+          "copy_window_k": 1,
+          "copy_match_level": "id_subsequence",
+          "first_kl_below_0.5": 36,
+          "first_kl_below_1.0": 30,
+          "first_rank_le_1": 30,
+          "first_rank_le_5": 30,
+          "first_rank_le_10": 28,
+          "copy_soft_threshold": 0.5,
+          "copy_soft_window_ks": [
+            1,
+            2,
+            3
+          ],
+          "L_copy_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "delta_layers_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "copy_detector": {
+            "strict": {
+              "thresh": 0.95,
+              "k": 1,
+              "L_copy_strict": null
+            },
+            "soft": {
+              "thresh": 0.5,
+              "window_ks": [
+                1,
+                2,
+                3
+              ],
+              "L_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            },
+            "deltas": {
+              "Δ_sem_minus_copy_strict": null,
+              "Δ_sem_minus_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            }
+          },
+          "L_surface_to_meaning_tuned": 30,
+          "answer_mass_at_L_surface_tuned": 0.7138071060180664,
+          "echo_mass_at_L_surface_tuned": 0.03832329829384917,
+          "L_geom_tuned": 31,
+          "cos_to_answer_at_L_geom_tuned": 0.138032466173172,
+          "cos_to_prompt_max_at_L_geom_tuned": 0.10223683714866638,
+          "L_topk_decay_tuned": 1,
+          "topk_prompt_mass_at_L_tuned": 0.08116818720009178,
+          "topk_prompt_tau_tuned": 0.33,
+          "surface_delta_tuned": 0.05,
+          "geom_gamma_tuned": 0.02
+        }
+      ]
+    },
+    "L_surface_to_meaning_tuned": 31,
+    "answer_mass_at_L_surface_tuned": 0.10102814435958862,
+    "echo_mass_at_L_surface_tuned": 0.005231814409283192,
+    "L_geom_tuned": 34,
+    "cos_to_answer_at_L_geom_tuned": 0.10646726191043854,
+    "cos_to_prompt_max_at_L_geom_tuned": 0.08435870707035065,
+    "L_topk_decay_tuned": 1,
+    "topk_prompt_mass_at_L_tuned": 0.08085965283680707,
+    "topk_prompt_tau_tuned": 0.33,
+    "surface_delta_tuned": 0.05,
+    "geom_gamma_tuned": 0.02,
+    "skip_layers_sanity": {
+      "m=2": 0.37036675251554574,
+      "m=4": 0.002488088211663845,
+      "m=8": 48.94416077833908
+    },
+    "tuned_lens_skip_warning": 0.37036675251554574,
+    "tuned_lens_regression": true
   },
   "final_prediction": {
     "type": "final_prediction",
@@ -1106,6 +1406,315 @@
   "control_summary": {
     "first_control_margin_pos": 1,
     "max_control_margin": 0.9999977350234983
+  },
+  "tuned_lens": {
+    "status": "loaded",
+    "path": "/home/kkonstant/logos-in-layers/001_layers_baseline/tuned_lenses/Qwen3-8B",
+    "summaries": [
+      {
+        "L_copy": null,
+        "L_copy_H": null,
+        "L_semantic": 34,
+        "delta_layers": null,
+        "copy_thresh": 0.95,
+        "copy_window_k": 1,
+        "copy_match_level": "id_subsequence",
+        "first_kl_below_0.5": 36,
+        "first_kl_below_1.0": 36,
+        "first_rank_le_1": 34,
+        "first_rank_le_5": 31,
+        "first_rank_le_10": 30,
+        "copy_soft_threshold": 0.5,
+        "copy_soft_window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "delta_layers_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "copy_detector": {
+          "strict": {
+            "thresh": 0.95,
+            "k": 1,
+            "L_copy_strict": null
+          },
+          "soft": {
+            "thresh": 0.5,
+            "window_ks": [
+              1,
+              2,
+              3
+            ],
+            "L_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          },
+          "deltas": {
+            "Δ_sem_minus_copy_strict": null,
+            "Δ_sem_minus_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          }
+        },
+        "L_surface_to_meaning_tuned": 31,
+        "answer_mass_at_L_surface_tuned": 0.10102814435958862,
+        "echo_mass_at_L_surface_tuned": 0.005231814409283192,
+        "L_geom_tuned": 34,
+        "cos_to_answer_at_L_geom_tuned": 0.10646726191043854,
+        "cos_to_prompt_max_at_L_geom_tuned": 0.08435870707035065,
+        "L_topk_decay_tuned": 1,
+        "topk_prompt_mass_at_L_tuned": 0.08085965283680707,
+        "topk_prompt_tau_tuned": 0.33,
+        "surface_delta_tuned": 0.05,
+        "geom_gamma_tuned": 0.02
+      },
+      {
+        "L_copy": null,
+        "L_copy_H": 32,
+        "L_semantic": 32,
+        "delta_layers": null,
+        "copy_thresh": 0.95,
+        "copy_window_k": 1,
+        "copy_match_level": "id_subsequence",
+        "first_kl_below_0.5": 36,
+        "first_kl_below_1.0": 32,
+        "first_rank_le_1": 32,
+        "first_rank_le_5": 31,
+        "first_rank_le_10": 29,
+        "copy_soft_threshold": 0.5,
+        "copy_soft_window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "delta_layers_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "copy_detector": {
+          "strict": {
+            "thresh": 0.95,
+            "k": 1,
+            "L_copy_strict": null
+          },
+          "soft": {
+            "thresh": 0.5,
+            "window_ks": [
+              1,
+              2,
+              3
+            ],
+            "L_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          },
+          "deltas": {
+            "Δ_sem_minus_copy_strict": null,
+            "Δ_sem_minus_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          }
+        },
+        "L_surface_to_meaning_tuned": 31,
+        "answer_mass_at_L_surface_tuned": 0.17943741381168365,
+        "echo_mass_at_L_surface_tuned": 0.002477908056751507,
+        "L_geom_tuned": 31,
+        "cos_to_answer_at_L_geom_tuned": 0.107005774974823,
+        "cos_to_prompt_max_at_L_geom_tuned": 0.08525310456752777,
+        "L_topk_decay_tuned": 1,
+        "topk_prompt_mass_at_L_tuned": 0.0866031744517386,
+        "topk_prompt_tau_tuned": 0.33,
+        "surface_delta_tuned": 0.05,
+        "geom_gamma_tuned": 0.02
+      },
+      {
+        "L_copy": null,
+        "L_copy_H": 31,
+        "L_semantic": 30,
+        "delta_layers": null,
+        "copy_thresh": 0.95,
+        "copy_window_k": 1,
+        "copy_match_level": "id_subsequence",
+        "first_kl_below_0.5": 36,
+        "first_kl_below_1.0": 30,
+        "first_rank_le_1": 30,
+        "first_rank_le_5": 30,
+        "first_rank_le_10": 28,
+        "copy_soft_threshold": 0.5,
+        "copy_soft_window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "delta_layers_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "copy_detector": {
+          "strict": {
+            "thresh": 0.95,
+            "k": 1,
+            "L_copy_strict": null
+          },
+          "soft": {
+            "thresh": 0.5,
+            "window_ks": [
+              1,
+              2,
+              3
+            ],
+            "L_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          },
+          "deltas": {
+            "Δ_sem_minus_copy_strict": null,
+            "Δ_sem_minus_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          }
+        },
+        "L_surface_to_meaning_tuned": 30,
+        "answer_mass_at_L_surface_tuned": 0.7138071060180664,
+        "echo_mass_at_L_surface_tuned": 0.03832329829384917,
+        "L_geom_tuned": 31,
+        "cos_to_answer_at_L_geom_tuned": 0.138032466173172,
+        "cos_to_prompt_max_at_L_geom_tuned": 0.10223683714866638,
+        "L_topk_decay_tuned": 1,
+        "topk_prompt_mass_at_L_tuned": 0.08116818720009178,
+        "topk_prompt_tau_tuned": 0.33,
+        "surface_delta_tuned": 0.05,
+        "geom_gamma_tuned": 0.02
+      }
+    ],
+    "provenance": {
+      "model_id": "Qwen/Qwen3-8B",
+      "clean_model_name": "Qwen3-8B",
+      "tl_version": "20250927T1848Z",
+      "model_commit": null,
+      "tokenizer_commit": null,
+      "translator": {
+        "num_layers": 36,
+        "d_model": 4096,
+        "rank": 256,
+        "final_identity": true,
+        "has_preconditioner": false,
+        "use_temperature": true,
+        "temperature_eps": 0.001,
+        "temperatures": [
+          0.5822809338569641,
+          0.5857735872268677,
+          0.5957123637199402,
+          0.5813357830047607,
+          0.5671394467353821,
+          0.5787919163703918,
+          0.5868602991104126,
+          0.5814096927642822,
+          0.5737513303756714,
+          0.5830742716789246,
+          0.5651549100875854,
+          0.5709784030914307,
+          0.5678954720497131,
+          0.5740622878074646,
+          0.566421627998352,
+          0.5845471024513245,
+          0.5707119703292847,
+          0.5841622948646545,
+          0.5817309617996216,
+          0.5704951286315918,
+          0.5813543200492859,
+          0.6286947131156921,
+          0.6273748874664307,
+          0.7688308954238892,
+          0.696699321269989,
+          0.8569042086601257,
+          1.0008339881896973,
+          1.0368210077285767,
+          1.3927702903747559,
+          1.407746434211731,
+          1.4220842123031616,
+          1.439238429069519,
+          1.4346399307250977,
+          1.4592326879501343,
+          1.4430605173110962,
+          1.0
+        ]
+      },
+      "training": {
+        "seed": 316,
+        "total_steps": 1954,
+        "warmup_steps": 196,
+        "micro_batch": 32,
+        "grad_accum": 1,
+        "effective_batch": 32,
+        "tokens_per_step": 16384,
+        "layers_sampled_per_step": 11,
+        "use_temperature": true,
+        "temperature_eps": 0.001,
+        "dataset": {
+          "repo_id": "HuggingFaceFW/fineweb-edu",
+          "name": "CC-MAIN-2025-26",
+          "split": "train",
+          "revision": "v1.4.0",
+          "seq_len": 512,
+          "positions_per_seq": 12,
+          "position_fraction_range": [
+            0.6,
+            0.95
+          ],
+          "content_hash": "7a492e60f05fa05810e96fbd57bd12f86615d935d0a3e6f2d629d0a37af53c22",
+          "samples_streamed": 121071
+        },
+        "optimizer": {
+          "type": "AdamW",
+          "lr": 0.001,
+          "betas": [
+            0.9,
+            0.999
+          ],
+          "weight_decay": 0.0001
+        },
+        "regularization": {
+          "l2": 0.0001,
+          "smooth": 0.0001
+        },
+        "device": "cuda",
+        "dtype": "torch.float16",
+        "final_loss": 6.152928564548493
+      }
+    }
   },
   "gold_answer": {
     "string": "Berlin",
