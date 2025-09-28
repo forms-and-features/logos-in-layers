@@ -771,6 +771,69 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
   Mirror to `suppress_abs_probs`.
 * **No CLI.** Purely an advisory for downstream evaluation prompts.
 
+---
+
+### 1.23. Threshold sweep for copy‑collapse
+
+**Why.** Copy‑collapse should capture when the network re‑uses **particular prompt tokens** (ID‑level, contiguous subsequence), not when the lens/temperature makes generic echoes look confident. A small **threshold sweep** tests robustness: if the first copy layer moves a lot as τ changes (e.g., 0.95→0.70), copy is fragile and more consonant with nominalist “name matching.” The sweep now also cross‑checks **raw vs norm** in a narrow window so lens‑induced “copy” is downgraded.
+
+**What.**
+
+1. Add multiple **strict‑copy flags** per layer in `*-pure-next-token.csv`:
+   `copy_strict@0.70`, `copy_strict@0.80`, `copy_strict@0.90`, `copy_strict@0.95` (k=1 window; same margin δ=0.10; ID‑contiguous subsequence; ignore whitespace/punctuation top‑1s).
+2. Record the **earliest layer** for each threshold in run JSON, both as layers and normalized depth fractions.
+3. Cross‑validate the earliest strict‑copy layer at each τ using the **Windowed Raw‑vs‑Norm** check (§1.19): flag `copy_norm_only@τ=true` if strict‑copy holds under the norm lens but not under the raw lens within ±4 (or ±8 if escalated) layers.
+4. Emit an **auto Markdown summary** per model (`copy-thresholds.md`) with a one‑line stability classification.
+
+**How.**
+
+* **CSV (per layer):** append boolean columns
+  `copy_strict@0.70, copy_strict@0.80, copy_strict@0.90, copy_strict@0.95`.
+* **Run JSON additions:**
+
+  ```json
+  {
+    "summary": {
+      "copy_thresholds": {
+        "tau_list": [0.70, 0.80, 0.90, 0.95],
+        "L_copy_strict": {
+          "0.70": <int|null>,
+          "0.80": <int|null>,
+          "0.90": <int|null>,
+          "0.95": <int|null>
+        },
+        "L_copy_strict_frac": {
+          "0.70": <float|null>,
+          "0.80": <float|null>,
+          "0.90": <float|null>,
+          "0.95": <float|null>
+        },
+        "norm_only_flags": {
+          "0.70": <bool|null>,
+          "0.80": <bool|null>,
+          "0.90": <bool|null>,
+          "0.95": <bool|null>
+        },
+        "stability": "<stable|mixed|fragile|none>"
+      }
+    }
+  }
+  ```
+
+  * **Stability rule:**
+    Let Δτ = |L_copy_strict(0.95) − L_copy_strict(0.70)| measured both in layers and as fraction of depth.
+    • **stable** if Δτ ≤ 2 layers **or** ≤ 0.05·n_layers,
+    • **fragile** if Δτ ≥ 6 layers **or** ≥ 0.15·n_layers,
+    • **mixed** otherwise,
+    • **none** if all `L_copy_strict(τ)` are null.
+  * Set `norm_only_flags[τ]=true` if the earliest strict‑copy layer at τ **fails under the raw lens** anywhere in the §1.19 window around that layer.
+* **Ablation to Δ‑collapse reporting (no breaking change):** keep Δ defined against **strict@0.95** when present; if null, fall back to the earliest `L_copy_soft[k]` (report k). Use the threshold sweep **only** for robustness commentary and the `stability` tag; do not change Δ’s primary definition.
+* **CLI:** add `--copy-thresholds 0.70,0.80,0.90,0.95` (default as shown). No other flag changes.
+* **Markdown (`run-latest/copy-thresholds.md`):** one line per model, e.g.
+  `Meta‑Llama‑3‑8B: L_copy_strict@{0.95,0.90,0.80,0.70} = {null, 27, 24, 23} (frac {—, .53, .47, .45}); norm_only@{0.95,0.90,0.80,0.70}={—, false, false, false}; stability=mixed.`
+
+---
+
 #### Wrap‑up
 
 Executing the items in **Group 1** upgrades the measurement pipeline from an informative prototype to a rigour‑grade toolchain. Only after this foundation is secure should we move on to the broader prompt battery and causal‑intervention work.
@@ -796,17 +859,7 @@ We run a first wave of low‑overhead variations that reuse the logit‑lens bas
 
 ---
 
-### 2.1. Threshold sweep for copy‑collapse
-
-**Why.** Copy‑collapse is meant to record when the network *re‑uses a token already present in the prompt*—i.e., when it relies on **particular** lexical material. If that layer changes drastically when the probability threshold moves from 0.90 to 0.70, the phenomenon is fragile and more consonant with nominalist “name matching” than with an entrenched universal.
-
-**What.** Add boolean columns `copy@0.70`, `copy@0.80`, `copy@0.90` to every `*-pure-next-token.csv`. Emit a short Markdown summary that lists `L_copy(0.70)`, `L_copy(0.80)`, `L_copy(0.90)` for each model (explicitly show `null` when no layer qualifies).
-
-**How.** Compute `p_top1` per layer, evaluate the three inequalities, write booleans, and post an auto‑generated Markdown diff.
-
----
-
-### 2.2. Multilingual prompt – preliminary pass
+### 2.1. Multilingual prompt – preliminary pass
 
 **Why.** Language‑independent behaviour is compatible with realism but not mandated by it; language‑dependent depths are prima facie evidence for predicate‑tied behaviour. A **per‑language gold‑token alignment** prevents tokenizer artefacts from polluting comparisons.
 
@@ -821,7 +874,7 @@ We run a first wave of low‑overhead variations that reuse the logit‑lens bas
 
 ---
 
-### 2.3. Predicate‑Permutation Control (Quine guard)
+### 2.2. Predicate‑Permutation Control (Quine guard)
 
 **Why.** Quine‑style “inscrutability of reference” argues that empirical evidence can be preserved under a systematic **re‑labelling** of terms. A global **permutation** of country (and optionally capital) names is a lightweight guard: if our heads/vectors merely track arbitrary labels, many of our metrics should look similar under the permutation; if they track **the original relation**, they should **fail** under the permutation in diagnostic ways.
 
@@ -862,7 +915,7 @@ We run a first wave of low‑overhead variations that reuse the logit‑lens bas
 
 ---
 
-### 2.4. Rank‑centric prompt battery (100–1,000 country→capital items)
+### 2.3. Rank‑centric prompt battery (100–1,000 country→capital items)
 
 **Why.** Single‑prompt results can overfit tokenizer/stylistic quirks. A larger, rank‑centric battery provides robust distributions of semantic‑collapse depths without relying on lens‑calibrated probabilities, and is cheap to run on the existing pipeline.
 
@@ -1046,7 +1099,7 @@ These tools move us beyond descriptive logit‑lens curves. They intervene direc
 
 6. **Negative & permutation controls.**
 
-   * **Predicate‑permutation:** Repeat causal tests under the §2.3 permutation prompts; expect **loss** of effect on the *original* correct capital.
+   * **Predicate‑permutation:** Repeat causal tests under the §2.2 permutation prompts; expect **loss** of effect on the *original* correct capital.
    * **France‑control:** Ensure steering does **not** increase `p(Berlin)` in “France → ?” prompts.
 
 7. **Success criteria (advance only if all hold).**
