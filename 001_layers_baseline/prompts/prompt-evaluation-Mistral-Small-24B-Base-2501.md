@@ -17,6 +17,7 @@ If present, also read the `tuned_lens` block for provenance/diagnostics (path, s
 Also read:
 * diagnostics.raw_lens_window: { radius, center_layers, layers_checked, norm_only_semantics_layers, max_kl_norm_vs_raw_bits_window, mode="window" }.
 * summary.cos_milestones and summary.depth_fractions.
+* summary.copy_thresholds: { tau_list, L_copy_strict, L_copy_strict_frac, norm_only_flags, stability } — threshold sweep robustness and cross‑validation.
 * diagnostics.prism_summary.metrics and tuned_lens.summary.metrics.
 * measurement_guidance: { prefer_ranks, suppress_abs_probs, reasons[], notes }.
 
@@ -30,7 +31,7 @@ Ablation: read `ablation_summary` with `{ L_copy_orig, L_sem_orig, L_copy_nf, L_
 001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-records.csv
 001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-pure-next-token.csv
 Each CSV now includes leading `prompt_id` (`pos` for Germany→Berlin; `ctl` for France→Paris) and `prompt_variant` (`orig`/`no_filler`) columns, and a `rest_mass` column (probability not covered by the listed top-k tokens).
- The pure-next-token CSV adds boolean flags `copy_collapse`, `copy_strict@τ`, and `copy_soft_k{1,2,3}@τ_soft`, plus `entropy_collapse`, and `is_answer`, together with per-layer fields:
+ The pure-next-token CSV adds boolean flags `copy_collapse`, strict-sweep flags `copy_strict@τ` where τ ∈ {0.70, 0.80, 0.90, 0.95}, and `copy_soft_k{1,2,3}@τ_soft`, plus `entropy_collapse`, and `is_answer`, together with per-layer fields:
  - Prob/calibration: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, `kl_to_final_bits` (bits)
  - Norm temperature (norm-only): `kl_to_final_bits_norm_temp` = KL(P(z/τ)||P_final)
  - Geometry: `cos_to_final` (§1.5), `cos_to_answer`, `cos_to_prompt_max`, `geom_crossover`
@@ -50,7 +51,7 @@ The pure CSVs include `teacher_entropy_bits` (entropy of the teacher’s final d
 
 If present, also include Windowed Raw‑vs‑Norm sidecar:
 001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-pure-next-token-rawlens-window.csv
-Columns: layer, lens ∈ {raw,norm}, p_top1, top1_token_id, top1_token_str, p_answer, answer_rank, kl_norm_vs_raw_bits.
+Columns: layer, lens ∈ {raw,norm}, p_top1, top1_token_id, top1_token_str, p_answer, answer_rank, kl_norm_vs_raw_bits, and (if present) strict-sweep flags `copy_strict@{0.70,0.80,0.90,0.95}`.
 
 - Parameters (copy-collapse): copy_threshold = 0.95, copy_margin = 0.10
 
@@ -103,6 +104,7 @@ Report summary indices from diagnostics: `first_kl_below_0.5`, `first_kl_below_1
 Measurement guidance: quote `measurement_guidance` (prefer_ranks/suppress_abs_probs and reasons).
 Raw‑vs‑Norm window (if present): list `center_layers`, `radius`, and any `norm_only_semantics_layers`; cite the largest `kl_norm_vs_raw_bits_window`.
 Lens sanity (JSON `raw_lens_check`): note `mode` (sample/full) and summarize `summary`: `lens_artifact_risk`, `max_kl_norm_vs_raw_bits`, and `first_norm_only_semantic_layer` (if any). If `first_norm_only_semantic_layer` is not null, flag “norm‑only semantics” and caution that early semantics may be lens‑induced.
+Threshold sweep sanity: confirm `summary.copy_thresholds` is present; quote the `stability` tag and earliest `L_copy_strict` at τ=0.70 and τ=0.95. If `norm_only_flags[τ]` is true for the earliest layer at τ, caution that strict‑copy appears only under the norm lens within the window; use the raw‑vs‑norm sidecar rows to substantiate.
 Copy-collapse flag check: first row with `copy_collapse = True`  
   layer = … , token_id₁ = … , p₁ = … , token_id₂ = … , p₂ = …  
   ✓ rule satisfied / ✗ fired spuriously
@@ -140,6 +142,9 @@ If `cos_milestones` is present in JSON, prefer those layer indices for threshold
 
 Use `summary.depth_fractions` (if present) to report normalized depths (e.g., `L_semantic_frac`), and `summary.cos_milestones` to reference cosine thresholds without scanning the CSV; still include the corresponding layer indices.
 
+Copy robustness (threshold sweep)
+Report the `summary.copy_thresholds.stability` tag and earliest layers for strict copy at τ ∈ {0.70, 0.95}. If `norm_only_flags[τ]` is true, flag potential lens‑induced copy (norm‑only) and reference the raw‑vs‑norm sidecar (if available). Treat this as robustness commentary, not as a redefinition of Δ (which stays tied to strict@0.95 when present).
+
 Prism Sidecar Analysis (if present)
 Prism is a shared‑decoder diagnostic for robustness/comparability, not the model’s head. Judge Helpful/Neutral/Regressive strictly relative to the norm lens baseline, not vs the final head.
 - Presence: if `diagnostics.prism_summary.compatible != true`, skip Prism analysis and note unavailability.
@@ -163,6 +168,7 @@ but do not use it for the table or for bolding the collapse layer.
 - Rotation vs amplification: Compare decreasing `kl_to_final_bits` with rising `p_answer`, improving `answer_rank`, and rising `cos_to_final`. If `cos_to_final` rises early while KL stays high, note “early direction, late calibration”. If final-layer KL is not ≈ 0, flag “final‑head calibration” and prefer rank-based statements.
 - Head calibration (final layer): If `warn_high_last_layer_kl` is true, briefly report `temp_est` and `kl_after_temp_bits`. If `cfg_transform` or `kl_after_transform_bits` are present, summarize them as calibration diagnostics only (do not adjust metrics). Known family pattern: Gemma models often show this; watch for similar behaviour in other families.
 - Lens sanity: Quote the JSON `raw_lens_check.summary` and, if helpful, one sampled `raw_lens_check.samples` row. If `lens_artifact_risk` is `high` or `first_norm_only_semantic_layer` is present, explicitly caution that early semantics may be lens‑induced; prefer rank‑based statements and within‑model comparisons.
+  Additionally, consult `summary.copy_thresholds.norm_only_flags` for norm‑only strict‑copy at τ ∈ {0.70, 0.80, 0.90, 0.95}; if any true, note that copy signals may be lens‑induced.
 - Temperature robustness: “At T = 0.1, Berlin rank 1 (p = …); at T = 2.0, Berlin rank … (p = …). Entropy rises from … bits to … bits.”
 - Important-word trajectory — “Berlin first enters any top-5 at layer …, stabilises by layer …. Germany remains in top-5 through layer …. capital drops out after layer ….”
 - Stylistic ablation: summarize whether removing “simply” delays or advances semantics (`ΔL_sem`) or copy (`ΔL_copy`); if large, attribute likely guidance‑style anchoring rather than semantics.
