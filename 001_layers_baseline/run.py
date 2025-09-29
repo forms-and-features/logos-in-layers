@@ -73,6 +73,7 @@ from layers_core.token_utils import make_decode_id
 from layers_core.collapse_rules import format_copy_strict_label, format_copy_soft_label
 from layers_core.temperature import fit_norm_temperatures
 from layers_core.skip_sanity import evaluate_skip_layers
+from layers_core.summaries import build_unified_lens_metrics
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -905,16 +906,64 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             "max_control_margin": max_margin,
         }
 
+        # ---------------- Unified sidecar summaries (PROJECT_NOTES §1.21) -----
+        tuned_metrics = None
+        try:
+            total_layers = int(model.cfg.n_layers)
+        except Exception:
+            total_layers = None
+
+        # Prism metrics (if sidecar is active)
+        try:
+            if total_layers is not None and prism_active and isinstance(json_data_prism, dict):
+                base_records = json_data.get("pure_next_token_records", [])
+                prism_records = json_data_prism.get("pure_next_token_records", [])
+                metrics_prism = build_unified_lens_metrics(
+                    baseline_records=base_records,
+                    alt_records=prism_records,
+                    n_layers=total_layers,
+                    alt_label="prism",
+                    prompt_id="pos",
+                    prompt_variant="orig",
+                )
+                try:
+                    diag.setdefault("prism_summary", {})["metrics"] = metrics_prism
+                except Exception:
+                    pass
+        except Exception as exc:
+            try:
+                diag.setdefault("prism_summary", {})["metrics_error"] = str(exc)
+            except Exception:
+                pass
+
+        # Tuned-lens metrics (if tuned adapter/data present)
+        try:
+            if total_layers is not None and json_data_tuned is not None:
+                tuned_records = json_data_tuned.get("pure_next_token_records", [])
+                tuned_metrics = build_unified_lens_metrics(
+                    baseline_records=json_data.get("pure_next_token_records", []),
+                    alt_records=tuned_records,
+                    n_layers=total_layers,
+                    alt_label="tuned",
+                    prompt_id="pos",
+                    prompt_variant="orig",
+                )
+        except Exception:
+            tuned_metrics = None
+
         if tuned_adapter is not None and tuned_spec is not None and json_data_tuned is not None:
             tuned_diag_info = {**tuned_diag_info, "summaries": tuned_spec.get("summaries", [])}
         diag["tuned_lens"] = tuned_diag_info
         if tuned_adapter is not None and tuned_spec is not None and json_data_tuned is not None:
-            json_data["tuned_lens"] = {
+            tuned_block = {
                 "status": tuned_diag_info.get("status"),
                 "path": tuned_diag_info.get("path"),
                 "summaries": tuned_spec.get("summaries", []),
                 "provenance": tuned_provenance,
             }
+            if tuned_metrics is not None:
+                tuned_block["summary"] = {"metrics": tuned_metrics}
+            json_data["tuned_lens"] = tuned_block
         else:
             json_data["tuned_lens"] = tuned_diag_info
 

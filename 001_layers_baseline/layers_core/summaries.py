@@ -247,3 +247,137 @@ def summarize_pure_records(
         summary["depth_fractions"] = depth_fractions
 
     return summary
+
+
+# --- Unified sidecar summaries (PROJECT_NOTES §1.21) ------------------------
+
+from typing import Tuple
+
+
+def _filter_pure_records(records: List[Dict[str, Any]], *, prompt_id: str, prompt_variant: str) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for rec in records or []:
+        if rec.get("prompt_id") != prompt_id:
+            continue
+        if rec.get("prompt_variant") != prompt_variant:
+            continue
+        if not isinstance(rec.get("layer"), int):
+            continue
+        out.append(rec)
+    # ensure increasing layer order
+    out.sort(key=lambda r: r.get("layer"))
+    return out
+
+
+def _rank_milestones(records: List[Dict[str, Any]]) -> Dict[str, Optional[int]]:
+    # earliest layer where answer_rank ≤ {10,5,1}
+    res = {"le_10": None, "le_5": None, "le_1": None}
+    for rec in records:
+        ar = rec.get("answer_rank")
+        if ar is None:
+            continue
+        try:
+            ar_i = int(ar)
+        except Exception:
+            continue
+        L = rec.get("layer")
+        if res["le_10"] is None and ar_i <= 10:
+            res["le_10"] = L
+        if res["le_5"] is None and ar_i <= 5:
+            res["le_5"] = L
+        if res["le_1"] is None and ar_i <= 1:
+            res["le_1"] = L
+        if res["le_10"] is not None and res["le_5"] is not None and res["le_1"] is not None:
+            break
+    return res
+
+
+def _kl_bits_at_percentiles(
+    records: List[Dict[str, Any]],
+    n_layers: int,
+    *,
+    percents: Tuple[float, float, float] = (0.25, 0.50, 0.75),
+) -> Dict[str, Optional[float]]:
+    # Map each target layer index to the rec's kl_to_final_bits
+    out: Dict[str, Optional[float]] = {"p25": None, "p50": None, "p75": None}
+    if not isinstance(n_layers, int) or n_layers < 0:
+        return out
+    # Build lookup by layer
+    by_layer = {int(rec.get("layer")): rec for rec in records if isinstance(rec.get("layer"), int)}
+    layer_targets = [max(0, min(n_layers, int(round(n_layers * p)))) for p in percents]
+    keys = ["p25", "p50", "p75"]
+    for key, L in zip(keys, layer_targets):
+        rec = by_layer.get(L)
+        try:
+            out[key] = None if rec is None else float(rec.get("kl_to_final_bits"))
+        except Exception:
+            out[key] = None
+    return out
+
+
+def _first_kl_le_threshold(records: List[Dict[str, Any]], *, threshold: float = 1.0) -> Optional[int]:
+    for rec in records:
+        try:
+            val = rec.get("kl_to_final_bits")
+            v = None if val is None else float(val)
+        except Exception:
+            v = None
+        if v is not None and v <= float(threshold):
+            return rec.get("layer")
+    return None
+
+
+def build_unified_lens_metrics(
+    *,
+    baseline_records: List[Dict[str, Any]],
+    alt_records: List[Dict[str, Any]] | None,
+    n_layers: int,
+    alt_label: str,
+    prompt_id: str = "pos",
+    prompt_variant: str = "orig",
+) -> Dict[str, Any]:
+    """Compute unified sidecar metrics for a lens vs baseline (PROJECT_NOTES §1.21).
+
+    Returns a dict with keys: rank_milestones, kl_bits_at_percentiles, first_kl_le_1.0
+    where each contains baseline/alt/delta entries. The alt subkey is named by
+    `alt_label` (e.g., "prism" or "tuned").
+    """
+    # Filter to the primary prompt/variant
+    base = _filter_pure_records(baseline_records, prompt_id=prompt_id, prompt_variant=prompt_variant)
+    alt = _filter_pure_records(alt_records or [], prompt_id=prompt_id, prompt_variant=prompt_variant)
+
+    # Rank milestones
+    rm_b = _rank_milestones(base)
+    rm_a = _rank_milestones(alt)
+    rm_delta = {k: (None if rm_b.get(k) is None or rm_a.get(k) is None else (int(rm_a[k]) - int(rm_b[k]))) for k in rm_b}
+
+    # KL@percentiles (bits)
+    kl_b = _kl_bits_at_percentiles(base, n_layers)
+    kl_a = _kl_bits_at_percentiles(alt, n_layers)
+    kl_delta = {}
+    for k in kl_b.keys():
+        vb, va = kl_b.get(k), kl_a.get(k)
+        kl_delta[k] = (None if vb is None or va is None else float(vb) - float(va))
+
+    # First KL ≤ 1.0
+    fk_b = _first_kl_le_threshold(base, threshold=1.0)
+    fk_a = _first_kl_le_threshold(alt, threshold=1.0)
+    fk_delta = None if fk_b is None or fk_a is None else int(fk_a) - int(fk_b)
+
+    return {
+        "rank_milestones": {
+            "baseline": rm_b,
+            alt_label: rm_a,
+            "delta": rm_delta,
+        },
+        "kl_bits_at_percentiles": {
+            "baseline": kl_b,
+            alt_label: kl_a,
+            "delta": kl_delta,
+        },
+        "first_kl_le_1.0": {
+            "baseline": fk_b,
+            alt_label: fk_a,
+            "delta": fk_delta,
+        },
+    }

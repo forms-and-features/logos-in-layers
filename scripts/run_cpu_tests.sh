@@ -40,6 +40,7 @@ ${PY} 001_layers_baseline/tests/test_run_dir.py
 ${PY} 001_layers_baseline/tests/test_rank_metrics.py
 ${PY} 001_layers_baseline/tests/test_kl_metrics.py
 ${PY} 001_layers_baseline/tests/test_summaries.py
+${PY} 001_layers_baseline/tests/test_unified_sidecar_summaries.py
 ${PY} 001_layers_baseline/tests/test_head_transforms.py
 ${PY} 001_layers_baseline/tests/test_windows.py
 ${PY} 001_layers_baseline/tests/test_raw_lens.py

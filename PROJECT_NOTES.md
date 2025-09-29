@@ -694,7 +694,7 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
 
 ---
 
-### 1.21. Unified Sidecar Summaries for Prism & Tuned‑Lens
+### [x] 1.21. Unified Sidecar Summaries for Prism & Tuned‑Lens
 
 **Why.** Evaluations now recompute tuned/prism rank milestones and KL deltas from sidecar CSVs. Publishing a compact, consistent summary block avoids duplication and errors, and clarifies that Prism is a *shared‑decoder diagnostic*, not the model’s head.
 
@@ -746,6 +746,8 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
   }
   ```
 * **Notes.** Keep these summaries *additive*; do not change CSV schemas.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 
