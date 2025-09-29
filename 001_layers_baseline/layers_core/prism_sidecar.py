@@ -97,6 +97,7 @@ def append_prism_pure_next_token(
         prompt_id=prompt_id,
         prompt_variant=prompt_variant,
         control_ids=control_ids,
+        copy_strict_thresholds=(),
     )
     rec = make_pure_record(
         prompt_id=prompt_id,

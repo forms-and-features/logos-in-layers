@@ -781,7 +781,7 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
 
 ---
 
-### 1.23. Threshold sweep for copy‑collapse
+### [x] 1.23. Threshold sweep for copy‑collapse
 
 **Why.** Copy‑collapse should capture when the network re‑uses **particular prompt tokens** (ID‑level, contiguous subsequence), not when the lens/temperature makes generic echoes look confident. A small **threshold sweep** tests robustness: if the first copy layer moves a lot as τ changes (e.g., 0.95→0.70), copy is fragile and more consonant with nominalist “name matching.” The sweep now also cross‑checks **raw vs norm** in a narrow window so lens‑induced “copy” is downgraded.
 
@@ -835,6 +835,9 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
     • **none** if all `L_copy_strict(τ)` are null.
   * Set `norm_only_flags[τ]=true` if the earliest strict‑copy layer at τ **fails under the raw lens** anywhere in the §1.19 window around that layer.
 * **Ablation to Δ‑collapse reporting (no breaking change):** keep Δ defined against **strict@0.95** when present; if null, fall back to the earliest `L_copy_soft[k]` (report k). Use the threshold sweep **only** for robustness commentary and the `stability` tag; do not change Δ’s primary definition.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
 ---
 
 #### Wrap‑up

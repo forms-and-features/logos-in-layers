@@ -53,6 +53,10 @@ def compute_pure_next_token_info(
     geom_gamma: float = 0.02,
     # Norm-lens per-layer temperature (norm-only)
     norm_temp_tau: Optional[float] = None,
+    # Strict-copy threshold sweep (k=1 window, same margin).
+    # When None, defaults to (0.70, 0.80, 0.90, 0.95) and will emit flags
+    # labeled via format_copy_strict_label(). Pass an empty iterable to disable.
+    copy_strict_thresholds: Optional[Iterable[float]] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
     """Compute pure next-token metrics and summary structures.
 
@@ -138,6 +142,46 @@ def compute_pure_next_token_info(
             and float(p_top1_value) > float(th)
         )
 
+    # Strict-copy threshold sweep (k=1; ID membership + prob threshold + margin)
+    # Default thresholds when not explicitly provided
+    strict_tau_list: Tuple[float, ...]
+    if copy_strict_thresholds is None:
+        strict_tau_list = (0.70, 0.80, 0.90, 0.95)
+    else:
+        strict_tau_list = tuple(sorted({float(t) for t in copy_strict_thresholds}))
+
+    # Compute base stats to avoid recomputation
+    # top-2 from last position for margin check
+    _vals2, _idx2 = torch.topk(last_logits, 2, largest=True, sorted=True)
+    _full = last_full_probs
+    _p1 = float(_full[_idx2[0]].item()) if _full is not None else None
+    _p2 = float(_full[_idx2[1]].item()) if _full is not None else None
+    strict_hits: Dict[str, bool] = {}
+    # k=1 window is last top-1 id
+    window_k1 = window_manager.get_window(lens_type, prompt_id, prompt_variant, 1)
+    # Heuristic: ignore whitespace/punct-only top-1 tokens
+    _top1_str = last_top_tokens[0] if last_top_tokens else None
+    k1_ok = not is_pure_whitespace_or_punct(_top1_str)
+    if k1_ok and len(window_k1) >= 1:
+        in_ctx = is_id_subseq(window_k1, list(ctx_ids_list))
+        for tau in strict_tau_list:
+            label = f"copy_strict@{format(copy_threshold if False else tau, '.2f').rstrip('0').rstrip('.')}"
+            hit = False
+            try:
+                hit = (
+                    in_ctx
+                    and _p1 is not None and _p2 is not None
+                    and (_p1 > float(tau))
+                    and ((_p1 - _p2) > float(copy_margin))
+                )
+            except Exception:
+                hit = False
+            strict_hits[label] = bool(hit)
+    else:
+        for tau in strict_tau_list:
+            label = f"copy_strict@{format(tau, '.2f').rstrip('0').rstrip('.')}"
+            strict_hits[label] = False
+
     # Teacher entropy (final distribution at the NEXT position), in bits
     try:
         teacher_entropy_bits = float(-(final_probs_tensor * (final_probs_tensor + 1e-30).log()).sum().item() / math.log(2))
@@ -204,6 +248,11 @@ def compute_pure_next_token_info(
         "topk_prompt_mass@50": topk_prompt_mass,
         "kl_to_final_bits_norm_temp": kl_norm_temp_bits,
     }
+    # Add strict-sweep flags to the flat record, if any
+    for k_label, hit in strict_hits.items():
+        # Avoid duplicating the base strict label if identical formatting
+        if k_label != copy_strict_label:
+            record_extra[k_label] = hit
     if teacher_entropy_bits is not None:
         record_extra["teacher_entropy_bits"] = teacher_entropy_bits
     for k_int, hit in soft_hits.items():
@@ -236,6 +285,8 @@ def compute_pure_next_token_info(
         "topk_prompt_mass@50": topk_prompt_mass,
         "kl_to_final_bits_norm_temp": kl_norm_temp_bits,
     }
+    if strict_hits:
+        collected["copy_strict_hits"] = strict_hits
 
     dual_ctx = {
         "layer": layer_out_idx,

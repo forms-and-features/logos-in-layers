@@ -119,6 +119,7 @@ def test_compute_windowed_raw_norm_sets_flags():
         b_U=b_U,
         force_fp32_unembed=force_fp32,
         decode_id_fn=lambda idx: f"tok{int(idx)}",
+        ctx_ids_list=[0, 1, 2],
         first_ans_token_id=1,
         ground_truth="tok1",
         prompt_id="pos",
@@ -132,3 +133,7 @@ def test_compute_windowed_raw_norm_sets_flags():
     assert len(records) == 2  # norm + raw rows
     lenses = {rec["lens"] for rec in records}
     assert lenses == {"norm", "raw"}
+    # Each record should carry strict-sweep flags
+    for rec in records:
+        for lab in ("copy_strict@0.7", "copy_strict@0.8", "copy_strict@0.9", "copy_strict@0.95"):
+            assert lab in rec

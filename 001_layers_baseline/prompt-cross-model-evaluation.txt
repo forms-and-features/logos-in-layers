@@ -27,6 +27,7 @@ Other JSON fields:
 * diagnostics.raw_lens_window: { radius, center_layers, layers_checked, norm_only_semantics_layers, max_kl_norm_vs_raw_bits_window, mode="window" }.
 * summary.cos_milestones: cosine thresholds ge_{0.2,0.4,0.6} per lens (norm/tuned).
 * summary.depth_fractions: normalized depths for L_semantic, first_rank_le_{10,5,1}, L_copy_strict, and L_copy_soft[k].
+* summary.copy_thresholds: { tau_list, L_copy_strict, L_copy_strict_frac, norm_only_flags, stability } — threshold-sweep robustness and norm-only cross‑validation.
 * diagnostics.prism_summary.metrics and tuned_lens.summary.metrics: rank milestones and KL at {25,50,75}% with deltas vs baseline.
 * measurement_guidance: { prefer_ranks, suppress_abs_probs, reasons[], notes }.
 
@@ -55,7 +56,7 @@ Other JSON fields:
 001_layers_baseline/run-latest/output-Yi-34B-pure-next-token.csv
 
  Both CSV flavours contain a `rest_mass` column (probability mass not covered by the top-k tokens) and leading `prompt_id` (`pos`/`ctl`) and `prompt_variant` (`orig`/`no_filler`) columns. The pure-next-token CSV also adds:
- - Flags: `copy_collapse`, `copy_strict@τ`, `copy_soft_k{1,2,3}@τ_soft`, `entropy_collapse`, `is_answer`
+ - Flags: `copy_collapse`, strict-sweep `copy_strict@τ` where τ ∈ {0.70,0.80,0.90,0.95}, `copy_soft_k{1,2,3}@τ_soft`, `entropy_collapse`, `is_answer`
  - Prob/calibration: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, `kl_to_final_bits` (bits)
  - Geometry: `cos_to_final` (within-model), `cos_to_answer`, `cos_to_prompt_max`, `geom_crossover`
  - Surface mass: `echo_mass_prompt`, `answer_mass`, `answer_minus_echo_mass`, `mass_ratio_ans_over_prompt`
@@ -183,6 +184,9 @@ STYLE GUIDELINES
 - Report `L_surface_to_meaning_{norm,tuned}` with the masses at L (answer_mass_at_L, echo_mass_at_L) and note `answer_minus_echo_mass` sign/magnitude.
 - Report `L_geom_{norm,tuned}` and the cosines at L if present. Treat as within‑model; avoid cross‑family thresholds.
 - Report `L_topk_decay_{norm,tuned}` (K=50, τ=0.33); note if prompt coverage is near‑zero early.
+
+ Copy robustness (multi‑model)
+ - For each model, note `summary.copy_thresholds.stability` (stable/mixed/fragile/none) and the earliest strict-copy layers at τ ∈ {0.70, 0.95}. Flag models with any `norm_only_flags[τ] = true` as potential lens‑induced copy at that τ.
 
 When available, use `summary.depth_fractions` and `summary.cos_milestones` instead of recomputing from CSVs; still cite layer indices when quoting milestones.
 

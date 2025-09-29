@@ -70,6 +70,7 @@ def run_prompt_pass(
     enable_raw_lens_sampling: bool = True,
     tuned_spec: Optional[Dict[str, Any]] = None,
     norm_temp_taus: Optional[Sequence[Optional[float]]] = None,
+    copy_strict_thresholds: Optional[Sequence[float]] = None,
 ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], str, Dict[str, Any]]:
     """Run a single prompt pass and append outputs into json_data structures.
 
@@ -275,6 +276,7 @@ def run_prompt_pass(
                 topk_prompt_mass_k=TOPK_PROMPT_MASS_K,
                 geom_gamma=GEOM_GAMMA,
                 norm_temp_tau=_tau_for(0),
+                copy_strict_thresholds=copy_strict_thresholds,
             )
             json_data["pure_next_token_records"].append(
                 make_pure_record(
@@ -327,6 +329,7 @@ def run_prompt_pass(
                     topk_prompt_mass_k=TOPK_PROMPT_MASS_K,
                     geom_gamma=GEOM_GAMMA,
                     norm_temp_tau=None,
+                    copy_strict_thresholds=(),
                 )
                 tuned_json_data["pure_next_token_records"].append(
                     make_pure_record(
@@ -560,6 +563,7 @@ def run_prompt_pass(
                     topk_prompt_mass_k=TOPK_PROMPT_MASS_K,
                     geom_gamma=GEOM_GAMMA,
                     norm_temp_tau=_tau_for(layer + 1),
+                    copy_strict_thresholds=copy_strict_thresholds,
                 )
                 json_data["pure_next_token_records"].append(
                     make_pure_record(
@@ -771,6 +775,7 @@ def run_prompt_pass(
                 b_U=unembed_ctx.b,
                 force_fp32_unembed=unembed_ctx.force_fp32,
                 decode_id_fn=decode_id_fn,
+                ctx_ids_list=ctx_ids_list,
                 first_ans_token_id=first_ans_token_id,
                 ground_truth=ground_truth,
                 prompt_id=prompt_id,
@@ -781,6 +786,45 @@ def run_prompt_pass(
                 summary_diag["raw_lens_window"] = window_summary
             if window_records:
                 json_data.setdefault("raw_lens_window_records", []).extend(window_records)
+
+            # Cross-validate strict-copy earliest layers across thresholds against raw lens (PROJECT_NOTES §1.23)
+            try:
+                ct_block = summary_diag.setdefault("copy_thresholds", {})
+                L_map = (ct_block.get("L_copy_strict") or {})
+                if isinstance(L_map, dict) and window_records:
+                    # Build lookup of raw strict flags by layer
+                    raw_by_layer: Dict[int, Dict[str, Any]] = {}
+                    for rec in window_records:
+                        if rec.get("lens") != "raw":
+                            continue
+                        lyr = rec.get("layer")
+                        if not isinstance(lyr, int):
+                            continue
+                        raw_by_layer[lyr] = rec
+                    # Determine window bounds from summary
+                    radius_w = int((window_summary or {}).get("radius", 4))
+                    flags = {}
+                    for key, L in L_map.items():
+                        if not isinstance(L, int):
+                            flags[str(key)] = None
+                            continue
+                        # any raw strict copy within ±radius?
+                        found = False
+                        for lyr in range(L - radius_w, L + radius_w + 1):
+                            row = raw_by_layer.get(lyr)
+                            if row is None:
+                                continue
+                            try:
+                                if bool(row.get(f"copy_strict@{key}")):
+                                    found = True
+                                    break
+                            except Exception:
+                                continue
+                        # norm-only if not found
+                        flags[str(key)] = (False if found else True)
+                    ct_block["norm_only_flags"] = flags
+            except Exception:
+                pass
 
             if tuned_enabled and tuned_summaries is not None:
                 summary_tuned = summarize_pure_records(

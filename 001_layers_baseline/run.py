@@ -365,13 +365,22 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             th for th in copy_soft_thresholds_extra if abs(th - copy_soft_threshold) >= 1e-9
         )
         copy_strict_label = format_copy_strict_label(config.copy_threshold)
+        # Threshold sweep for strict copy (PROJECT_NOTES §1.23)
+        copy_strict_tau_list = (0.70, 0.80, 0.90, 0.95)
+        copy_strict_labels_extra = [
+            format_copy_strict_label(tau) for tau in copy_strict_tau_list
+        ]
         copy_soft_labels = {k: format_copy_soft_label(k, copy_soft_threshold) for k in copy_soft_window_ks}
         copy_soft_extra_labels = {
             (k, th): format_copy_soft_label(k, th)
             for th in copy_soft_thresholds_extra_filtered
             for k in copy_soft_window_ks
         }
-        copy_flag_columns = [copy_strict_label]
+        # unique preserve order
+        copy_flag_columns = []
+        for lab in [copy_strict_label, *copy_strict_labels_extra]:
+            if lab not in copy_flag_columns:
+                copy_flag_columns.append(lab)
         copy_flag_columns.extend([copy_soft_labels[k] for k in sorted(copy_soft_labels)])
         copy_flag_columns.extend([
             label
@@ -645,6 +654,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     enable_raw_lens_sampling=True,
                     tuned_spec=tuned_spec,
                     norm_temp_taus=norm_temp_taus,
+                    copy_strict_thresholds=copy_strict_tau_list,
                 )
                 diag.update(pass_summary)
                 diag["gold_alignment"] = "ok" if gold_info.get("status") == "ok" else "unresolved"
@@ -815,6 +825,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     enable_raw_lens_sampling=False,
                     tuned_spec=tuned_spec,
                     norm_temp_taus=norm_temp_taus,
+                    copy_strict_thresholds=copy_strict_tau_list,
                 )
         try:
             if isinstance(diag.get("prism_summary"), dict) and isinstance(prism_diag_nf, dict) and prism_diag_nf.get("placement_error"):
@@ -870,6 +881,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     enable_raw_lens_sampling=False,
                     tuned_spec=tuned_spec,
                     norm_temp_taus=norm_temp_taus,
+                    copy_strict_thresholds=copy_strict_tau_list,
                 )
         try:
             if isinstance(diag.get("prism_summary"), dict) and isinstance(prism_diag_ctl, dict) and prism_diag_ctl.get("placement_error"):

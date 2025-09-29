@@ -5,7 +5,7 @@ import torch
 
 from .numerics import safe_cast_for_unembed, kl_bits
 from .metrics import compute_next_token_metrics
-from .collapse_rules import is_semantic_top1
+from .collapse_rules import is_semantic_top1, is_pure_whitespace_or_punct
 from .unembed import unembed_mm
 
 
@@ -159,11 +159,14 @@ def compute_windowed_raw_norm(
     b_U: Optional[torch.Tensor],
     force_fp32_unembed: bool,
     decode_id_fn,
+    ctx_ids_list,
     first_ans_token_id: Optional[int],
     ground_truth: str,
     prompt_id: str,
     prompt_variant: str,
     n_layers: int,
+    copy_tau_list: tuple[float, ...] = (0.70, 0.80, 0.90, 0.95),
+    copy_margin: float = 0.10,
 ) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Compute windowed raw-vs-norm diagnostics around candidate collapse layers."""
 
@@ -252,18 +255,43 @@ def compute_windowed_raw_norm(
         if is_answer_norm and not is_answer_raw:
             norm_only_layers.append(layer)
 
-        for lens_tag, metrics, top1_id, top1_str in (
+        # Strict-copy sweep flags per lens for this layer (k=1)
+        def _strict_flags(probs, top1_id, top1_str):
+            try:
+                top2_vals, top2_idx = torch.topk(probs, 2, largest=True, sorted=True)
+                p1 = float(probs[top2_idx[0]].item())
+                p2 = float(probs[top2_idx[1]].item())
+            except Exception:
+                p1, p2 = None, None
+            in_ctx = int(top1_id) in set(int(t) for t in (ctx_ids_list or []))
+            flags: Dict[str, Any] = {}
+            # Guard trivial spacing tokens via decode string
+            skip = is_pure_whitespace_or_punct(top1_str)
+            for tau in copy_tau_list:
+                label = f"copy_strict@{format(tau, '.2f').rstrip('0').rstrip('.')}"
+                hit = False
+                if not skip and in_ctx and p1 is not None and p2 is not None:
+                    hit = (p1 > float(tau)) and ((p1 - p2) > float(copy_margin))
+                flags[label] = bool(hit)
+            return flags
+
+        flags_norm = _strict_flags(norm_probs, top1_norm, top1_norm_str)
+        flags_raw = _strict_flags(raw_probs, top1_raw, top1_raw_str)
+
+        for lens_tag, metrics, top1_id, top1_str, _flags in (
             (
                 "norm",
                 metrics_norm,
                 top1_norm,
                 top1_norm_str,
+                flags_norm,
             ),
             (
                 "raw",
                 metrics_raw,
                 top1_raw,
                 top1_raw_str,
+                flags_raw,
             ),
         ):
             records.append(
@@ -278,6 +306,7 @@ def compute_windowed_raw_norm(
                     "p_answer": metrics.get("p_answer"),
                     "answer_rank": metrics.get("answer_rank"),
                     "kl_norm_vs_raw_bits": kl_window,
+                    **_flags,
                 }
             )
 

@@ -85,3 +85,13 @@ def test_summarize_pure_records():
     assert depth["L_copy_strict_frac"] == 0.25
     assert depth["L_copy_soft_k1_frac"] == 0.25
     assert depth["L_copy_soft_k2_frac"] == 0.5
+
+    # Threshold sweep block exists with expected structure
+    ct = diag.get("copy_thresholds")
+    assert isinstance(ct, dict)
+    assert ct.get("tau_list") == [0.7, 0.8, 0.9, 0.95]
+    assert set(ct.get("L_copy_strict", {}).keys()) == {"0.7", "0.8", "0.9", "0.95"}
+    assert set(ct.get("L_copy_strict_frac", {}).keys()) == {"0.7", "0.8", "0.9", "0.95"}
+    assert set(ct.get("norm_only_flags", {}).keys()) == {"0.7", "0.8", "0.9", "0.95"}
+    # stability is one of allowed values
+    assert ct.get("stability") in {"stable", "mixed", "fragile", "none"}

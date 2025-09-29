@@ -172,6 +172,61 @@ def summarize_pure_records(
         },
     }
 
+    # Strict-copy threshold sweep (PROJECT_NOTES §1.23)
+    tau_list = (0.70, 0.80, 0.90, 0.95)
+    # Find earliest layer for each threshold using collected['copy_strict_hits']
+    # (flat keys like 'copy_strict@0.70' are present on CSV view rows, not on collected)
+    L_copy_strict_map: Dict[str, Optional[int]] = {f"{t:.2f}".rstrip('0').rstrip('.'): None for t in tau_list}
+    ordered_records = sorted(
+        [rec for rec in pure_records if isinstance(rec.get("layer"), int)],
+        key=lambda rec: rec["layer"],
+    )
+    for rec in ordered_records:
+        L = rec.get("layer")
+        hits = rec.get("copy_strict_hits", {}) or {}
+        for t in tau_list:
+            key = f"{t:.2f}".rstrip('0').rstrip('.')
+            label = f"copy_strict@{key}"
+            if L_copy_strict_map[key] is None and bool(hits.get(label, False)):
+                L_copy_strict_map[key] = L
+
+    # Fractions (normalized by n_layers when known)
+    L_copy_frac_map: Dict[str, Optional[float]] = {k: None for k in L_copy_strict_map}
+    if n_layers and isinstance(n_layers, int) and n_layers > 0:
+        for k, L in L_copy_strict_map.items():
+            if isinstance(L, int):
+                L_copy_frac_map[k] = round(float(L) / float(n_layers), 3)
+
+    # Stability classification
+    def _stability() -> str:
+        # If all null → none
+        if all(v is None for v in L_copy_strict_map.values()):
+            return "none"
+        hi = L_copy_strict_map.get("0.95")
+        lo = L_copy_strict_map.get("0.70")
+        if not isinstance(hi, int) or not isinstance(lo, int):
+            return "mixed"
+        d_layers = abs(int(hi) - int(lo))
+        if n_layers and isinstance(n_layers, int) and n_layers > 0:
+            d_frac = float(d_layers) / float(n_layers)
+        else:
+            d_frac = 0.0
+        if d_layers <= 2 or d_frac <= 0.05:
+            return "stable"
+        if d_layers >= 6 or d_frac >= 0.15:
+            return "fragile"
+        return "mixed"
+
+    summary.setdefault("copy_thresholds", {})
+    summary["copy_thresholds"] = {
+        "tau_list": [float(t) for t in tau_list],
+        "L_copy_strict": L_copy_strict_map,
+        "L_copy_strict_frac": L_copy_frac_map,
+        # Norm-only flags filled by pass runner after windowed check
+        "norm_only_flags": {k: None for k in L_copy_strict_map},
+        "stability": _stability(),
+    }
+
     # Surface/geom/top-k extras
     suffix = f"_{lens_tag}" if lens_tag else ""
     summary[f"L_surface_to_meaning{suffix}"] = L_surface_to_meaning
