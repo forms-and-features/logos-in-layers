@@ -45,7 +45,7 @@ from layers_core.norm_utils import (
 from layers_core.numerics import (
     bits_entropy_from_logits,
 )
-from layers_core.csv_io import write_csv_files
+from layers_core.csv_io import write_csv_files, write_raw_lens_window_csv
 from layers_core.device_policy import (
     choose_dtype,
     should_auto_promote_unembed,
@@ -1003,6 +1003,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
 
         # Extract file paths
         meta_filepath, csv_filepath, pure_csv_filepath = output_files
+        clean_name = clean_model_name(model_id)
 
         # Write CSV files FIRST (they need the full record lists)
         write_csv_files(json_data, csv_filepath, pure_csv_filepath, TOP_K_VERBOSE)
@@ -1012,7 +1013,6 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             prism_summary = (json_data.get("diagnostics") or {}).get("prism_summary") or {}
             if prism_summary.get("compatible") and prism_buf and (prism_buf["records"] or prism_buf["pure_next_token_records"]):
                 out_dir = os.path.dirname(csv_filepath)
-                clean_name = clean_model_name(model_id)
                 csv_prism = os.path.join(out_dir, f"output-{clean_name}-records-prism.csv")
                 pure_prism = os.path.join(out_dir, f"output-{clean_name}-pure-next-token-prism.csv")
                 write_csv_files(prism_buf, csv_prism, pure_prism, TOP_K_VERBOSE)
@@ -1028,8 +1028,19 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         except Exception as e:
             print(f"⚠️ Failed to write Prism sidecar CSVs: {e}")
 
+        window_records = json_data.get("raw_lens_window_records") or []
+        if window_records:
+            try:
+                window_csv_path = os.path.join(
+                    os.path.dirname(csv_filepath),
+                    f"output-{clean_name}-pure-next-token-rawlens-window.csv",
+                )
+                write_raw_lens_window_csv(window_records, window_csv_path)
+                _vprint(f"✅ Raw vs Norm window CSV saved to: {window_csv_path}")
+            except Exception as e:
+                print(f"⚠️ Failed to write raw-lens window CSV: {e}")
+
         if json_data_tuned_outer is not None and (json_data_tuned_outer["records"] or json_data_tuned_outer["pure_next_token_records"]):
-            clean_name = clean_model_name(model_id)
             tuned_records_path = os.path.join(os.path.dirname(csv_filepath), f"output-{clean_name}-records-tuned.csv")
             tuned_pure_path = os.path.join(os.path.dirname(csv_filepath), f"output-{clean_name}-pure-next-token-tuned.csv")
             try:
@@ -1041,7 +1052,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
 
         # Strip bulky per-token records from JSON to keep it compact
         json_data_compact = {k: v for k, v in json_data.items()
-                             if k not in ("records", "pure_next_token_records", "prism_sidecar")}
+                             if k not in ("records", "pure_next_token_records", "prism_sidecar", "raw_lens_window_records")}
 
         # Write compact JSON metadata
         with open(meta_filepath, 'w', encoding='utf-8') as f:

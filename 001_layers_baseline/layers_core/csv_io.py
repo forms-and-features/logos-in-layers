@@ -133,3 +133,50 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
                 _nz(rec.get("control_margin")),
             ])
             writer.writerow(row)
+
+
+def write_raw_lens_window_csv(records: List[Dict[str, Any]], csv_filepath: str) -> None:
+    """Write windowed raw-vs-norm comparison rows to CSV."""
+    if not records:
+        return
+
+    with open(csv_filepath, 'w', newline='', encoding='utf-8') as f_csv:
+        writer = csv.writer(
+            f_csv,
+            delimiter=",",
+            quotechar='"',
+            quoting=csv.QUOTE_MINIMAL,
+            escapechar="\\",
+            lineterminator="\n",
+        )
+        header = [
+            "prompt_id",
+            "prompt_variant",
+            "layer",
+            "lens",
+            "p_top1",
+            "top1_token_id",
+            "top1_token_str",
+            "p_answer",
+            "answer_rank",
+            "kl_norm_vs_raw_bits",
+        ]
+        writer.writerow(header)
+
+        for rec in records:
+            def _nz(val):
+                return "" if val is None else val
+
+            row = [
+                _nz(rec.get("prompt_id")),
+                _nz(rec.get("prompt_variant")),
+                rec.get("layer"),
+                rec.get("lens"),
+                _nz(rec.get("p_top1")),
+                rec.get("top1_token_id"),
+                _nz(rec.get("top1_token_str")),
+                _nz(rec.get("p_answer")),
+                rec.get("answer_rank"),
+                _nz(rec.get("kl_norm_vs_raw_bits")),
+            ]
+            writer.writerow(row)

@@ -1,11 +1,12 @@
 import os
-from typing import Dict, Any, Optional, Iterable
+from typing import Dict, Any, Optional, Iterable, List
 
 import torch
 
 from .numerics import safe_cast_for_unembed, kl_bits
 from .metrics import compute_next_token_metrics
 from .collapse_rules import is_semantic_top1
+from .unembed import unembed_mm
 
 
 def get_raw_lens_mode(self_test: bool) -> str:
@@ -145,3 +146,145 @@ def summarize_raw_lens_check(samples: Iterable[Dict[str, Any]]) -> Dict[str, Any
         "lens_artifact_risk": risk,
     }
 
+
+def compute_windowed_raw_norm(
+    *,
+    radius: int,
+    center_layers: Iterable[int],
+    norm_logits_map: Dict[int, torch.Tensor],
+    raw_resid_map: Dict[int, torch.Tensor],
+    collected_map: Dict[int, Dict[str, Any]],
+    final_probs: torch.Tensor,
+    W_U: torch.Tensor,
+    b_U: Optional[torch.Tensor],
+    force_fp32_unembed: bool,
+    decode_id_fn,
+    first_ans_token_id: Optional[int],
+    ground_truth: str,
+    prompt_id: str,
+    prompt_variant: str,
+    n_layers: int,
+) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Compute windowed raw-vs-norm diagnostics around candidate collapse layers."""
+
+    available_layers = set(norm_logits_map.keys()) & set(raw_resid_map.keys())
+    clean_centers = sorted({int(c) for c in center_layers if isinstance(c, int) and -1 <= c <= (n_layers + 1)})
+    filtered_centers = [c for c in clean_centers if 0 <= c <= n_layers and (not available_layers or c in available_layers)]
+    summary = {
+        "radius": int(radius),
+        "center_layers": filtered_centers,
+        "layers_checked": [],
+        "norm_only_semantics_layers": [],
+        "max_kl_norm_vs_raw_bits_window": None,
+        "mode": "window",
+    }
+
+    if not norm_logits_map or not raw_resid_map or not available_layers:
+        return summary, []
+
+    radius = max(0, int(radius))
+    layers_to_check: List[int] = []
+    for center in summary["center_layers"]:
+        for layer in range(max(0, center - radius), min(n_layers, center + radius) + 1):
+            if layer in available_layers:
+                layers_to_check.append(layer)
+    layers_to_check = sorted(dict.fromkeys(layers_to_check))
+
+    if not layers_to_check:
+        return summary, []
+
+    records: List[Dict[str, Any]] = []
+    norm_only_layers: List[int] = []
+    max_kl_window: Optional[float] = None
+
+    final_probs_cpu = final_probs.detach().float().cpu()
+
+    for layer in layers_to_check:
+        norm_logits = norm_logits_map.get(layer)
+        raw_vec = raw_resid_map.get(layer)
+        if norm_logits is None or raw_vec is None:
+            continue
+
+        try:
+            norm_logits_cpu = norm_logits.detach().float().cpu()
+        except Exception:
+            norm_logits_cpu = torch.tensor([], dtype=torch.float32)
+        if norm_logits_cpu.numel() == 0:
+            continue
+
+        norm_probs = torch.softmax(norm_logits_cpu, dim=0)
+        top1_norm = int(torch.argmax(norm_probs).item())
+        metrics_norm = compute_next_token_metrics(norm_probs, top1_norm, final_probs_cpu, first_ans_token_id, topk_cum=5)
+        top1_norm_str = decode_id_fn(top1_norm)
+
+        try:
+            raw_vec_cpu = raw_vec.detach().float().cpu()
+        except Exception:
+            raw_vec_cpu = torch.tensor([], dtype=torch.float32)
+        if raw_vec_cpu.numel() == 0:
+            continue
+
+        device = W_U.device if hasattr(W_U, "device") else torch.device("cpu")
+        resid_vec = raw_vec_cpu.to(device).unsqueeze(0)
+        resid_cast = safe_cast_for_unembed(resid_vec, W_U, force_fp32_unembed=force_fp32_unembed)
+        logits_raw = unembed_mm(resid_cast, W_U, b_U).squeeze(0).float()
+        raw_probs = torch.softmax(logits_raw.cpu(), dim=0)
+        top1_raw = int(torch.argmax(raw_probs).item())
+        metrics_raw = compute_next_token_metrics(raw_probs, top1_raw, final_probs_cpu, first_ans_token_id, topk_cum=5)
+        top1_raw_str = decode_id_fn(top1_raw)
+
+        try:
+            kl_window = float(kl_bits(norm_probs, raw_probs))
+        except Exception:
+            kl_window = None
+
+        if kl_window is not None:
+            max_kl_window = max(kl_window, max_kl_window) if max_kl_window is not None else kl_window
+
+        is_answer_norm = bool(metrics_norm.get("answer_rank") == 1)
+        if metrics_norm.get("answer_rank") is None and collected_map.get(layer):
+            is_answer_norm = bool(collected_map[layer].get("is_answer"))
+        is_answer_raw = bool(metrics_raw.get("answer_rank") == 1)
+        if metrics_raw.get("answer_rank") is None and first_ans_token_id is None:
+            # fall back to string comparison
+            is_answer_raw = is_semantic_top1(top1_raw_str, ground_truth)
+
+        if is_answer_norm and not is_answer_raw:
+            norm_only_layers.append(layer)
+
+        for lens_tag, metrics, top1_id, top1_str in (
+            (
+                "norm",
+                metrics_norm,
+                top1_norm,
+                top1_norm_str,
+            ),
+            (
+                "raw",
+                metrics_raw,
+                top1_raw,
+                top1_raw_str,
+            ),
+        ):
+            records.append(
+                {
+                    "prompt_id": prompt_id,
+                    "prompt_variant": prompt_variant,
+                    "layer": layer,
+                    "lens": lens_tag,
+                    "p_top1": metrics.get("p_top1"),
+                    "top1_token_id": top1_id,
+                    "top1_token_str": top1_str,
+                    "p_answer": metrics.get("p_answer"),
+                    "answer_rank": metrics.get("answer_rank"),
+                    "kl_norm_vs_raw_bits": kl_window,
+                }
+            )
+
+        summary["layers_checked"].append(layer)
+
+    summary["layers_checked"] = sorted(dict.fromkeys(summary["layers_checked"]))
+    summary["norm_only_semantics_layers"] = sorted(dict.fromkeys(norm_only_layers))
+    summary["max_kl_norm_vs_raw_bits_window"] = max_kl_window
+
+    return summary, records

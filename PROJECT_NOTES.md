@@ -611,7 +611,7 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
 
 ---
 
-### 1.19. Windowed Raw‑vs‑Norm Escalation around Collapse Layers (automatic)
+### [x] 1.19. Windowed Raw‑vs‑Norm Escalation around Collapse Layers (automatic)
 
 **Why.** The sampled dual‑lens sanity check (§1.4) can miss a narrow early window where “semantics” are induced by normalization. A lightweight, targeted escalation around candidate collapse layers prevents over‑reading early rank improvements.
 
@@ -649,6 +649,8 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
      ```
 4. **Escalation gates.** If `raw_lens_check.summary.lens_artifact_risk == "high"` or any sampled layer had `kl_norm_vs_raw_bits ≥ 1.0`, set **R = 8**.
 5. **CLI & cost.** No new CLI flags. Overhead is one extra unembed+softmax per layer in a narrow window.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

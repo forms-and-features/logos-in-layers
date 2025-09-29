@@ -155,6 +155,9 @@ def test_run_prompt_pass_minimal():
     assert any(rec.get("layer", -1) >= 1 for rec in json_data["records"])  # per-position
     assert any(rec.get("layer", -1) >= 1 for rec in json_data["pure_next_token_records"])  # pure-next-token
     assert isinstance(summary, dict) and "L_copy" in summary and "L_semantic" in summary
+    assert "raw_lens_window" in summary
+    window_records = json_data.get("raw_lens_window_records", [])
+    assert isinstance(window_records, list)
     assert arch in ("pre_norm", "post_norm", "unknown")
     # last consistency may be None in stub; permissive
     # Prism disabled path should produce no sidecar rows

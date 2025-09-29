@@ -148,6 +148,8 @@ def test_prism_pure_next_token_helper_fields_match_manual_logic():
         COPY_STRICT_LABEL: p_copy,
         "entropy_collapse": pent <= 1.0,
         "is_answer": p_is_answer,
+        "top1_token_id": int(p_top1_id),
+        "top1_token_str": p_top_tokens[0] if p_top_tokens else None,
         "p_top1": p_metrics.get("p_top1"),
         "p_top5": p_metrics.get("p_top5"),
         "p_answer": p_metrics.get("p_answer"),

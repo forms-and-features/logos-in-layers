@@ -12,6 +12,7 @@ from layers_core.raw_lens import (
     init_raw_lens_check,
     record_dual_lens_sample,
     summarize_raw_lens_check,
+    compute_windowed_raw_norm,
 )
 
 
@@ -95,3 +96,39 @@ def test_record_and_summarize_dual_lens():
     assert summ["first_norm_only_semantic_layer"] == 7
     # KL should be noticeable; risk at least medium
     assert summ["lens_artifact_risk"] in ("medium", "high")
+
+
+def test_compute_windowed_raw_norm_sets_flags():
+    W_U = torch.eye(3, dtype=torch.float32)
+    b_U = None
+    force_fp32 = True
+
+    norm_logits_map = {1: torch.tensor([0.0, 4.0, 0.0], dtype=torch.float32)}
+    raw_resid_map = {1: torch.tensor([3.0, 0.2, 0.1], dtype=torch.float32)}
+    collected_map = {1: {"is_answer": True}}
+    final_probs = torch.full((3,), 1.0 / 3.0, dtype=torch.float32)
+
+    summary, records = compute_windowed_raw_norm(
+        radius=2,
+        center_layers=[1],
+        norm_logits_map=norm_logits_map,
+        raw_resid_map=raw_resid_map,
+        collected_map=collected_map,
+        final_probs=final_probs,
+        W_U=W_U,
+        b_U=b_U,
+        force_fp32_unembed=force_fp32,
+        decode_id_fn=lambda idx: f"tok{int(idx)}",
+        first_ans_token_id=1,
+        ground_truth="tok1",
+        prompt_id="pos",
+        prompt_variant="orig",
+        n_layers=2,
+    )
+
+    assert summary["layers_checked"] == [1]
+    assert summary["norm_only_semantics_layers"] == [1]
+    assert summary["mode"] == "window"
+    assert len(records) == 2  # norm + raw rows
+    lenses = {rec["lens"] for rec in records}
+    assert lenses == {"norm", "raw"}

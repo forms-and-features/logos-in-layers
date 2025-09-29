@@ -188,6 +188,8 @@ def compute_pure_next_token_info(
         copy_strict_label: copy_collapse,
         "entropy_collapse": entropy_collapse,
         "is_answer": is_answer,
+        "top1_token_id": top1_id,
+        "top1_token_str": last_top_tokens[0] if last_top_tokens else None,
         **metrics,
         "cos_to_final": cos_to_final,
         "control_margin": control_margin,
@@ -221,6 +223,7 @@ def compute_pure_next_token_info(
         "kl_to_final_bits": metrics["kl_to_final_bits"],
         "answer_rank": metrics["answer_rank"],
         "copy_soft_hits": soft_hits,
+        "top1_token_id": top1_id,
         # Surface and geom collected for summaries
         "echo_mass_prompt": echo_mass_prompt,
         "answer_mass": answer_mass,

@@ -11,7 +11,7 @@ from .records import make_record, make_pure_record
 from .pure_emit import compute_pure_next_token_info
 from .numerics import bits_entropy_from_logits
 from .norm_utils import detect_model_architecture, get_correct_norm_module, apply_norm_or_skip
-from .raw_lens import should_sample_layer, record_dual_lens_sample
+from .raw_lens import should_sample_layer, record_dual_lens_sample, compute_windowed_raw_norm
 from .summaries import summarize_pure_records
 from .consistency import compute_last_layer_consistency
 from .lenses import PrismLensAdapter
@@ -107,6 +107,10 @@ def run_prompt_pass(
     last_layer_consistency: Optional[Dict[str, Any]] = None
     detected_architecture: str = "unknown"
 
+    norm_logits_window: Dict[int, torch.Tensor] = {}
+    raw_resid_window: Dict[int, torch.Tensor] = {}
+    collected_by_layer: Dict[int, Dict[str, Any]] = {}
+
     with torch.no_grad():
         residual_cache: Dict[str, Any] = {}
         cache_hook = build_cache_hook(residual_cache)
@@ -178,6 +182,10 @@ def run_prompt_pass(
             norm_module_pre = get_correct_norm_module(model, 0, probe_after_block=False)
             resid_norm_pre = apply_norm_or_skip(resid_raw, norm_module_pre)
             geom_vec_norm_pre = resid_norm_pre[0, last_pos, :].detach()
+            try:
+                raw_resid_window[0] = resid_raw[0, last_pos, :].detach().cpu()
+            except Exception:
+                pass
 
             for pos in range(tokens.shape[1]):
                 layer_logits = norm_logits_all[pos]
@@ -282,6 +290,11 @@ def run_prompt_pass(
                 )
             )
             collected_pure_records.append(collected)
+            try:
+                norm_logits_window[0] = dual_ctx["last_logits_norm"].detach().cpu()
+            except Exception:
+                pass
+            collected_by_layer[0] = collected
 
             if tuned_logits_all_L0 is not None and tuned_json_data is not None and tuned_window_manager is not None:
                 tuned_view, tuned_collected, _ = compute_pure_next_token_info(
@@ -404,6 +417,10 @@ def run_prompt_pass(
                 norm_module_post = get_correct_norm_module(model, layer, probe_after_block=True)
                 resid_norm_post = apply_norm_or_skip(resid_raw, norm_module_post)
                 geom_vec_norm_post = resid_norm_post[0, last_pos, :].detach()
+                try:
+                    raw_resid_window[layer + 1] = resid_raw[0, last_pos, :].detach().cpu()
+                except Exception:
+                    pass
 
                 logits_all = norm_lens.forward(
                     model,
@@ -558,6 +575,11 @@ def run_prompt_pass(
                     )
                 )
                 collected_pure_records.append(collected)
+                try:
+                    norm_logits_window[layer + 1] = dual_ctx["last_logits_norm"].detach().cpu()
+                except Exception:
+                    pass
+                collected_by_layer[layer + 1] = collected
 
                 if tuned_logits_all is not None and tuned_json_data is not None and tuned_window_manager is not None:
                     tuned_view, tuned_collected, _ = compute_pure_next_token_info(
@@ -711,6 +733,54 @@ def run_prompt_pass(
                 geom_gamma=GEOM_GAMMA,
                 topk_prompt_tau=TOPK_DECAY_TAU,
             )
+
+            raw_summary_block = (json_data.get("raw_lens_check") or {}).get("summary") or {}
+            radius = 4
+            try:
+                max_kl_sample = raw_summary_block.get("max_kl_norm_vs_raw_bits")
+                if raw_summary_block.get("lens_artifact_risk") == "high" or (
+                    max_kl_sample is not None and float(max_kl_sample) >= 1.0
+                ):
+                    radius = 8
+            except Exception:
+                radius = 4
+
+            center_candidates: List[int] = []
+            for key in ("L_semantic", "first_rank_le_5", "first_kl_below_1.0"):
+                val = summary_diag.get(key)
+                if isinstance(val, int):
+                    center_candidates.append(val)
+            strict_copy_layer = summary_diag.get("copy_detector", {}).get("strict", {}).get("L_copy_strict")
+            if isinstance(strict_copy_layer, int):
+                center_candidates.append(strict_copy_layer)
+            soft_map = summary_diag.get("L_copy_soft") or {}
+            if isinstance(soft_map, dict):
+                soft_layers = [v for v in soft_map.values() if isinstance(v, int)]
+                if soft_layers:
+                    center_candidates.append(min(soft_layers))
+
+            window_summary, window_records = compute_windowed_raw_norm(
+                radius=radius,
+                center_layers=center_candidates,
+                norm_logits_map=norm_logits_window,
+                raw_resid_map=raw_resid_window,
+                collected_map=collected_by_layer,
+                final_probs=final_probs.detach().float().cpu(),
+                W_U=unembed_ctx.W,
+                b_U=unembed_ctx.b,
+                force_fp32_unembed=unembed_ctx.force_fp32,
+                decode_id_fn=decode_id_fn,
+                first_ans_token_id=first_ans_token_id,
+                ground_truth=ground_truth,
+                prompt_id=prompt_id,
+                prompt_variant=prompt_variant,
+                n_layers=int(model.cfg.n_layers),
+            )
+            if window_summary:
+                summary_diag["raw_lens_window"] = window_summary
+            if window_records:
+                json_data.setdefault("raw_lens_window_records", []).extend(window_records)
+
             if tuned_enabled and tuned_summaries is not None:
                 summary_tuned = summarize_pure_records(
                     tuned_collected_records,

@@ -52,6 +52,8 @@ def test_compute_pure_next_token_info_basic():
     assert view["token_str"] == "⟨NEXT⟩"
     assert isinstance(view["entropy_bits"], float)
     assert len(view["top_tokens"]) == 3 and len(view["top_probs"]) == 3
-    assert set(collected.keys()) >= {"layer", "copy_collapse", "entropy_collapse", "is_answer", "kl_to_final_bits", "answer_rank", "copy_soft_hits"}
+    assert set(collected.keys()) >= {"layer", "copy_collapse", "entropy_collapse", "is_answer", "kl_to_final_bits", "answer_rank", "copy_soft_hits", "top1_token_id"}
     assert isinstance(collected["copy_soft_hits"], dict)
     assert set(dual_ctx.keys()) >= {"layer", "last_pos", "last_logits_norm", "final_probs", "first_ans_id", "ground_truth"}
+    assert "top1_token_id" in view["record_extra"]
+    assert "top1_token_str" in view["record_extra"]
