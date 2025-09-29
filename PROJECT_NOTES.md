@@ -791,7 +791,6 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
    `copy_strict@0.70`, `copy_strict@0.80`, `copy_strict@0.90`, `copy_strict@0.95` (k=1 window; same margin δ=0.10; ID‑contiguous subsequence; ignore whitespace/punctuation top‑1s).
 2. Record the **earliest layer** for each threshold in run JSON, both as layers and normalized depth fractions.
 3. Cross‑validate the earliest strict‑copy layer at each τ using the **Windowed Raw‑vs‑Norm** check (§1.19): flag `copy_norm_only@τ=true` if strict‑copy holds under the norm lens but not under the raw lens within ±4 (or ±8 if escalated) layers.
-4. Emit an **auto Markdown summary** per model (`copy-thresholds.md`) with a one‑line stability classification.
 
 **How.**
 
@@ -836,10 +835,6 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
     • **none** if all `L_copy_strict(τ)` are null.
   * Set `norm_only_flags[τ]=true` if the earliest strict‑copy layer at τ **fails under the raw lens** anywhere in the §1.19 window around that layer.
 * **Ablation to Δ‑collapse reporting (no breaking change):** keep Δ defined against **strict@0.95** when present; if null, fall back to the earliest `L_copy_soft[k]` (report k). Use the threshold sweep **only** for robustness commentary and the `stability` tag; do not change Δ’s primary definition.
-* **CLI:** add `--copy-thresholds 0.70,0.80,0.90,0.95` (default as shown). No other flag changes.
-* **Markdown (`run-latest/copy-thresholds.md`):** one line per model, e.g.
-  `Meta‑Llama‑3‑8B: L_copy_strict@{0.95,0.90,0.80,0.70} = {null, 27, 24, 23} (frac {—, .53, .47, .45}); norm_only@{0.95,0.90,0.80,0.70}={—, false, false, false}; stability=mixed.`
-
 ---
 
 #### Wrap‑up
