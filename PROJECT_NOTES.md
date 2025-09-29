@@ -751,7 +751,7 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
 
 ---
 
-### 1.22. Machine‑Readable Measurement Guidance (Evaluation Hints)
+### [x] 1.22. Machine‑Readable Measurement Guidance (Evaluation Hints)
 
 **Why.** Some models/families require rank‑first reporting (e.g., head‑calibrated final layers; norm‑only semantics). A small, machine‑readable block helps evaluators apply consistent guardrails.
 
@@ -776,6 +776,8 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
   `prefer_ranks = (warn_high_last_layer_kl == true) OR (raw_lens_check.summary.lens_artifact_risk == 'high') OR (diagnostics.raw_lens_window.norm_only_semantics_layers not empty)`.
   Mirror to `suppress_abs_probs`.
 * **No CLI.** Purely an advisory for downstream evaluation prompts.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

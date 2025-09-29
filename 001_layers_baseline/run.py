@@ -683,7 +683,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     )
                 except Exception:
                     pass
-                
+
             finally:
                 # Clean up hooks and cache
                 detach_hooks(hooks)
@@ -998,6 +998,63 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 tuned_reg = True
                 diag["tuned_lens_skip_warning"] = d2
         diag["tuned_lens_regression"] = tuned_reg
+
+        # ---------------- Measurement guidance (PROJECT_NOTES §1.22) -----------
+        try:
+            warn_high_last_layer_kl = False
+            try:
+                warn_high_last_layer_kl = bool(
+                    ((json_data.get("diagnostics") or {}).get("last_layer_consistency") or {}).get(
+                        "warn_high_last_layer_kl"
+                    )
+                )
+            except Exception:
+                warn_high_last_layer_kl = False
+
+            # Raw‑lens overall risk
+            lens_artifact_risk = None
+            try:
+                lens_artifact_risk = (
+                    ((json_data.get("raw_lens_check") or {}).get("summary") or {}).get("lens_artifact_risk")
+                )
+            except Exception:
+                lens_artifact_risk = None
+            high_lens_artifact_risk = (lens_artifact_risk == "high")
+
+            # Windowed norm‑only semantics layers
+            norm_only_layers = []
+            try:
+                norm_only_layers = (
+                    ((json_data.get("diagnostics") or {}).get("raw_lens_window") or {}).get(
+                        "norm_only_semantics_layers"
+                    )
+                ) or []
+                if not isinstance(norm_only_layers, (list, tuple)):
+                    norm_only_layers = []
+            except Exception:
+                norm_only_layers = []
+            has_norm_only_semantics = bool(norm_only_layers)
+
+            reasons = []
+            if warn_high_last_layer_kl:
+                reasons.append("warn_high_last_layer_kl")
+            if has_norm_only_semantics:
+                reasons.append("norm_only_semantics_window")
+            if high_lens_artifact_risk:
+                reasons.append("high_lens_artifact_risk")
+
+            prefer_ranks = bool(reasons)
+            suppress_abs_probs = prefer_ranks
+
+            json_data["measurement_guidance"] = {
+                "prefer_ranks": prefer_ranks,
+                "suppress_abs_probs": suppress_abs_probs,
+                "reasons": reasons,
+                "notes": "Family-level head calibration; treat probabilities comparatively only within model.",
+            }
+        except Exception:
+            # Best-effort; absence should not fail the run
+            pass
 
         json_data_tuned_outer = json_data_tuned
         tuned_provenance_outer = tuned_provenance
