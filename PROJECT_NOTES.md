@@ -654,7 +654,7 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
 
 ---
 
-### 1.20. Cosine Milestones & Normalized Depth Summaries
+### [x] 1.20. Cosine Milestones & Normalized Depth Summaries
 
 **Why.** Evaluations currently scan CSVs to find when `cos_to_final` crosses useful thresholds and to normalize depths by `n_layers`. Publishing these as summary fields reduces friction and prevents arithmetic drift across evaluators.
 
@@ -689,6 +689,8 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
   }
   ```
 * **No CLI changes.** Computed post‑sweep from existing per‑layer arrays.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

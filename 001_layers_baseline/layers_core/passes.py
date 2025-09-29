@@ -732,6 +732,7 @@ def run_prompt_pass(
                 surface_delta=SURFACE_DELTA,
                 geom_gamma=GEOM_GAMMA,
                 topk_prompt_tau=TOPK_DECAY_TAU,
+                n_layers=int(model.cfg.n_layers),
             )
 
             raw_summary_block = (json_data.get("raw_lens_check") or {}).get("summary") or {}
@@ -793,6 +794,7 @@ def run_prompt_pass(
                     surface_delta=SURFACE_DELTA,
                     geom_gamma=GEOM_GAMMA,
                     topk_prompt_tau=TOPK_DECAY_TAU,
+                    n_layers=int(model.cfg.n_layers),
                 )
                 tuned_summaries.append(summary_tuned)
             return summary_diag, last_layer_consistency, detected_architecture, diag_delta

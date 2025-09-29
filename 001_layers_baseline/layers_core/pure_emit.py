@@ -224,6 +224,7 @@ def compute_pure_next_token_info(
         "answer_rank": metrics["answer_rank"],
         "copy_soft_hits": soft_hits,
         "top1_token_id": top1_id,
+        "cos_to_final": cos_to_final,
         # Surface and geom collected for summaries
         "echo_mass_prompt": echo_mass_prompt,
         "answer_mass": answer_mass,

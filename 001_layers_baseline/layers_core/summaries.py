@@ -13,12 +13,28 @@ def summarize_pure_records(
     surface_delta: float = 0.05,
     geom_gamma: float = 0.02,
     topk_prompt_tau: float = 0.33,
+    n_layers: Optional[int] = None,
+    cos_thresholds: Sequence[float] = (0.2, 0.4, 0.6),
 ) -> Dict[str, Any]:
     """Summarize collapse and threshold indices from per-layer pure next-token records.
 
-    Expects each record to include keys: layer, copy_collapse, entropy_collapse,
-    is_answer, kl_to_final_bits (float), and answer_rank (int or None).
-    Returns a dict suitable for diag.update in run.py.
+    Args:
+        pure_records: Collected per-layer metrics for a given lens.
+        copy_threshold: Strict copy probability threshold.
+        copy_window_k: Strict copy window size (tokens).
+        copy_soft_threshold: Soft copy probability threshold.
+        copy_soft_window_ks: Iterable of soft copy window sizes.
+        copy_match_level: Description of copy detection mode (informational).
+        lens_tag: Lens identifier (``"norm"``/``"tuned"``/etc.).
+        surface_delta: Echo→answer crossover margin (§1.13).
+        geom_gamma: Geometric crossover margin (§1.14).
+        topk_prompt_tau: Prompt-mass decay threshold (§1.15).
+        n_layers: Total transformer layers; enables normalized depth fractions (§1.20).
+        cos_thresholds: Cosine milestones to track for `cos_to_final` (§1.20).
+
+    Returns:
+        Dict[str, Any]: Collapse indices, KL/rank milestones, cosine milestones,
+        surface/geom diagnostics, and normalized depth fractions where available.
     """
     L_copy: Optional[int] = None
     L_copy_H: Optional[int] = None
@@ -169,5 +185,65 @@ def summarize_pure_records(
     summary[f"topk_prompt_tau{suffix}"] = topk_prompt_tau
     summary[f"surface_delta{suffix}"] = surface_delta
     summary[f"geom_gamma{suffix}"] = geom_gamma
+
+    # Cosine milestones (per lens)
+    lens_key = lens_tag or "norm"
+    thresholds: List[float] = []
+    try:
+        thresholds = sorted({float(t) for t in cos_thresholds})
+    except Exception:
+        thresholds = [0.2, 0.4, 0.6]
+
+    def _format_thresh(value: float) -> str:
+        return f"{value:.3f}".rstrip('0').rstrip('.')
+
+    milestone_labels = [f"ge_{_format_thresh(t)}" for t in thresholds]
+    milestones = {label: None for label in milestone_labels}
+    # Iterate in layer order to capture earliest milestone crossings
+    ordered_records = sorted(
+        [rec for rec in pure_records if isinstance(rec.get("layer"), int)],
+        key=lambda rec: rec["layer"],
+    )
+    for rec in ordered_records:
+        cos_val = rec.get("cos_to_final")
+        if cos_val is None:
+            continue
+        try:
+            cos_float = float(cos_val)
+        except (TypeError, ValueError):
+            continue
+        layer_idx = rec.get("layer")
+        for thresh, label in zip(thresholds, milestone_labels):
+            if milestones[label] is None and cos_float >= thresh:
+                milestones[label] = layer_idx
+
+    summary.setdefault("cos_milestones", {})[lens_key] = milestones
+
+    # Normalized depth fractions (baseline lens only)
+    if lens_key == "norm" and n_layers and n_layers > 0:
+        denom = float(n_layers)
+
+        def _frac(val: Optional[Any]) -> Optional[float]:
+            if val is None:
+                return None
+            try:
+                return round(float(val) / denom, 3)
+            except (TypeError, ValueError):
+                return None
+
+        depth_fractions: Dict[str, Optional[float]] = {}
+        depth_fractions["L_semantic_frac"] = _frac(summary.get("L_semantic"))
+        depth_fractions["first_rank_le_5_frac"] = _frac(summary.get("first_rank_le_5"))
+
+        strict_layer = summary.get("copy_detector", {}).get("strict", {}).get("L_copy_strict")
+        depth_fractions["L_copy_strict_frac"] = _frac(strict_layer)
+
+        soft_layers_map = summary.get("copy_detector", {}).get("soft", {}).get("L_copy_soft", {}) or {}
+        soft_windows = sorted({int(k) for k in copy_soft_window_ks if int(k) > 0})
+        for k in soft_windows:
+            key = f"k{k}"
+            depth_fractions[f"L_copy_soft_k{k}_frac"] = _frac(soft_layers_map.get(key))
+
+        summary["depth_fractions"] = depth_fractions
 
     return summary
