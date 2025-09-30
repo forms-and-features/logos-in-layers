@@ -840,6 +840,105 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
 
 ---
 
+### 1.24. Full Raw‑vs‑Norm dual‑lens sweep (all layers; sidecar by default)
+
+**Why.** The sampled (§1.4) and windowed (§1.19) checks can miss narrow bands where normalization induces “early semantics”. A **full per‑layer** raw‑vs‑norm pass makes lens artefacts auditable across the entire depth for every model, not only “high‑risk” families.
+
+**What.**
+Emit a **default** sidecar with raw‑vs‑norm metrics for **every** post‑block layer at the pure next‑token position:
+*File:* `output-<model>-pure-next-token-rawlens.csv`
+*Columns (per layer):*
+`layer, p_top1_raw, top1_token_id_raw, top1_token_str_raw, p_answer_raw, answer_rank_raw, p_top1_norm, top1_token_id_norm, top1_token_str_norm, p_answer_norm, answer_rank_norm, kl_norm_vs_raw_bits, norm_only_semantics` (boolean: `answer_rank_norm==1 && answer_rank_raw!=1`).
+*Run JSON (`diagnostics.raw_lens_full`):*
+`{ pct_layers_kl_ge_1.0, pct_layers_kl_ge_0.5, n_norm_only_semantics_layers, earliest_norm_only_semantic, max_kl_norm_vs_raw_bits, mode: "full" }`.
+
+**How.**
+
+1. During the standard sweep, capture the **pre‑norm** residual and compute `P_raw` alongside `P_norm` for the NEXT position at **every** layer; write a row per layer.
+2. Populate `diagnostics.raw_lens_full` from the sidecar.
+3. Promote the existing windowed CSV to `*-rawlens-window.csv` and leave it intact (§1.19).
+
+---
+
+### 1.25. Confirmed‑semantics gate (norm corroborated by raw/Tuned)
+
+**Why.** To avoid lens‑induced “early semantics”, declare **semantic onset** only when the norm‑lens rank‑1 is corroborated by a second view within a small window. This promotes **rank robustness** from single‑lens to multi‑lens evidence.
+
+**What.**
+Add a **confirmed** milestone:
+`L_semantic_confirmed = min L s.t. (answer_rank_norm(L)==1) AND (∃ L' ∈ [L−Δ,L+Δ]: answer_rank_raw(L')==1 OR answer_rank_tuned(L')==1)` with default `Δ=2`.
+*Run JSON (`summary.confirmed_semantics`):*
+`{ L_semantic_norm, L_semantic_raw? (if exists), L_semantic_tuned? (if exists), Δ_window: 2, L_semantic_confirmed, confirmed_source: "raw"|"tuned"|"both"|"none" }`.
+
+**How.**
+
+1. Reuse per‑layer **raw** sidecar (§1.24) and **tuned** sidecar (§1.12) to scan ranks in `[L−Δ, L+Δ]`.
+2. Write `L_semantic_confirmed` and `confirmed_source` into the run JSON.
+3. If neither corroborates within the window, set `confirmed_source="none"` and emit `diagnostics.flags.norm_only_semantics_confirmed=false`.
+4. Evaluators may prefer `L_semantic_confirmed` over `L_semantic_norm` when present (advisory only).
+
+---
+
+### 1.26. Rotation‑vs‑Temperature attribution & “prefer_tuned” gate
+
+**Why.** Tuned‑Lens gains mix **rotation** (translator) and **calibration** (temperature). The norm‑temp baseline (§1.16) provides a fair control; attributing ΔKL correctly prevents over‑crediting the translator.
+
+**What.**
+Compute, at depth percentiles {25, 50, 75}:
+`ΔKL_tuned = KL_norm − KL_tuned` and `ΔKL_temp = KL_norm − KL_norm_temp`.
+Define **rotation gain** `ΔKL_rot = ΔKL_tuned − ΔKL_temp`.
+*Run JSON (`tuned_lens.attribution`):*
+
+```
+{ "percentiles": { "p25": { "ΔKL_tuned": x, "ΔKL_temp": y, "ΔKL_rot": x−y },
+                   "p50": { ... }, "p75": { ... } },
+  "prefer_tuned": boolean // see rule below
+}
+```
+
+**Gate (prefer_tuned).** Set true if either (a) `ΔKL_rot(p50) ≥ 0.2` bits **or** (b) `first_rank_le_5` is earlier under tuned by ≥2 layers (or ≥0.05·n_layers).
+
+**How.**
+
+1. Persist `kl_to_final_bits_norm_temp` per layer (already in §1.16) and compute percentiles.
+2. Read tuned sidecar KL per layer; compute `ΔKL_tuned`.
+3. Derive `ΔKL_rot` and the `prefer_tuned` boolean; expose an advisory field in `measurement_guidance.preferred_lens_for_reporting ∈ {"norm","tuned"}`.
+
+---
+
+### 1.27. Lens‑artefact risk score (numeric) from full dual‑lens sweep
+
+**Why.** The categorical `lens_artifact_risk` (§1.4) is useful, but a **numeric score** enables finer evaluation policies and trend tracking across runs/families once the **full** dual‑lens sweep (§1.24) exists.
+
+**What.**
+`lens_artifact_score ∈ [0,1] = 0.6·pct_layers(kl_norm_vs_raw_bits≥1.0) + 0.3·1[n_norm_only_semantics_layers>0] + 0.1·min(1, max_kl_norm_vs_raw_bits/5)`; thresholds: `<0.2=low`, `0.2–0.5=medium`, `>0.5=high`.
+*Run JSON:*
+`diagnostics.raw_lens_full.score = { lens_artifact_score, tier }`.
+Mirror to `measurement_guidance.reasons += ["high_lens_artifact_score"]` when `tier="high"`.
+
+**How.**
+Aggregate directly from `*-rawlens.csv` (§1.24) and `diagnostics.raw_lens_full`. Keep weights/thresholds as constants in `diagnostics.config.lens_artifact_score`.
+
+---
+
+### 1.28. Evaluator‑readable guidance extensions
+
+**Why.** Evaluations already honor `measurement_guidance` (§1.22); adding **preferred lens** and **confirmed‑semantics** hints reduces accidental misuse.
+
+**What.**
+Extend `measurement_guidance` with:
+
+```
+"preferred_lens_for_reporting": "norm"|"tuned",
+"use_confirmed_semantics": true|false, // suggest L_semantic_confirmed when present
+"notes_append": "Prism is diagnostic-only; treat probabilities comparatively within model."
+```
+
+**How.**
+Set `preferred_lens_for_reporting` from §1.26. Set `use_confirmed_semantics=true` when `L_semantic_confirmed` exists (§1.25). Append notes verbatim.
+
+---
+
 #### Wrap‑up
 
 Executing the items in **Group 1** upgrades the measurement pipeline from an informative prototype to a rigour‑grade toolchain. Only after this foundation is secure should we move on to the broader prompt battery and causal‑intervention work.

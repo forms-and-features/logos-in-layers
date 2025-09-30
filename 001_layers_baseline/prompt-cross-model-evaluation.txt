@@ -78,6 +78,14 @@ If present for a model, also include Windowed Raw‑vs‑Norm sidecar:
 001_layers_baseline/run-latest/output-<MODEL>-pure-next-token-rawlens-window.csv
 Columns: layer, lens ∈ {raw,norm}, p_top1, top1_token_id, top1_token_str, p_answer, answer_rank, kl_norm_vs_raw_bits.
 
+If present for a model, also include Full Raw‑vs‑Norm sidecar:
+001_layers_baseline/run-latest/output-<MODEL>-pure-next-token-rawlens.csv
+(Per-layer raw vs norm for all layers; columns: layer, p_top1_raw, top1_token_id_raw, top1_token_str_raw, p_answer_raw, answer_rank_raw, p_top1_norm, top1_token_id_norm, top1_token_str_norm, p_answer_norm, answer_rank_norm, kl_norm_vs_raw_bits, norm_only_semantics.)
+
+Also read the measurement guidance block in JSON:
+measurement_guidance: { prefer_ranks, suppress_abs_probs, reasons[], preferred_lens_for_reporting?, use_confirmed_semantics? }.
+If present, prefer the indicated lens and use confirmed semantics in summaries.
+
 Final-row caveat (head calibration): When comparing final rows across models, prefer rank/KL thresholds. If a model’s JSON has `warn_high_last_layer_kl = true`, treat final probability differences as head‑calibration artefacts and do not infer regressions. Known pattern: the Gemma family often shows non‑zero last‑layer KL due to a calibrated final head; be on the lookout for similar signatures in other families. If `raw_lens_check.summary.lens_artifact_risk` is `high` or `first_norm_only_semantic_layer` is present, downgrade confidence in pre‑final “early semantics” and lean on rank milestones over probabilities.
 
 Also honor `measurement_guidance`: if `prefer_ranks = true` or `suppress_abs_probs = true`, lead with rank thresholds and avoid absolute probability claims except as within‑model qualitative trends.
@@ -116,10 +124,14 @@ Write concise but thorough paragraphs that correlate quantitative patterns acros
 
 Compare copy-reflex across models using both `copy_collapse` and `copy_soft_k1@τ_soft` flags in the pure-next-token CSVs (treat any model whose CSV marks either flag True in layers 0–3 as having a copy-reflex); highlight any outlier.
 Use rank‑based milestones (`first_rank_le_1`, `first_rank_le_5`, `first_rank_le_10`) for cross‑model comparisons; avoid cross‑model claims based solely on raw probabilities. Treat KL milestones (`first_kl_below_1.0`, `first_kl_below_0.5`) as within‑model diagnostics and compare their relative depths (layer/n_layers). Exclude models whose last‑layer `kl_to_final_bits` is not ≈ 0 from KL‑based conclusions, or annotate a final‑lens vs final‑head mismatch. For `cos_to_final`, report per‑model trajectories qualitatively as within‑model evidence of direction alignment; do not compare absolute cosine levels across families.
+When JSON includes `summary.L_semantic_confirmed`, report that value (and note the corroborating source raw/tuned) in addition to `L_semantic_norm`.
 
 Include lens sanity from each model’s JSON `raw_lens_check.summary`: list models with `first_norm_only_semantic_layer` present (norm‑only semantics) and report `lens_artifact_risk` and `max_kl_norm_vs_raw_bits`. For models with `high` risk, downgrade confidence in early‑semantics claims and prefer rank‑based statements; note the `mode` (sample/full) for context.
 
 Raw‑vs‑Norm window (if present): report any `norm_only_semantics_layers` from `diagnostics.raw_lens_window` and the `max_kl_norm_vs_raw_bits_window`. Treat early “semantics” that disappear under the raw lens within ±4–8 layers as lens‑induced and downgrade those claims.
+If the Full Raw‑vs‑Norm sidecar is present, also report:
+- pct_layers_kl_ge_1.0, pct_layers_kl_ge_0.5, n_norm_only_semantics_layers, earliest_norm_only_semantic (from diagnostics.raw_lens_full).
+Treat larger values as higher artefact risk; prefer rank milestones and confirmed semantics accordingly.
 
 Investigate and write a paragraph about notable similarities and differences between models of the same family (Qwen, gemma).
 
@@ -142,6 +154,17 @@ Prism is a shared‑decoder diagnostic for robustness/comparability, not the mod
 - Interpret patterns: are Prism gains larger when `raw_lens_check.summary.lens_artifact_risk` is high? Concentrated at early/mid layers? Any regressions?
 - Keep claims within‑model; avoid absolute probability comparisons across models. Note any missing Prism artifacts without speculation.
 
+Tuned‑Lens Summary Across Models (if present)
+Treat Tuned‑Lens as a learned translator with an independent temperature path; compare it to:
+(a) the norm lens, and (b) the norm lens with per-layer temperature (norm_temp).
+
+For each model with tuned sidecars:
+- Report Δ in first_rank_le_{10,5,1} (tuned vs norm) and ΔKL at ~25/50/75% depths.
+- Also report ΔKL_temp at ~25/50/75% (norm_temp vs norm) using `kl_to_final_bits_norm_temp` to attribute gains to calibration vs rotation. Define ΔKL_rot = ΔKL_tuned − ΔKL_temp and interpret positive ΔKL_rot as translation (rotation) gains.
+- Honor `measurement_guidance.preferred_lens_for_reporting` when deciding which lens to quote in depth milestones.
+- Use `skip_layers_sanity` (if present) to comment on faithfulness of the translator (ppl deltas at m ∈ {2,4,8}).
+Keep claims within-model; avoid absolute probability comparisons across families.
+
 Check that you've covered the following:
 * copy-reflex prevalence and outliers
 * Δ and Δ̂ trends vs size
@@ -150,6 +173,10 @@ Check that you've covered the following:
 * Per‑model `cos_to_final` alignment (within‑model only; no cross‑family comparison)
 * link collapse depth to MMLU/ARC
 * lens sanity across models (risk tiers; any norm‑only semantics)
+* Tuned‑Lens vs norm vs norm_temp attribution (ΔKL_rot at ~25/50/75%; gains due to rotation vs temperature)
+* Preferred lens used in reporting (from measurement_guidance.preferred_lens_for_reporting)
+* Confirmed semantics (if present) and corroborating source (raw/tuned)
+* Full dual‑lens artefact metrics (pct_layers_kl_ge_1.0, n_norm_only_semantics_layers) when available
 
 2. Misinterpretations in existing EVALS
 Bullet each over‑statement or error you found; cite the exact EVAL line.
