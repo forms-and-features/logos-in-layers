@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional, Sequence
+from typing import List, Dict, Any, Optional, Sequence, Tuple
 
 
 def summarize_pure_records(
@@ -436,3 +436,185 @@ def build_unified_lens_metrics(
             "delta": fk_delta,
         },
     }
+
+
+def _layer_targets(n_layers: int, percents: Tuple[float, float, float] = (0.25, 0.50, 0.75)) -> List[int]:
+    if not isinstance(n_layers, int) or n_layers <= 0:
+        return []
+    return [max(0, min(n_layers, int(round(n_layers * p)))) for p in percents]
+
+
+def tuned_rotation_vs_temp_attribution(
+    *,
+    baseline_records: List[Dict[str, Any]],
+    tuned_records: List[Dict[str, Any]],
+    n_layers: int,
+) -> Dict[str, Any]:
+    """Compute ΔKL_tuned, ΔKL_temp and ΔKL_rot at {25,50,75}% depth and prefer_tuned gate.
+
+    Expects per-layer pure-next-token records for baseline and tuned lenses with
+    keys: 'kl_to_final_bits' and baseline's 'kl_to_final_bits_norm_temp'.
+    """
+    # Build per-layer lookup
+    b_by_layer = {int(r.get("layer")): r for r in baseline_records if isinstance(r.get("layer"), int)}
+    t_by_layer = {int(r.get("layer")): r for r in tuned_records if isinstance(r.get("layer"), int)}
+    out_pct: Dict[str, Dict[str, Optional[float]]] = {}
+    targets = _layer_targets(n_layers)
+    keys = ["p25", "p50", "p75"]
+    for key, L in zip(keys, targets):
+        br = b_by_layer.get(L)
+        tr = t_by_layer.get(L)
+        val_b = None if br is None else br.get("kl_to_final_bits")
+        val_t = None if tr is None else tr.get("kl_to_final_bits")
+        val_temp = None if br is None else br.get("kl_to_final_bits_norm_temp")
+        try:
+            d_tuned = None if (val_b is None or val_t is None) else float(val_b) - float(val_t)
+        except Exception:
+            d_tuned = None
+        try:
+            d_temp = None if (val_b is None or val_temp is None) else float(val_b) - float(val_temp)
+        except Exception:
+            d_temp = None
+        try:
+            d_rot = None if (d_tuned is None or d_temp is None) else float(d_tuned) - float(d_temp)
+        except Exception:
+            d_rot = None
+        out_pct[key] = {"ΔKL_tuned": d_tuned, "ΔKL_temp": d_temp, "ΔKL_rot": d_rot}
+
+    # Prefer tuned gate: ΔKL_rot(p50) ≥ 0.2 OR tuned first_rank_le_5 earlier by ≥{2 layers or 0.05·n}
+    # Compute rank milestones locally
+    def _first_rank_le_5(recs: List[Dict[str, Any]]) -> Optional[int]:
+        for r in recs:
+            ar = r.get("answer_rank")
+            try:
+                if ar is not None and int(ar) <= 5:
+                    return int(r.get("layer"))
+            except Exception:
+                continue
+        return None
+
+    b_first5 = _first_rank_le_5(baseline_records)
+    t_first5 = _first_rank_le_5(tuned_records)
+    prefer_tuned = False
+    rot_mid = out_pct.get("p50", {}).get("ΔKL_rot")
+    try:
+        if rot_mid is not None and float(rot_mid) >= 0.2:
+            prefer_tuned = True
+    except Exception:
+        pass
+    if not prefer_tuned and (b_first5 is not None and t_first5 is not None):
+        try:
+            delta_layers = int(b_first5) - int(t_first5)
+            if delta_layers >= 2 or (isinstance(n_layers, int) and delta_layers >= int(round(0.05 * n_layers))):
+                prefer_tuned = True
+        except Exception:
+            pass
+
+    return {"percentiles": out_pct, "prefer_tuned": bool(prefer_tuned)}
+
+
+def compute_confirmed_semantics(
+    *,
+    baseline_records: List[Dict[str, Any]],
+    raw_full_rows: List[Dict[str, Any]] | None,
+    tuned_records: List[Dict[str, Any]] | None,
+    L_semantic_norm: Optional[int],
+    delta_window: int = 2,
+) -> Dict[str, Any]:
+    """Compute L_semantic_confirmed by corroboration from raw/tuned within ±Δ of L.
+
+    Returns a dict with keys as per PROJECT_NOTES §1.25.
+    """
+    out = {
+        "L_semantic_norm": L_semantic_norm,
+        "L_semantic_raw": None,
+        "L_semantic_tuned": None,
+        "Δ_window": int(delta_window),
+        "L_semantic_confirmed": None,
+        "confirmed_source": "none",
+    }
+    if not isinstance(L_semantic_norm, int):
+        return out
+
+    # Raw full rows carry answer_rank_raw
+    raw_by_layer = {int(r.get("layer")): r for r in (raw_full_rows or []) if isinstance(r.get("layer"), int)}
+    tuned_by_layer = {int(r.get("layer")): r for r in (tuned_records or []) if isinstance(r.get("layer"), int)}
+
+    # Earliest raw
+    raw_layers_sorted = sorted(raw_by_layer.keys())
+    for L in raw_layers_sorted:
+        rr = raw_by_layer[L]
+        try:
+            if rr.get("answer_rank_raw") == 1:
+                out["L_semantic_raw"] = L
+                break
+        except Exception:
+            continue
+
+    # Earliest tuned
+    tuned_layers_sorted = sorted(tuned_by_layer.keys())
+    for L in tuned_layers_sorted:
+        tr = tuned_by_layer[L]
+        try:
+            if tr.get("answer_rank") is not None and int(tr.get("answer_rank")) == 1:
+                out["L_semantic_tuned"] = L
+                break
+        except Exception:
+            continue
+
+    L = int(L_semantic_norm)
+    low = L - int(delta_window)
+    high = L + int(delta_window)
+    raw_hit = None
+    tuned_hit = None
+    for Lp in range(low, high + 1):
+        rr = raw_by_layer.get(Lp)
+        if raw_hit is None and rr is not None:
+            try:
+                if rr.get("answer_rank_raw") == 1:
+                    raw_hit = Lp
+            except Exception:
+                pass
+        tr = tuned_by_layer.get(Lp)
+        if tuned_hit is None and tr is not None:
+            try:
+                if tr.get("answer_rank") is not None and int(tr.get("answer_rank")) == 1:
+                    tuned_hit = Lp
+            except Exception:
+                pass
+
+    if raw_hit is not None and tuned_hit is not None:
+        out["L_semantic_confirmed"] = L
+        out["confirmed_source"] = "both"
+    elif raw_hit is not None:
+        out["L_semantic_confirmed"] = L
+        out["confirmed_source"] = "raw"
+    elif tuned_hit is not None:
+        out["L_semantic_confirmed"] = L
+        out["confirmed_source"] = "tuned"
+    return out
+
+
+def compute_lens_artifact_score(
+    *,
+    pct_layers_kl_ge_1: Optional[float],
+    pct_layers_kl_ge_0_5: Optional[float],
+    n_norm_only: int,
+    max_kl_bits: Optional[float],
+) -> Dict[str, Any]:
+    """Numeric lens-artefact score in [0,1] and tier label, per §1.27."""
+    try:
+        p1 = float(pct_layers_kl_ge_1 or 0.0)
+        p05 = float(pct_layers_kl_ge_0_5 or 0.0)
+        n = int(n_norm_only or 0)
+        m = float(max_kl_bits or 0.0)
+    except Exception:
+        p1, p05, n, m = 0.0, 0.0, 0, 0.0
+    score = 0.6 * p1 + 0.3 * (1.0 if n > 0 else 0.0) + 0.1 * min(1.0, m / 5.0)
+    if score < 0.2:
+        tier = "low"
+    elif score <= 0.5:
+        tier = "medium"
+    else:
+        tier = "high"
+    return {"lens_artifact_score": float(score), "tier": tier}

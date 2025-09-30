@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Any, Optional, Iterable, List
+from typing import Dict, Any, Optional, Iterable, List, Tuple
 
 import torch
 
@@ -315,5 +315,138 @@ def compute_windowed_raw_norm(
     summary["layers_checked"] = sorted(dict.fromkeys(summary["layers_checked"]))
     summary["norm_only_semantics_layers"] = sorted(dict.fromkeys(norm_only_layers))
     summary["max_kl_norm_vs_raw_bits_window"] = max_kl_window
+
+    return summary, records
+
+
+def compute_full_raw_norm(
+    *,
+    norm_logits_map: Dict[int, torch.Tensor],
+    raw_resid_map: Dict[int, torch.Tensor],
+    collected_map: Dict[int, Dict[str, Any]],
+    final_probs: torch.Tensor,
+    W_U: torch.Tensor,
+    b_U: Optional[torch.Tensor],
+    force_fp32_unembed: bool,
+    decode_id_fn,
+    ctx_ids_list,
+    first_ans_token_id: Optional[int],
+    ground_truth: str,
+    prompt_id: str,
+    prompt_variant: str,
+    n_layers: int,
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Compute full-depth raw-vs-norm metrics (one row per post-block layer).
+
+    Returns (summary, rows) where rows carry both raw and norm fields for the
+    pure next-token position, and summary aggregates lens-artefact indicators.
+    """
+    records: List[Dict[str, Any]] = []
+    summary: Dict[str, Any] = {
+        "pct_layers_kl_ge_1.0": None,
+        "pct_layers_kl_ge_0.5": None,
+        "n_norm_only_semantics_layers": 0,
+        "earliest_norm_only_semantic": None,
+        "max_kl_norm_vs_raw_bits": None,
+        "mode": "full",
+    }
+
+    if not norm_logits_map or not raw_resid_map:
+        return summary, records
+
+    final_probs_cpu = final_probs.detach().float().cpu()
+    available_layers = sorted(set(norm_logits_map.keys()) & set(raw_resid_map.keys()))
+    if not available_layers:
+        return summary, records
+
+    kl_ge_1 = 0
+    kl_ge_0_5 = 0
+    norm_only_layers: List[int] = []
+    max_kl_val: Optional[float] = None
+
+    for layer in available_layers:
+        norm_logits = norm_logits_map.get(layer)
+        raw_vec = raw_resid_map.get(layer)
+        if norm_logits is None or raw_vec is None:
+            continue
+        try:
+            norm_logits_cpu = norm_logits.detach().float().cpu()
+        except Exception:
+            continue
+        if norm_logits_cpu.numel() == 0:
+            continue
+        norm_probs = torch.softmax(norm_logits_cpu, dim=0)
+        top1_norm = int(torch.argmax(norm_probs).item())
+        metrics_norm = compute_next_token_metrics(norm_probs, top1_norm, final_probs_cpu, first_ans_token_id, topk_cum=5)
+        top1_norm_str = decode_id_fn(top1_norm)
+
+        # Raw projection for last-position vector
+        try:
+            raw_vec_cpu = raw_vec.detach().float().cpu()
+        except Exception:
+            continue
+        if raw_vec_cpu.numel() == 0:
+            continue
+        device = W_U.device if hasattr(W_U, "device") else torch.device("cpu")
+        resid_vec = raw_vec_cpu.to(device).unsqueeze(0)
+        resid_cast = safe_cast_for_unembed(resid_vec, W_U, force_fp32_unembed=force_fp32_unembed)
+        logits_raw = unembed_mm(resid_cast, W_U, b_U).squeeze(0).float()
+        raw_probs = torch.softmax(logits_raw.cpu(), dim=0)
+        top1_raw = int(torch.argmax(raw_probs).item())
+        metrics_raw = compute_next_token_metrics(raw_probs, top1_raw, final_probs_cpu, first_ans_token_id, topk_cum=5)
+        top1_raw_str = decode_id_fn(top1_raw)
+
+        # KL and norm-only semantics
+        try:
+            kl_nr = float(kl_bits(norm_probs, raw_probs))
+        except Exception:
+            kl_nr = None
+        if kl_nr is not None:
+            max_kl_val = kl_nr if max_kl_val is None else max(max_kl_val, kl_nr)
+            if kl_nr >= 1.0:
+                kl_ge_1 += 1
+            if kl_nr >= 0.5:
+                kl_ge_0_5 += 1
+
+        is_answer_norm = bool(metrics_norm.get("answer_rank") == 1)
+        if metrics_norm.get("answer_rank") is None and collected_map.get(layer):
+            is_answer_norm = bool(collected_map[layer].get("is_answer"))
+        is_answer_raw = bool(metrics_raw.get("answer_rank") == 1)
+        if metrics_raw.get("answer_rank") is None and first_ans_token_id is None:
+            is_answer_raw = is_semantic_top1(top1_raw_str, ground_truth)
+        norm_only = bool(is_answer_norm and not is_answer_raw)
+        if norm_only:
+            norm_only_layers.append(layer)
+
+        records.append(
+            {
+                "prompt_id": prompt_id,
+                "prompt_variant": prompt_variant,
+                "layer": layer,
+                # raw
+                "p_top1_raw": metrics_raw.get("p_top1"),
+                "top1_token_id_raw": top1_raw,
+                "top1_token_str_raw": top1_raw_str,
+                "p_answer_raw": metrics_raw.get("p_answer"),
+                "answer_rank_raw": metrics_raw.get("answer_rank"),
+                # norm
+                "p_top1_norm": metrics_norm.get("p_top1"),
+                "top1_token_id_norm": top1_norm,
+                "top1_token_str_norm": top1_norm_str,
+                "p_answer_norm": metrics_norm.get("p_answer"),
+                "answer_rank_norm": metrics_norm.get("answer_rank"),
+                # cross
+                "kl_norm_vs_raw_bits": kl_nr,
+                "norm_only_semantics": norm_only,
+            }
+        )
+
+    total_layers = len(available_layers)
+    if total_layers > 0:
+        summary["pct_layers_kl_ge_1.0"] = float(kl_ge_1) / float(total_layers)
+        summary["pct_layers_kl_ge_0.5"] = float(kl_ge_0_5) / float(total_layers)
+    summary["n_norm_only_semantics_layers"] = len(norm_only_layers)
+    summary["earliest_norm_only_semantic"] = (min(norm_only_layers) if norm_only_layers else None)
+    summary["max_kl_norm_vs_raw_bits"] = max_kl_val
 
     return summary, records

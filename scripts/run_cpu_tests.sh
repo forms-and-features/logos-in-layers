@@ -73,4 +73,8 @@ ${PY} 001_layers_baseline/tests/test_prism_sidecar.py
 # Normalization test prints status; still CPU-only
 ${PY} 001_layers_baseline/tests/test_normalization.py
 
+# New: Raw-lens full sweep and numeric scoring; confirmed semantics & tuned attribution
+${PY} 001_layers_baseline/tests/test_raw_lens_full_and_score.py
+${PY} 001_layers_baseline/tests/test_confirmed_semantics_and_tuned_attr.py
+
 echo "All CPU-only tests completed."

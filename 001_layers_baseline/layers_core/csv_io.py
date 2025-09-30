@@ -163,10 +163,10 @@ def write_raw_lens_window_csv(records: List[Dict[str, Any]], csv_filepath: str) 
         ]
         writer.writerow(header)
 
-        for rec in records:
-            def _nz(val):
-                return "" if val is None else val
+        def _nz(val):
+            return "" if val is None else val
 
+        for rec in records:
             row = [
                 _nz(rec.get("prompt_id")),
                 _nz(rec.get("prompt_variant")),
@@ -178,5 +178,65 @@ def write_raw_lens_window_csv(records: List[Dict[str, Any]], csv_filepath: str) 
                 _nz(rec.get("p_answer")),
                 rec.get("answer_rank"),
                 _nz(rec.get("kl_norm_vs_raw_bits")),
+            ]
+            writer.writerow(row)
+
+
+def write_raw_lens_full_csv(records: List[Dict[str, Any]], csv_filepath: str) -> None:
+    """Write full-depth raw-vs-norm per-layer rows to CSV (one row per layer)."""
+    if not records:
+        return
+
+    with open(csv_filepath, 'w', newline='', encoding='utf-8') as f_csv:
+        writer = csv.writer(
+            f_csv,
+            delimiter=",",
+            quotechar='"',
+            quoting=csv.QUOTE_MINIMAL,
+            escapechar="\\",
+            lineterminator="\n",
+        )
+        header = [
+            "prompt_id",
+            "prompt_variant",
+            "layer",
+            # raw lens
+            "p_top1_raw",
+            "top1_token_id_raw",
+            "top1_token_str_raw",
+            "p_answer_raw",
+            "answer_rank_raw",
+            # norm lens
+            "p_top1_norm",
+            "top1_token_id_norm",
+            "top1_token_str_norm",
+            "p_answer_norm",
+            "answer_rank_norm",
+            # cross
+            "kl_norm_vs_raw_bits",
+            "norm_only_semantics",
+        ]
+        writer.writerow(header)
+
+        def _nz(val):
+            return "" if val is None else val
+
+        for rec in records:
+            row = [
+                rec.get("prompt_id", ""),
+                rec.get("prompt_variant", ""),
+                rec.get("layer"),
+                _nz(rec.get("p_top1_raw")),
+                rec.get("top1_token_id_raw"),
+                _nz(rec.get("top1_token_str_raw")),
+                _nz(rec.get("p_answer_raw")),
+                _nz(rec.get("answer_rank_raw")),
+                _nz(rec.get("p_top1_norm")),
+                rec.get("top1_token_id_norm"),
+                _nz(rec.get("top1_token_str_norm")),
+                _nz(rec.get("p_answer_norm")),
+                _nz(rec.get("answer_rank_norm")),
+                _nz(rec.get("kl_norm_vs_raw_bits")),
+                _nz(rec.get("norm_only_semantics")),
             ]
             writer.writerow(row)

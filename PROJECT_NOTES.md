@@ -840,7 +840,7 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
 
 ---
 
-### 1.24. Full Raw‑vs‑Norm dual‑lens sweep (all layers; sidecar by default)
+### [x] 1.24. Full Raw‑vs‑Norm dual‑lens sweep (all layers; sidecar by default)
 
 **Why.** The sampled (§1.4) and windowed (§1.19) checks can miss narrow bands where normalization induces “early semantics”. A **full per‑layer** raw‑vs‑norm pass makes lens artefacts auditable across the entire depth for every model, not only “high‑risk” families.
 
@@ -858,9 +858,11 @@ Emit a **default** sidecar with raw‑vs‑norm metrics for **every** post‑blo
 2. Populate `diagnostics.raw_lens_full` from the sidecar.
 3. Promote the existing windowed CSV to `*-rawlens-window.csv` and leave it intact (§1.19).
 
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
 ---
 
-### 1.25. Confirmed‑semantics gate (norm corroborated by raw/Tuned)
+### [x] 1.25. Confirmed‑semantics gate (norm corroborated by raw/Tuned)
 
 **Why.** To avoid lens‑induced “early semantics”, declare **semantic onset** only when the norm‑lens rank‑1 is corroborated by a second view within a small window. This promotes **rank robustness** from single‑lens to multi‑lens evidence.
 
@@ -877,9 +879,11 @@ Add a **confirmed** milestone:
 3. If neither corroborates within the window, set `confirmed_source="none"` and emit `diagnostics.flags.norm_only_semantics_confirmed=false`.
 4. Evaluators may prefer `L_semantic_confirmed` over `L_semantic_norm` when present (advisory only).
 
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
 ---
 
-### 1.26. Rotation‑vs‑Temperature attribution & “prefer_tuned” gate
+### [x] 1.26. Rotation‑vs‑Temperature attribution & “prefer_tuned” gate
 
 **Why.** Tuned‑Lens gains mix **rotation** (translator) and **calibration** (temperature). The norm‑temp baseline (§1.16) provides a fair control; attributing ΔKL correctly prevents over‑crediting the translator.
 
@@ -904,9 +908,11 @@ Define **rotation gain** `ΔKL_rot = ΔKL_tuned − ΔKL_temp`.
 2. Read tuned sidecar KL per layer; compute `ΔKL_tuned`.
 3. Derive `ΔKL_rot` and the `prefer_tuned` boolean; expose an advisory field in `measurement_guidance.preferred_lens_for_reporting ∈ {"norm","tuned"}`.
 
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
 ---
 
-### 1.27. Lens‑artefact risk score (numeric) from full dual‑lens sweep
+### [x] 1.27. Lens‑artefact risk score (numeric) from full dual‑lens sweep
 
 **Why.** The categorical `lens_artifact_risk` (§1.4) is useful, but a **numeric score** enables finer evaluation policies and trend tracking across runs/families once the **full** dual‑lens sweep (§1.24) exists.
 
@@ -919,9 +925,11 @@ Mirror to `measurement_guidance.reasons += ["high_lens_artifact_score"]` when `t
 **How.**
 Aggregate directly from `*-rawlens.csv` (§1.24) and `diagnostics.raw_lens_full`. Keep weights/thresholds as constants in `diagnostics.config.lens_artifact_score`.
 
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
 ---
 
-### 1.28. Evaluator‑readable guidance extensions
+### [x] 1.28. Evaluator‑readable guidance extensions
 
 **Why.** Evaluations already honor `measurement_guidance` (§1.22); adding **preferred lens** and **confirmed‑semantics** hints reduces accidental misuse.
 
@@ -936,6 +944,8 @@ Extend `measurement_guidance` with:
 
 **How.**
 Set `preferred_lens_for_reporting` from §1.26. Set `use_confirmed_semantics=true` when `L_semantic_confirmed` exists (§1.25). Append notes verbatim.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

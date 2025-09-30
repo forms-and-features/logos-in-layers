@@ -45,7 +45,7 @@ from layers_core.norm_utils import (
 from layers_core.numerics import (
     bits_entropy_from_logits,
 )
-from layers_core.csv_io import write_csv_files, write_raw_lens_window_csv
+from layers_core.csv_io import write_csv_files, write_raw_lens_window_csv, write_raw_lens_full_csv
 from layers_core.device_policy import (
     choose_dtype,
     should_auto_promote_unembed,
@@ -73,7 +73,7 @@ from layers_core.token_utils import make_decode_id
 from layers_core.collapse_rules import format_copy_strict_label, format_copy_soft_label
 from layers_core.temperature import fit_norm_temperatures
 from layers_core.skip_sanity import evaluate_skip_layers
-from layers_core.summaries import build_unified_lens_metrics
+from layers_core.summaries import build_unified_lens_metrics, tuned_rotation_vs_temp_attribution, compute_confirmed_semantics, compute_lens_artifact_score
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -975,6 +975,16 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             }
             if tuned_metrics is not None:
                 tuned_block["summary"] = {"metrics": tuned_metrics}
+            # Attribution and prefer_tuned gate (PROJECT_NOTES §1.26)
+            try:
+                attr = tuned_rotation_vs_temp_attribution(
+                    baseline_records=[r for r in json_data.get("pure_next_token_records", []) if r.get("prompt_id") == "pos" and r.get("prompt_variant") == "orig"],
+                    tuned_records=[r for r in tuned_records if r.get("prompt_id") == "pos" and r.get("prompt_variant") == "orig"],
+                    n_layers=int(model.cfg.n_layers),
+                )
+                tuned_block["attribution"] = attr
+            except Exception:
+                pass
             json_data["tuned_lens"] = tuned_block
         else:
             json_data["tuned_lens"] = tuned_diag_info
@@ -1011,7 +1021,47 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 diag["tuned_lens_skip_warning"] = d2
         diag["tuned_lens_regression"] = tuned_reg
 
-        # ---------------- Measurement guidance (PROJECT_NOTES §1.22) -----------
+        # ---------------- Confirmed semantics & lens artefact score ------------
+        try:
+            L_norm = diag.get("L_semantic")
+            conf = compute_confirmed_semantics(
+                baseline_records=[r for r in json_data.get("pure_next_token_records", []) if r.get("prompt_id") == "pos" and r.get("prompt_variant") == "orig"],
+                raw_full_rows=[r for r in json_data.get("raw_lens_full_records", []) if r.get("prompt_id") == "pos" and r.get("prompt_variant") == "orig"],
+                tuned_records=[r for r in ((json_data_tuned or {}).get("pure_next_token_records", [])) if r.get("prompt_id") == "pos" and r.get("prompt_variant") == "orig"],
+                L_semantic_norm=L_norm,
+                delta_window=2,
+            )
+            diag["confirmed_semantics"] = conf
+            if conf.get("L_semantic_confirmed") is not None:
+                diag["L_semantic_confirmed"] = conf.get("L_semantic_confirmed")
+        except Exception as e:
+            try:
+                diag["confirmed_semantics_error"] = str(e)
+            except Exception:
+                pass
+
+        try:
+            full_block = diag.get("raw_lens_full") or {}
+            score_info = compute_lens_artifact_score(
+                pct_layers_kl_ge_1=full_block.get("pct_layers_kl_ge_1.0"),
+                pct_layers_kl_ge_0_5=full_block.get("pct_layers_kl_ge_0.5"),
+                n_norm_only=int(full_block.get("n_norm_only_semantics_layers") or 0),
+                max_kl_bits=full_block.get("max_kl_norm_vs_raw_bits"),
+            )
+            if full_block:
+                full_block["score"] = score_info
+                diag["raw_lens_full"] = full_block
+            diag.setdefault("config", {})["lens_artifact_score"] = {
+                "weights": {"pct_ge_1.0": 0.6, "norm_only": 0.3, "max_kl_scaled": 0.1},
+                "thresholds": {"low": 0.2, "high": 0.5},
+            }
+        except Exception as e:
+            try:
+                diag.setdefault("raw_lens_full", {})["score_error"] = str(e)
+            except Exception:
+                pass
+
+        # ---------------- Measurement guidance (PROJECT_NOTES §1.22 & §1.28) ---
         try:
             warn_high_last_layer_kl = False
             try:
@@ -1054,16 +1104,34 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 reasons.append("norm_only_semantics_window")
             if high_lens_artifact_risk:
                 reasons.append("high_lens_artifact_risk")
+            try:
+                tier = ((json_data.get("diagnostics") or {}).get("raw_lens_full") or {}).get("score", {}).get("tier")
+                if tier == "high":
+                    reasons.append("high_lens_artifact_score")
+            except Exception:
+                pass
 
             prefer_ranks = bool(reasons)
             suppress_abs_probs = prefer_ranks
 
-            json_data["measurement_guidance"] = {
+            mg = {
                 "prefer_ranks": prefer_ranks,
                 "suppress_abs_probs": suppress_abs_probs,
                 "reasons": reasons,
                 "notes": "Family-level head calibration; treat probabilities comparatively only within model.",
             }
+            try:
+                prefer_tuned_gate = bool(((json_data.get("tuned_lens") or {}).get("attribution") or {}).get("prefer_tuned", False))
+                mg["preferred_lens_for_reporting"] = ("tuned" if prefer_tuned_gate else "norm")
+            except Exception:
+                pass
+            try:
+                use_conf = bool(((json_data.get("diagnostics") or {}).get("L_semantic_confirmed") is not None))
+                mg["use_confirmed_semantics"] = use_conf
+                mg["notes_append"] = "Prism is diagnostic-only; treat probabilities comparatively within model."
+            except Exception:
+                pass
+            json_data["measurement_guidance"] = mg
         except Exception:
             # Best-effort; absence should not fail the run
             pass
@@ -1158,6 +1226,18 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             except Exception as e:
                 print(f"⚠️ Failed to write raw-lens window CSV: {e}")
 
+        full_rows = json_data.get("raw_lens_full_records") or []
+        if full_rows:
+            try:
+                full_csv_path = os.path.join(
+                    os.path.dirname(csv_filepath),
+                    f"output-{clean_name}-pure-next-token-rawlens.csv",
+                )
+                write_raw_lens_full_csv(full_rows, full_csv_path)
+                _vprint(f"✅ Raw vs Norm full CSV saved to: {full_csv_path}")
+            except Exception as e:
+                print(f"⚠️ Failed to write raw-lens full CSV: {e}")
+
         if json_data_tuned_outer is not None and (json_data_tuned_outer["records"] or json_data_tuned_outer["pure_next_token_records"]):
             tuned_records_path = os.path.join(os.path.dirname(csv_filepath), f"output-{clean_name}-records-tuned.csv")
             tuned_pure_path = os.path.join(os.path.dirname(csv_filepath), f"output-{clean_name}-pure-next-token-tuned.csv")
@@ -1170,7 +1250,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
 
         # Strip bulky per-token records from JSON to keep it compact
         json_data_compact = {k: v for k, v in json_data.items()
-                             if k not in ("records", "pure_next_token_records", "prism_sidecar", "raw_lens_window_records")}
+                             if k not in ("records", "pure_next_token_records", "prism_sidecar", "raw_lens_window_records", "raw_lens_full_records")}
 
         # Write compact JSON metadata
         with open(meta_filepath, 'w', encoding='utf-8') as f:

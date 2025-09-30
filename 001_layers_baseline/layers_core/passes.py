@@ -11,7 +11,7 @@ from .records import make_record, make_pure_record
 from .pure_emit import compute_pure_next_token_info
 from .numerics import bits_entropy_from_logits
 from .norm_utils import detect_model_architecture, get_correct_norm_module, apply_norm_or_skip
-from .raw_lens import should_sample_layer, record_dual_lens_sample, compute_windowed_raw_norm
+from .raw_lens import should_sample_layer, record_dual_lens_sample, compute_windowed_raw_norm, compute_full_raw_norm
 from .summaries import summarize_pure_records
 from .consistency import compute_last_layer_consistency
 from .lenses import PrismLensAdapter
@@ -786,6 +786,35 @@ def run_prompt_pass(
                 summary_diag["raw_lens_window"] = window_summary
             if window_records:
                 json_data.setdefault("raw_lens_window_records", []).extend(window_records)
+
+            # Full dual-lens sweep across all available layers (PROJECT_NOTES §1.24)
+            try:
+                full_summary, full_rows = compute_full_raw_norm(
+                    norm_logits_map=norm_logits_window,
+                    raw_resid_map=raw_resid_window,
+                    collected_map=collected_by_layer,
+                    final_probs=final_probs.detach().float().cpu(),
+                    W_U=unembed_ctx.W,
+                    b_U=unembed_ctx.b,
+                    force_fp32_unembed=unembed_ctx.force_fp32,
+                    decode_id_fn=decode_id_fn,
+                    ctx_ids_list=ctx_ids_list,
+                    first_ans_token_id=first_ans_token_id,
+                    ground_truth=ground_truth,
+                    prompt_id=prompt_id,
+                    prompt_variant=prompt_variant,
+                    n_layers=int(model.cfg.n_layers),
+                )
+                if full_summary:
+                    summary_diag["raw_lens_full"] = full_summary
+                if full_rows:
+                    json_data.setdefault("raw_lens_full_records", []).extend(full_rows)
+            except Exception as e:
+                # Best-effort: surface minimal error signal for debugging
+                try:
+                    summary_diag["raw_lens_full_error"] = str(e)
+                except Exception:
+                    pass
 
             # Cross-validate strict-copy earliest layers across thresholds against raw lens (PROJECT_NOTES §1.23)
             try:
