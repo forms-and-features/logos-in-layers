@@ -834,7 +834,48 @@
         20,
         30
       ],
-      "error": null
+      "error": null,
+      "metrics": {
+        "rank_milestones": {
+          "baseline": {
+            "le_10": 42,
+            "le_5": 42,
+            "le_1": 42
+          },
+          "prism": {
+            "le_10": null,
+            "le_5": null,
+            "le_1": null
+          },
+          "delta": {
+            "le_10": null,
+            "le_5": null,
+            "le_1": null
+          }
+        },
+        "kl_bits_at_percentiles": {
+          "baseline": {
+            "p25": 14.936785410135792,
+            "p50": 15.173201017179052,
+            "p75": 1.8601573004434528
+          },
+          "prism": {
+            "p25": 26.56981161442117,
+            "p50": 25.506724935683838,
+            "p75": 26.276687136013013
+          },
+          "delta": {
+            "p25": -11.633026204285377,
+            "p50": -10.333523918504786,
+            "p75": -24.41652983556956
+          }
+        },
+        "first_kl_le_1.0": {
+          "baseline": null,
+          "prism": null,
+          "delta": null
+        }
+      }
     },
     "copy_soft_config": {
       "threshold": 0.5,
@@ -946,6 +987,33 @@
         }
       }
     },
+    "copy_thresholds": {
+      "tau_list": [
+        0.7,
+        0.8,
+        0.9,
+        0.95
+      ],
+      "L_copy_strict": {
+        "0.7": 0,
+        "0.8": 0,
+        "0.9": 0,
+        "0.95": 0
+      },
+      "L_copy_strict_frac": {
+        "0.7": 0.0,
+        "0.8": 0.0,
+        "0.9": 0.0,
+        "0.95": 0.0
+      },
+      "norm_only_flags": {
+        "0.7": false,
+        "0.8": false,
+        "0.9": false,
+        "0.95": false
+      },
+      "stability": "mixed"
+    },
     "L_surface_to_meaning_norm": 42,
     "answer_mass_at_L_surface_norm": 0.9297690391540527,
     "echo_mass_at_L_surface_norm": 1.1529009730451635e-08,
@@ -957,6 +1025,45 @@
     "topk_prompt_tau_norm": 0.33,
     "surface_delta_norm": 0.05,
     "geom_gamma_norm": 0.02,
+    "cos_milestones": {
+      "norm": {
+        "ge_0.2": 1,
+        "ge_0.4": 42,
+        "ge_0.6": 42
+      }
+    },
+    "depth_fractions": {
+      "L_semantic_frac": 1.0,
+      "first_rank_le_5_frac": 1.0,
+      "L_copy_strict_frac": 0.0,
+      "L_copy_soft_k1_frac": 0.0,
+      "L_copy_soft_k2_frac": null,
+      "L_copy_soft_k3_frac": null
+    },
+    "raw_lens_window": {
+      "radius": 4,
+      "center_layers": [
+        0,
+        42
+      ],
+      "layers_checked": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        38,
+        39,
+        40,
+        41,
+        42
+      ],
+      "norm_only_semantics_layers": [
+        42
+      ],
+      "max_kl_norm_vs_raw_bits_window": 92.31592825485221,
+      "mode": "window"
+    },
     "gold_alignment": "ok",
     "last_layer_consistency": {
       "kl_to_final_bits": 1.0128875226902398,
@@ -1052,6 +1159,33 @@
               }
             }
           },
+          "copy_thresholds": {
+            "tau_list": [
+              0.7,
+              0.8,
+              0.9,
+              0.95
+            ],
+            "L_copy_strict": {
+              "0.7": 1,
+              "0.8": 1,
+              "0.9": 1,
+              "0.95": 1
+            },
+            "L_copy_strict_frac": {
+              "0.7": 0.024,
+              "0.8": 0.024,
+              "0.9": 0.024,
+              "0.95": 0.024
+            },
+            "norm_only_flags": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "stability": "mixed"
+          },
           "L_surface_to_meaning_tuned": 42,
           "answer_mass_at_L_surface_tuned": 0.9297690391540527,
           "echo_mass_at_L_surface_tuned": 1.1529009730451635e-08,
@@ -1062,7 +1196,14 @@
           "topk_prompt_mass_at_L_tuned": 0.21365895867347717,
           "topk_prompt_tau_tuned": 0.33,
           "surface_delta_tuned": 0.05,
-          "geom_gamma_tuned": 0.02
+          "geom_gamma_tuned": 0.02,
+          "cos_milestones": {
+            "tuned": {
+              "ge_0.2": 1,
+              "ge_0.4": 28,
+              "ge_0.6": 42
+            }
+          }
         },
         {
           "L_copy": 1,
@@ -1121,6 +1262,33 @@
               }
             }
           },
+          "copy_thresholds": {
+            "tau_list": [
+              0.7,
+              0.8,
+              0.9,
+              0.95
+            ],
+            "L_copy_strict": {
+              "0.7": 1,
+              "0.8": 1,
+              "0.9": 1,
+              "0.95": 1
+            },
+            "L_copy_strict_frac": {
+              "0.7": 0.024,
+              "0.8": 0.024,
+              "0.9": 0.024,
+              "0.95": 0.024
+            },
+            "norm_only_flags": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "stability": "mixed"
+          },
           "L_surface_to_meaning_tuned": 42,
           "answer_mass_at_L_surface_tuned": 0.9998400211334229,
           "echo_mass_at_L_surface_tuned": 2.821514255023269e-07,
@@ -1131,7 +1299,14 @@
           "topk_prompt_mass_at_L_tuned": 0.2622375413775444,
           "topk_prompt_tau_tuned": 0.33,
           "surface_delta_tuned": 0.05,
-          "geom_gamma_tuned": 0.02
+          "geom_gamma_tuned": 0.02,
+          "cos_milestones": {
+            "tuned": {
+              "ge_0.2": 19,
+              "ge_0.4": 42,
+              "ge_0.6": 42
+            }
+          }
         },
         {
           "L_copy": 1,
@@ -1190,6 +1365,33 @@
               }
             }
           },
+          "copy_thresholds": {
+            "tau_list": [
+              0.7,
+              0.8,
+              0.9,
+              0.95
+            ],
+            "L_copy_strict": {
+              "0.7": 1,
+              "0.8": 1,
+              "0.9": 1,
+              "0.95": 1
+            },
+            "L_copy_strict_frac": {
+              "0.7": 0.024,
+              "0.8": 0.024,
+              "0.9": 0.024,
+              "0.95": 0.024
+            },
+            "norm_only_flags": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "stability": "mixed"
+          },
           "L_surface_to_meaning_tuned": 42,
           "answer_mass_at_L_surface_tuned": 0.8677237033843994,
           "echo_mass_at_L_surface_tuned": 3.2183367955606905e-09,
@@ -1200,7 +1402,14 @@
           "topk_prompt_mass_at_L_tuned": 0.18057745695114136,
           "topk_prompt_tau_tuned": 0.33,
           "surface_delta_tuned": 0.05,
-          "geom_gamma_tuned": 0.02
+          "geom_gamma_tuned": 0.02,
+          "cos_milestones": {
+            "tuned": {
+              "ge_0.2": 1,
+              "ge_0.4": 42,
+              "ge_0.6": 42
+            }
+          }
         }
       ]
     },
@@ -1382,6 +1591,9 @@
   },
   "copy_flag_columns": [
     "copy_strict@0.95",
+    "copy_strict@0.7",
+    "copy_strict@0.8",
+    "copy_strict@0.9",
     "copy_soft_k1@0.5",
     "copy_soft_k2@0.5",
     "copy_soft_k3@0.5"
@@ -1474,6 +1686,33 @@
             }
           }
         },
+        "copy_thresholds": {
+          "tau_list": [
+            0.7,
+            0.8,
+            0.9,
+            0.95
+          ],
+          "L_copy_strict": {
+            "0.7": 1,
+            "0.8": 1,
+            "0.9": 1,
+            "0.95": 1
+          },
+          "L_copy_strict_frac": {
+            "0.7": 0.024,
+            "0.8": 0.024,
+            "0.9": 0.024,
+            "0.95": 0.024
+          },
+          "norm_only_flags": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "stability": "mixed"
+        },
         "L_surface_to_meaning_tuned": 42,
         "answer_mass_at_L_surface_tuned": 0.9297690391540527,
         "echo_mass_at_L_surface_tuned": 1.1529009730451635e-08,
@@ -1484,7 +1723,14 @@
         "topk_prompt_mass_at_L_tuned": 0.21365895867347717,
         "topk_prompt_tau_tuned": 0.33,
         "surface_delta_tuned": 0.05,
-        "geom_gamma_tuned": 0.02
+        "geom_gamma_tuned": 0.02,
+        "cos_milestones": {
+          "tuned": {
+            "ge_0.2": 1,
+            "ge_0.4": 28,
+            "ge_0.6": 42
+          }
+        }
       },
       {
         "L_copy": 1,
@@ -1543,6 +1789,33 @@
             }
           }
         },
+        "copy_thresholds": {
+          "tau_list": [
+            0.7,
+            0.8,
+            0.9,
+            0.95
+          ],
+          "L_copy_strict": {
+            "0.7": 1,
+            "0.8": 1,
+            "0.9": 1,
+            "0.95": 1
+          },
+          "L_copy_strict_frac": {
+            "0.7": 0.024,
+            "0.8": 0.024,
+            "0.9": 0.024,
+            "0.95": 0.024
+          },
+          "norm_only_flags": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "stability": "mixed"
+        },
         "L_surface_to_meaning_tuned": 42,
         "answer_mass_at_L_surface_tuned": 0.9998400211334229,
         "echo_mass_at_L_surface_tuned": 2.821514255023269e-07,
@@ -1553,7 +1826,14 @@
         "topk_prompt_mass_at_L_tuned": 0.2622375413775444,
         "topk_prompt_tau_tuned": 0.33,
         "surface_delta_tuned": 0.05,
-        "geom_gamma_tuned": 0.02
+        "geom_gamma_tuned": 0.02,
+        "cos_milestones": {
+          "tuned": {
+            "ge_0.2": 19,
+            "ge_0.4": 42,
+            "ge_0.6": 42
+          }
+        }
       },
       {
         "L_copy": 1,
@@ -1612,6 +1892,33 @@
             }
           }
         },
+        "copy_thresholds": {
+          "tau_list": [
+            0.7,
+            0.8,
+            0.9,
+            0.95
+          ],
+          "L_copy_strict": {
+            "0.7": 1,
+            "0.8": 1,
+            "0.9": 1,
+            "0.95": 1
+          },
+          "L_copy_strict_frac": {
+            "0.7": 0.024,
+            "0.8": 0.024,
+            "0.9": 0.024,
+            "0.95": 0.024
+          },
+          "norm_only_flags": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "stability": "mixed"
+        },
         "L_surface_to_meaning_tuned": 42,
         "answer_mass_at_L_surface_tuned": 0.8677237033843994,
         "echo_mass_at_L_surface_tuned": 3.2183367955606905e-09,
@@ -1622,7 +1929,14 @@
         "topk_prompt_mass_at_L_tuned": 0.18057745695114136,
         "topk_prompt_tau_tuned": 0.33,
         "surface_delta_tuned": 0.05,
-        "geom_gamma_tuned": 0.02
+        "geom_gamma_tuned": 0.02,
+        "cos_milestones": {
+          "tuned": {
+            "ge_0.2": 1,
+            "ge_0.4": 42,
+            "ge_0.6": 42
+          }
+        }
       }
     ],
     "provenance": {
@@ -1726,7 +2040,60 @@
         "dtype": "torch.bfloat16",
         "final_loss": 15.9165595972538
       }
+    },
+    "summary": {
+      "metrics": {
+        "rank_milestones": {
+          "baseline": {
+            "le_10": 42,
+            "le_5": 42,
+            "le_1": 42
+          },
+          "tuned": {
+            "le_10": 42,
+            "le_5": 42,
+            "le_1": 42
+          },
+          "delta": {
+            "le_10": 0,
+            "le_5": 0,
+            "le_1": 0
+          }
+        },
+        "kl_bits_at_percentiles": {
+          "baseline": {
+            "p25": 14.936785410135792,
+            "p50": 15.173201017179052,
+            "p75": 1.8601573004434528
+          },
+          "tuned": {
+            "p25": 15.216312252236133,
+            "p50": 25.69074362038463,
+            "p75": 1.6608902899518632
+          },
+          "delta": {
+            "p25": -0.2795268421003403,
+            "p50": -10.517542603205579,
+            "p75": 0.19926701049158968
+          }
+        },
+        "first_kl_le_1.0": {
+          "baseline": null,
+          "tuned": null,
+          "delta": null
+        }
+      }
     }
+  },
+  "measurement_guidance": {
+    "prefer_ranks": true,
+    "suppress_abs_probs": true,
+    "reasons": [
+      "warn_high_last_layer_kl",
+      "norm_only_semantics_window",
+      "high_lens_artifact_risk"
+    ],
+    "notes": "Family-level head calibration; treat probabilities comparatively only within model."
   },
   "gold_answer": {
     "string": "Berlin",

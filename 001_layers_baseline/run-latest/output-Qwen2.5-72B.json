@@ -834,7 +834,48 @@
         39,
         59
       ],
-      "error": null
+      "error": null,
+      "metrics": {
+        "rank_milestones": {
+          "baseline": {
+            "le_10": 74,
+            "le_5": 78,
+            "le_1": 80
+          },
+          "prism": {
+            "le_10": null,
+            "le_5": null,
+            "le_1": null
+          },
+          "delta": {
+            "le_10": null,
+            "le_5": null,
+            "le_1": null
+          }
+        },
+        "kl_bits_at_percentiles": {
+          "baseline": {
+            "p25": 12.621475164270663,
+            "p50": 12.404397286490418,
+            "p75": 9.111054037906857
+          },
+          "prism": {
+            "p25": 9.459469562706202,
+            "p50": 9.570438960418317,
+            "p75": 9.654292197534195
+          },
+          "delta": {
+            "p25": 3.162005601564461,
+            "p50": 2.8339583260721017,
+            "p75": -0.5432381596273377
+          }
+        },
+        "first_kl_le_1.0": {
+          "baseline": 80,
+          "prism": null,
+          "delta": null
+        }
+      }
     },
     "copy_soft_config": {
       "threshold": 0.5,
@@ -984,6 +1025,33 @@
         }
       }
     },
+    "copy_thresholds": {
+      "tau_list": [
+        0.7,
+        0.8,
+        0.9,
+        0.95
+      ],
+      "L_copy_strict": {
+        "0.7": null,
+        "0.8": null,
+        "0.9": null,
+        "0.95": null
+      },
+      "L_copy_strict_frac": {
+        "0.7": null,
+        "0.8": null,
+        "0.9": null,
+        "0.95": null
+      },
+      "norm_only_flags": {
+        "0.7": null,
+        "0.8": null,
+        "0.9": null,
+        "0.95": null
+      },
+      "stability": "none"
+    },
     "L_surface_to_meaning_norm": 80,
     "answer_mass_at_L_surface_norm": 0.3394583463668823,
     "echo_mass_at_L_surface_norm": 0.04461341293926324,
@@ -995,6 +1063,42 @@
     "topk_prompt_tau_norm": 0.33,
     "surface_delta_norm": 0.05,
     "geom_gamma_norm": 0.02,
+    "cos_milestones": {
+      "norm": {
+        "ge_0.2": 0,
+        "ge_0.4": 0,
+        "ge_0.6": 53
+      }
+    },
+    "depth_fractions": {
+      "L_semantic_frac": 1.0,
+      "first_rank_le_5_frac": 0.975,
+      "L_copy_strict_frac": null,
+      "L_copy_soft_k1_frac": null,
+      "L_copy_soft_k2_frac": null,
+      "L_copy_soft_k3_frac": null
+    },
+    "raw_lens_window": {
+      "radius": 4,
+      "center_layers": [
+        78,
+        80
+      ],
+      "layers_checked": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80
+      ],
+      "norm_only_semantics_layers": [
+        80
+      ],
+      "max_kl_norm_vs_raw_bits_window": 83.31501672207212,
+      "mode": "window"
+    },
     "gold_alignment": "ok",
     "last_layer_consistency": {
       "kl_to_final_bits": 0.00010909087118927091,
@@ -1194,6 +1298,9 @@
   },
   "copy_flag_columns": [
     "copy_strict@0.95",
+    "copy_strict@0.7",
+    "copy_strict@0.8",
+    "copy_strict@0.9",
     "copy_soft_k1@0.5",
     "copy_soft_k2@0.5",
     "copy_soft_k3@0.5"
@@ -1229,6 +1336,15 @@
     "status": "missing",
     "mode": "auto",
     "path": "/home/kkonstant/logos-in-layers/001_layers_baseline/tuned_lenses/Qwen2.5-72B"
+  },
+  "measurement_guidance": {
+    "prefer_ranks": true,
+    "suppress_abs_probs": true,
+    "reasons": [
+      "norm_only_semantics_window",
+      "high_lens_artifact_risk"
+    ],
+    "notes": "Family-level head calibration; treat probabilities comparatively only within model."
   },
   "gold_answer": {
     "string": "Berlin",

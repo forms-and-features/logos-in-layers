@@ -834,7 +834,48 @@
         39,
         59
       ],
-      "error": null
+      "error": null,
+      "metrics": {
+        "rank_milestones": {
+          "baseline": {
+            "le_10": 38,
+            "le_5": 38,
+            "le_1": 40
+          },
+          "prism": {
+            "le_10": null,
+            "le_5": null,
+            "le_1": null
+          },
+          "delta": {
+            "le_10": null,
+            "le_5": null,
+            "le_1": null
+          }
+        },
+        "kl_bits_at_percentiles": {
+          "baseline": {
+            "p25": 10.449678249175115,
+            "p50": 10.419824812707745,
+            "p75": 10.310137717640464
+          },
+          "prism": {
+            "p25": 11.344052699138444,
+            "p50": 11.41962737937239,
+            "p75": 11.4678072871157
+          },
+          "delta": {
+            "p25": -0.8943744499633297,
+            "p50": -0.9998025666646448,
+            "p75": -1.157669569475237
+          }
+        },
+        "first_kl_le_1.0": {
+          "baseline": 80,
+          "prism": null,
+          "delta": null
+        }
+      }
     },
     "copy_soft_config": {
       "threshold": 0.5,
@@ -984,6 +1025,33 @@
         }
       }
     },
+    "copy_thresholds": {
+      "tau_list": [
+        0.7,
+        0.8,
+        0.9,
+        0.95
+      ],
+      "L_copy_strict": {
+        "0.7": null,
+        "0.8": null,
+        "0.9": null,
+        "0.95": null
+      },
+      "L_copy_strict_frac": {
+        "0.7": null,
+        "0.8": null,
+        "0.9": null,
+        "0.95": null
+      },
+      "norm_only_flags": {
+        "0.7": null,
+        "0.8": null,
+        "0.9": null,
+        "0.95": null
+      },
+      "stability": "none"
+    },
     "L_surface_to_meaning_norm": 80,
     "answer_mass_at_L_surface_norm": 0.47833800315856934,
     "echo_mass_at_L_surface_norm": 0.004767796026648341,
@@ -995,6 +1063,53 @@
     "topk_prompt_tau_norm": 0.33,
     "surface_delta_norm": 0.05,
     "geom_gamma_norm": 0.02,
+    "cos_milestones": {
+      "norm": {
+        "ge_0.2": 80,
+        "ge_0.4": 80,
+        "ge_0.6": 80
+      }
+    },
+    "depth_fractions": {
+      "L_semantic_frac": 0.5,
+      "first_rank_le_5_frac": 0.475,
+      "L_copy_strict_frac": null,
+      "L_copy_soft_k1_frac": null,
+      "L_copy_soft_k2_frac": null,
+      "L_copy_soft_k3_frac": null
+    },
+    "raw_lens_window": {
+      "radius": 4,
+      "center_layers": [
+        38,
+        40,
+        80
+      ],
+      "layers_checked": [
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        76,
+        77,
+        78,
+        79,
+        80
+      ],
+      "norm_only_semantics_layers": [
+        79,
+        80
+      ],
+      "max_kl_norm_vs_raw_bits_window": 1.243740866839293,
+      "mode": "window"
+    },
     "gold_alignment": "ok",
     "last_layer_consistency": {
       "kl_to_final_bits": 0.0007293472672488833,
@@ -1194,6 +1309,9 @@
   },
   "copy_flag_columns": [
     "copy_strict@0.95",
+    "copy_strict@0.7",
+    "copy_strict@0.8",
+    "copy_strict@0.9",
     "copy_soft_k1@0.5",
     "copy_soft_k2@0.5",
     "copy_soft_k3@0.5"
@@ -1229,6 +1347,14 @@
     "status": "missing",
     "mode": "auto",
     "path": "/home/kkonstant/logos-in-layers/001_layers_baseline/tuned_lenses/Meta-Llama-3-70B"
+  },
+  "measurement_guidance": {
+    "prefer_ranks": true,
+    "suppress_abs_probs": true,
+    "reasons": [
+      "norm_only_semantics_window"
+    ],
+    "notes": "Family-level head calibration; treat probabilities comparatively only within model."
   },
   "gold_answer": {
     "string": "Berlin",

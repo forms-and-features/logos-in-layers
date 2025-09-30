@@ -1,0 +1,1737 @@
+{
+  "prompt": {
+    "type": "prompt",
+    "context_prompt": "Give the city name only, plain text. The capital of Germany is called simply",
+    "ground_truth": "Berlin"
+  },
+  "test_prompts": [
+    {
+      "type": "test_prompt",
+      "prompt": "Berlin is the capital of",
+      "entropy": 1.691442847251892,
+      "topk": [
+        [
+          " Germany",
+          0.6320270299911499
+        ],
+        [
+          " which",
+          0.2468198984861374
+        ],
+        [
+          " the",
+          0.07373682409524918
+        ],
+        [
+          " what",
+          0.009430233389139175
+        ],
+        [
+          " a",
+          0.004753409884870052
+        ],
+        [
+          " __",
+          0.0038259904831647873
+        ],
+        [
+          " and",
+          0.0028776386752724648
+        ],
+        [
+          " ______",
+          0.0024395061191171408
+        ],
+        [
+          "\n",
+          0.0015368658350780606
+        ],
+        [
+          " Deutschland",
+          0.0009789216564968228
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Germany's capital city is called simply",
+      "entropy": 0.9270147681236267,
+      "topk": [
+        [
+          " Berlin",
+          0.8728665709495544
+        ],
+        [
+          " \"",
+          0.07350438088178635
+        ],
+        [
+          " '",
+          0.01649453118443489
+        ],
+        [
+          " ______",
+          0.006377318408340216
+        ],
+        [
+          " __",
+          0.005198318976908922
+        ],
+        [
+          ",",
+          0.0033017797395586967
+        ],
+        [
+          " ____",
+          0.0011493135243654251
+        ],
+        [
+          "...",
+          0.0010182741098105907
+        ],
+        [
+          " (",
+          0.0009099042508751154
+        ],
+        [
+          " “",
+          0.000886132474988699
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "The capital city of Germany is named simply",
+      "entropy": 2.5500361919403076,
+      "topk": [
+        [
+          " Berlin",
+          0.5355169177055359
+        ],
+        [
+          " after",
+          0.14943015575408936
+        ],
+        [
+          " \"",
+          0.10223599523305893
+        ],
+        [
+          " '",
+          0.048967741429805756
+        ],
+        [
+          " for",
+          0.03675728663802147
+        ],
+        [
+          ",",
+          0.02810940518975258
+        ],
+        [
+          " “",
+          0.022933870553970337
+        ],
+        [
+          " as",
+          0.014334660023450851
+        ],
+        [
+          " and",
+          0.012236764654517174
+        ],
+        [
+          " ‘",
+          0.006657176651060581
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Germany has its capital at the city called simply",
+      "entropy": 1.3922045230865479,
+      "topk": [
+        [
+          " Berlin",
+          0.8059529066085815
+        ],
+        [
+          " \"",
+          0.08543378859758377
+        ],
+        [
+          " '",
+          0.04098215699195862
+        ],
+        [
+          " “",
+          0.01331531722098589
+        ],
+        [
+          ",",
+          0.005845631938427687
+        ],
+        [
+          " by",
+          0.00528512429445982
+        ],
+        [
+          " ______",
+          0.004913506098091602
+        ],
+        [
+          " __",
+          0.00297533324919641
+        ],
+        [
+          " ‘",
+          0.002810387872159481
+        ],
+        [
+          " the",
+          0.0024582447949796915
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "In Germany the capital city is simply",
+      "entropy": 1.2882121801376343,
+      "topk": [
+        [
+          " called",
+          0.7486239075660706
+        ],
+        [
+          " known",
+          0.18587544560432434
+        ],
+        [
+          " named",
+          0.023032160475850105
+        ],
+        [
+          " referred",
+          0.010812791995704174
+        ],
+        [
+          " Berlin",
+          0.009885539300739765
+        ],
+        [
+          " the",
+          0.0043045524507761
+        ],
+        [
+          " \"",
+          0.0014521401608362794
+        ],
+        [
+          " not",
+          0.0011229213560000062
+        ],
+        [
+          " '",
+          0.000981600722298026
+        ],
+        [
+          " a",
+          0.0009170533157885075
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Germany's capital city is called",
+      "entropy": 2.1421868801116943,
+      "topk": [
+        [
+          " Berlin",
+          0.7443445920944214
+        ],
+        [
+          " what",
+          0.04266142100095749
+        ],
+        [
+          " __",
+          0.03452363610267639
+        ],
+        [
+          " ______",
+          0.0334763303399086
+        ],
+        [
+          " \"",
+          0.012840813025832176
+        ],
+        [
+          "____",
+          0.008787937462329865
+        ],
+        [
+          "?\n",
+          0.008553588762879372
+        ],
+        [
+          " ____",
+          0.008482832461595535
+        ],
+        [
+          "...",
+          0.007425380405038595
+        ],
+        [
+          " ___",
+          0.005785550456494093
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "The capital city of Germany is named",
+      "entropy": 0.7707374095916748,
+      "topk": [
+        [
+          " after",
+          0.849937379360199
+        ],
+        [
+          " for",
+          0.12353049218654633
+        ],
+        [
+          " Berlin",
+          0.016607750207185745
+        ],
+        [
+          " in",
+          0.005619687959551811
+        ],
+        [
+          " what",
+          0.0007762112654745579
+        ],
+        [
+          ",",
+          0.0004214869986753911
+        ],
+        [
+          " the",
+          0.000277411425486207
+        ],
+        [
+          " \"",
+          0.0002552146033849567
+        ],
+        [
+          " '",
+          0.00020094055798836052
+        ],
+        [
+          " as",
+          0.00019527864060364664
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Germany has its capital at",
+      "entropy": 1.0869133472442627,
+      "topk": [
+        [
+          " Berlin",
+          0.892641007900238
+        ],
+        [
+          " Bon",
+          0.01784462295472622
+        ],
+        [
+          " which",
+          0.015811948105692863
+        ],
+        [
+          " ______",
+          0.010993962176144123
+        ],
+        [
+          " __",
+          0.006527967285364866
+        ],
+        [
+          " the",
+          0.00645768828690052
+        ],
+        [
+          " what",
+          0.004183919634670019
+        ],
+        [
+          " Ber",
+          0.0036213709972798824
+        ],
+        [
+          " ____",
+          0.0028291083872318268
+        ],
+        [
+          " ",
+          0.002220973838120699
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "In Germany the capital city is known as",
+      "entropy": 1.912658929824829,
+      "topk": [
+        [
+          " Berlin",
+          0.7338321208953857
+        ],
+        [
+          " the",
+          0.12681302428245544
+        ],
+        [
+          " a",
+          0.030918270349502563
+        ],
+        [
+          " what",
+          0.01017504371702671
+        ],
+        [
+          " '",
+          0.008321673609316349
+        ],
+        [
+          "?\n",
+          0.008222457021474838
+        ],
+        [
+          " \"",
+          0.006490563042461872
+        ],
+        [
+          " ______",
+          0.005560505669564009
+        ],
+        [
+          " which",
+          0.005452274344861507
+        ],
+        [
+          " __",
+          0.004582976456731558
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Give the country name only, plain text. Berlin is the capital of",
+      "entropy": 1.6052882671356201,
+      "topk": [
+        [
+          " which",
+          0.784382164478302
+        ],
+        [
+          " what",
+          0.051932353526353836
+        ],
+        [
+          " this",
+          0.03168940916657448
+        ],
+        [
+          " Germany",
+          0.028163272887468338
+        ],
+        [
+          "\n\n",
+          0.014633197337388992
+        ],
+        [
+          "\n",
+          0.014263825491070747
+        ],
+        [
+          " __",
+          0.011622359976172447
+        ],
+        [
+          " the",
+          0.009964024648070335
+        ],
+        [
+          "?\n",
+          0.006807989440858364
+        ],
+        [
+          "?\n\n",
+          0.006166987121105194
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Give the city name only, plain text. Germany's capital city is called",
+      "entropy": 3.384409189224243,
+      "topk": [
+        [
+          " what",
+          0.532910943031311
+        ],
+        [
+          " Berlin",
+          0.04522900655865669
+        ],
+        [
+          "\n\n",
+          0.03729502484202385
+        ],
+        [
+          ":\n\n",
+          0.03611484169960022
+        ],
+        [
+          "\n",
+          0.03392281010746956
+        ],
+        [
+          "?\n",
+          0.030449358746409416
+        ],
+        [
+          "?\n\n",
+          0.02917170152068138
+        ],
+        [
+          " ______",
+          0.027916649356484413
+        ],
+        [
+          " __",
+          0.02545182593166828
+        ],
+        [
+          "...",
+          0.019856905564665794
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Give the city name only, plain text. The capital city of Germany is named simply",
+      "entropy": 2.237928628921509,
+      "topk": [
+        [
+          " after",
+          0.665951132774353
+        ],
+        [
+          " and",
+          0.06176071986556053
+        ],
+        [
+          ",",
+          0.05487603694200516
+        ],
+        [
+          " as",
+          0.03966604918241501
+        ],
+        [
+          " for",
+          0.03486097976565361
+        ],
+        [
+          " \"",
+          0.027698654681444168
+        ],
+        [
+          " in",
+          0.020533738657832146
+        ],
+        [
+          " Berlin",
+          0.018997922539711
+        ],
+        [
+          " with",
+          0.013713868334889412
+        ],
+        [
+          " the",
+          0.007603289559483528
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Give the city name only, plain text. Germany has its capital at",
+      "entropy": 3.189545154571533,
+      "topk": [
+        [
+          " this",
+          0.4561710059642792
+        ],
+        [
+          " which",
+          0.12468571215867996
+        ],
+        [
+          " what",
+          0.08472181856632233
+        ],
+        [
+          " the",
+          0.07050637155771255
+        ],
+        [
+          " Berlin",
+          0.06057636812329292
+        ],
+        [
+          " ______",
+          0.030152486637234688
+        ],
+        [
+          "\n\n",
+          0.02157413773238659
+        ],
+        [
+          " __",
+          0.018141724169254303
+        ],
+        [
+          "\n",
+          0.01783720962703228
+        ],
+        [
+          ":\n\n",
+          0.012321468442678452
+        ]
+      ]
+    },
+    {
+      "type": "test_prompt",
+      "prompt": "Give the city name only, plain text. In Germany, the capital city is known as",
+      "entropy": 4.102467060089111,
+      "topk": [
+        [
+          " what",
+          0.2608388066291809
+        ],
+        [
+          " the",
+          0.18973006308078766
+        ],
+        [
+          " Berlin",
+          0.09742094576358795
+        ],
+        [
+          " which",
+          0.05052531883120537
+        ],
+        [
+          " __",
+          0.04104398190975189
+        ],
+        [
+          "?\n",
+          0.03636385500431061
+        ],
+        [
+          "?\n\n",
+          0.035440679639577866
+        ],
+        [
+          " ______",
+          0.032957252115011215
+        ],
+        [
+          "\n\n",
+          0.029110953211784363
+        ],
+        [
+          " a",
+          0.02895551174879074
+        ]
+      ]
+    }
+  ],
+  "temperature_exploration": [
+    {
+      "type": "temperature_exploration",
+      "temperature": 0.1,
+      "entropy": 0.17295145988464355,
+      "topk": [
+        [
+          " Berlin",
+          0.9741852879524231
+        ],
+        [
+          " \"",
+          0.025814607739448547
+        ],
+        [
+          " by",
+          1.4250325364173477e-07
+        ],
+        [
+          " '",
+          4.0475541140949645e-08
+        ],
+        [
+          " what",
+          1.0620274659700613e-09
+        ],
+        [
+          " that",
+          2.7159015054262214e-12
+        ],
+        [
+          " ______",
+          2.897298557753142e-13
+        ],
+        [
+          ",",
+          1.324053307315623e-13
+        ],
+        [
+          " Ber",
+          4.67127150762664e-15
+        ],
+        [
+          " this",
+          2.6578358637623046e-15
+        ],
+        [
+          " the",
+          9.722584040554945e-16
+        ],
+        [
+          " __",
+          1.853635122719388e-16
+        ],
+        [
+          " as",
+          1.0538513276241577e-16
+        ],
+        [
+          " “",
+          5.674268419700638e-17
+        ],
+        [
+          " (",
+          2.002307801459341e-17
+        ]
+      ]
+    },
+    {
+      "type": "temperature_exploration",
+      "temperature": 2.0,
+      "entropy": 13.160889625549316,
+      "topk": [
+        [
+          " Berlin",
+          0.03631143271923065
+        ],
+        [
+          " \"",
+          0.030283400788903236
+        ],
+        [
+          " by",
+          0.01653113402426243
+        ],
+        [
+          " '",
+          0.015522826462984085
+        ],
+        [
+          " what",
+          0.0129395117983222
+        ],
+        [
+          " that",
+          0.00960079301148653
+        ],
+        [
+          " ______",
+          0.008584422059357166
+        ],
+        [
+          ",",
+          0.008254801854491234
+        ],
+        [
+          " Ber",
+          0.006983659230172634
+        ],
+        [
+          " this",
+          0.006789499428123236
+        ],
+        [
+          " the",
+          0.006456546951085329
+        ],
+        [
+          " __",
+          0.005943091586232185
+        ],
+        [
+          " as",
+          0.005777635611593723
+        ],
+        [
+          " “",
+          0.00560153229162097
+        ],
+        [
+          " (",
+          0.005317260045558214
+        ]
+      ]
+    }
+  ],
+  "diagnostics": {
+    "type": "diagnostics",
+    "model": "Qwen/Qwen3-14B",
+    "device": "cpu",
+    "use_norm_lens": true,
+    "use_fp32_unembed": false,
+    "unembed_dtype": "torch.float32",
+    "first_block_ln1_type": "RMSNorm",
+    "final_ln_type": "RMSNorm",
+    "layernorm_bias_fix": "not_needed_rms_model",
+    "norm_alignment_fix": "using_ln2_rmsnorm_for_post_block",
+    "layer0_norm_fix": "using_real_ln1_on_embeddings",
+    "mixed_precision_fix": "casting_to_fp32_before_unembed",
+    "layer0_position_info": "token_only_rotary_model",
+    "context_prompt": "Give the city name only, plain text. The capital of Germany is called simply",
+    "target_prediction": "first unseen token (likely 'Berlin')",
+    "surface_diagnostics_config": {
+      "delta": 0.05,
+      "gamma": 0.02,
+      "K": 50,
+      "tau": 0.33
+    },
+    "prism_summary": {
+      "mode": "auto",
+      "artifact_path": "/home/kkonstant/logos-in-layers/001_layers_baseline/prisms/Qwen3-14B",
+      "present": true,
+      "compatible": true,
+      "k": 512,
+      "layers": [
+        "embed",
+        9,
+        19,
+        29
+      ],
+      "error": null
+    },
+    "copy_soft_config": {
+      "threshold": 0.5,
+      "window_ks": [
+        1,
+        2,
+        3
+      ],
+      "extra_thresholds": []
+    },
+    "tau_norm_per_layer": [
+      5.0,
+      0.19999998807907104,
+      0.19999998807907104,
+      0.19999998807907104,
+      0.19999998807907104,
+      0.19999998807907104,
+      0.19999998807907104,
+      0.29906976222991943,
+      0.26153209805488586,
+      0.26153209805488586,
+      0.4472135901451111,
+      0.39108169078826904,
+      0.39108169078826904,
+      0.5848035216331482,
+      0.5848035216331482,
+      0.4472135901451111,
+      0.5114020705223083,
+      0.5848035216331482,
+      0.5114020705223083,
+      0.6687402725219727,
+      0.6687402725219727,
+      0.7647244930267334,
+      0.6687402725219727,
+      0.7647244930267334,
+      0.7647244930267334,
+      0.7647244930267334,
+      0.6687402725219727,
+      0.8744852542877197,
+      1.0,
+      1.1435298919677734,
+      1.4953488111495972,
+      1.4953488111495972,
+      1.7099759578704834,
+      1.9554085731506348,
+      2.5570104122161865,
+      2.5570104122161865,
+      2.924017906188965,
+      3.3437016010284424,
+      3.3437016010284424,
+      2.2360680103302,
+      1.0
+    ],
+    "L_copy": null,
+    "L_copy_H": 32,
+    "L_semantic": 36,
+    "delta_layers": null,
+    "copy_thresh": 0.95,
+    "copy_window_k": 1,
+    "copy_match_level": "id_subsequence",
+    "first_kl_below_0.5": 40,
+    "first_kl_below_1.0": 40,
+    "first_rank_le_1": 36,
+    "first_rank_le_5": 33,
+    "first_rank_le_10": 32,
+    "copy_soft_threshold": 0.5,
+    "copy_soft_window_ks": [
+      1,
+      2,
+      3
+    ],
+    "L_copy_soft": {
+      "1": null,
+      "2": null,
+      "3": null
+    },
+    "delta_layers_soft": {
+      "1": null,
+      "2": null,
+      "3": null
+    },
+    "copy_detector": {
+      "strict": {
+        "thresh": 0.95,
+        "k": 1,
+        "L_copy_strict": null
+      },
+      "soft": {
+        "thresh": 0.5,
+        "window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "k1": null,
+          "k2": null,
+          "k3": null
+        }
+      },
+      "deltas": {
+        "Δ_sem_minus_copy_strict": null,
+        "Δ_sem_minus_copy_soft": {
+          "k1": null,
+          "k2": null,
+          "k3": null
+        }
+      }
+    },
+    "L_surface_to_meaning_norm": 36,
+    "answer_mass_at_L_surface_norm": 0.9530214071273804,
+    "echo_mass_at_L_surface_norm": 4.386097418721744e-06,
+    "L_geom_norm": 35,
+    "cos_to_answer_at_L_geom_norm": 0.08108007907867432,
+    "cos_to_prompt_max_at_L_geom_norm": 0.059486325830221176,
+    "L_topk_decay_norm": 0,
+    "topk_prompt_mass_at_L_norm": 0.0,
+    "topk_prompt_tau_norm": 0.33,
+    "surface_delta_norm": 0.05,
+    "geom_gamma_norm": 0.02,
+    "gold_alignment": "ok",
+    "last_layer_consistency": {
+      "kl_to_final_bits": 0.0,
+      "top1_agree": true,
+      "p_top1_lens": 0.34514033794403076,
+      "p_top1_model": 0.34514033794403076,
+      "p_answer_lens": 0.34514033794403076,
+      "answer_rank_lens": 1,
+      "temp_est": 1.0,
+      "kl_after_temp_bits": 0.0,
+      "cfg_transform": {
+        "scale": null,
+        "softcap": null
+      },
+      "kl_after_transform_bits": {
+        "scale": null,
+        "softcap": null,
+        "scale_then_softcap": null
+      },
+      "warn_high_last_layer_kl": false
+    },
+    "kl_to_final_bits_norm_temp@25%": {
+      "layer": 10,
+      "value": 12.985797708413608
+    },
+    "kl_to_final_bits_norm_temp@50%": {
+      "layer": 20,
+      "value": 13.20363230985765
+    },
+    "kl_to_final_bits_norm_temp@75%": {
+      "layer": 30,
+      "value": 12.489122819611472
+    },
+    "tuned_lens": {
+      "status": "loaded",
+      "mode": "auto",
+      "path": "/home/kkonstant/logos-in-layers/001_layers_baseline/tuned_lenses/Qwen3-14B",
+      "summaries": [
+        {
+          "L_copy": null,
+          "L_copy_H": 33,
+          "L_semantic": 39,
+          "delta_layers": null,
+          "copy_thresh": 0.95,
+          "copy_window_k": 1,
+          "copy_match_level": "id_subsequence",
+          "first_kl_below_0.5": 40,
+          "first_kl_below_1.0": 40,
+          "first_rank_le_1": 39,
+          "first_rank_le_5": 34,
+          "first_rank_le_10": 33,
+          "copy_soft_threshold": 0.5,
+          "copy_soft_window_ks": [
+            1,
+            2,
+            3
+          ],
+          "L_copy_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "delta_layers_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "copy_detector": {
+            "strict": {
+              "thresh": 0.95,
+              "k": 1,
+              "L_copy_strict": null
+            },
+            "soft": {
+              "thresh": 0.5,
+              "window_ks": [
+                1,
+                2,
+                3
+              ],
+              "L_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            },
+            "deltas": {
+              "Δ_sem_minus_copy_strict": null,
+              "Δ_sem_minus_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            }
+          },
+          "L_surface_to_meaning_tuned": 36,
+          "answer_mass_at_L_surface_tuned": 0.36322012543678284,
+          "echo_mass_at_L_surface_tuned": 9.966245959353026e-05,
+          "L_geom_tuned": 35,
+          "cos_to_answer_at_L_geom_tuned": 0.07764384150505066,
+          "cos_to_prompt_max_at_L_geom_tuned": 0.05551949888467789,
+          "L_topk_decay_tuned": 1,
+          "topk_prompt_mass_at_L_tuned": 0.0827049845829606,
+          "topk_prompt_tau_tuned": 0.33,
+          "surface_delta_tuned": 0.05,
+          "geom_gamma_tuned": 0.02
+        },
+        {
+          "L_copy": null,
+          "L_copy_H": 36,
+          "L_semantic": 34,
+          "delta_layers": null,
+          "copy_thresh": 0.95,
+          "copy_window_k": 1,
+          "copy_match_level": "id_subsequence",
+          "first_kl_below_0.5": 40,
+          "first_kl_below_1.0": 40,
+          "first_rank_le_1": 34,
+          "first_rank_le_5": 32,
+          "first_rank_le_10": 32,
+          "copy_soft_threshold": 0.5,
+          "copy_soft_window_ks": [
+            1,
+            2,
+            3
+          ],
+          "L_copy_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "delta_layers_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "copy_detector": {
+            "strict": {
+              "thresh": 0.95,
+              "k": 1,
+              "L_copy_strict": null
+            },
+            "soft": {
+              "thresh": 0.5,
+              "window_ks": [
+                1,
+                2,
+                3
+              ],
+              "L_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            },
+            "deltas": {
+              "Δ_sem_minus_copy_strict": null,
+              "Δ_sem_minus_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            }
+          },
+          "L_surface_to_meaning_tuned": 33,
+          "answer_mass_at_L_surface_tuned": 0.07039286196231842,
+          "echo_mass_at_L_surface_tuned": 0.0027804817878411825,
+          "L_geom_tuned": 34,
+          "cos_to_answer_at_L_geom_tuned": 0.11650995165109634,
+          "cos_to_prompt_max_at_L_geom_tuned": 0.0759894847869873,
+          "L_topk_decay_tuned": 1,
+          "topk_prompt_mass_at_L_tuned": 0.08265483565628529,
+          "topk_prompt_tau_tuned": 0.33,
+          "surface_delta_tuned": 0.05,
+          "geom_gamma_tuned": 0.02
+        },
+        {
+          "L_copy": null,
+          "L_copy_H": 34,
+          "L_semantic": 36,
+          "delta_layers": null,
+          "copy_thresh": 0.95,
+          "copy_window_k": 1,
+          "copy_match_level": "id_subsequence",
+          "first_kl_below_0.5": 40,
+          "first_kl_below_1.0": 40,
+          "first_rank_le_1": 36,
+          "first_rank_le_5": 32,
+          "first_rank_le_10": 32,
+          "copy_soft_threshold": 0.5,
+          "copy_soft_window_ks": [
+            1,
+            2,
+            3
+          ],
+          "L_copy_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "delta_layers_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "copy_detector": {
+            "strict": {
+              "thresh": 0.95,
+              "k": 1,
+              "L_copy_strict": null
+            },
+            "soft": {
+              "thresh": 0.5,
+              "window_ks": [
+                1,
+                2,
+                3
+              ],
+              "L_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            },
+            "deltas": {
+              "Δ_sem_minus_copy_strict": null,
+              "Δ_sem_minus_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            }
+          },
+          "L_surface_to_meaning_tuned": 33,
+          "answer_mass_at_L_surface_tuned": 0.11417649686336517,
+          "echo_mass_at_L_surface_tuned": 0.001399675749329532,
+          "L_geom_tuned": 33,
+          "cos_to_answer_at_L_geom_tuned": 0.10081657767295837,
+          "cos_to_prompt_max_at_L_geom_tuned": 0.0797414779663086,
+          "L_topk_decay_tuned": 1,
+          "topk_prompt_mass_at_L_tuned": 0.082887745462358,
+          "topk_prompt_tau_tuned": 0.33,
+          "surface_delta_tuned": 0.05,
+          "geom_gamma_tuned": 0.02
+        }
+      ]
+    },
+    "L_surface_to_meaning_tuned": 36,
+    "answer_mass_at_L_surface_tuned": 0.36322012543678284,
+    "echo_mass_at_L_surface_tuned": 9.966245959353026e-05,
+    "L_geom_tuned": 35,
+    "cos_to_answer_at_L_geom_tuned": 0.07764384150505066,
+    "cos_to_prompt_max_at_L_geom_tuned": 0.05551949888467789,
+    "L_topk_decay_tuned": 1,
+    "topk_prompt_mass_at_L_tuned": 0.0827049845829606,
+    "topk_prompt_tau_tuned": 0.33,
+    "surface_delta_tuned": 0.05,
+    "geom_gamma_tuned": 0.02,
+    "skip_layers_sanity": {
+      "m=2": -0.5640287085784107,
+      "m=4": 8.610283421561894,
+      "m=8": 7.883492955053033
+    },
+    "tuned_lens_regression": false
+  },
+  "final_prediction": {
+    "type": "final_prediction",
+    "entropy": 3.5835201740264893,
+    "topk": [
+      [
+        " Berlin",
+        0.34514033794403076
+      ],
+      [
+        " \"",
+        0.24005916714668274
+      ],
+      [
+        " by",
+        0.07153427600860596
+      ],
+      [
+        " '",
+        0.0630740225315094
+      ],
+      [
+        " what",
+        0.04382731020450592
+      ],
+      [
+        " that",
+        0.024128099903464317
+      ],
+      [
+        " ______",
+        0.019289948046207428
+      ],
+      [
+        ",",
+        0.01783701963722706
+      ],
+      [
+        " Ber",
+        0.012766594998538494
+      ],
+      [
+        " this",
+        0.012066587805747986
+      ],
+      [
+        " the",
+        0.010912132449448109
+      ],
+      [
+        " __",
+        0.009245573543012142
+      ],
+      [
+        " as",
+        0.008737944066524506
+      ],
+      [
+        " “",
+        0.008213394321501255
+      ],
+      [
+        " (",
+        0.007400903385132551
+      ],
+      [
+        " ___",
+        0.00623024208471179
+      ],
+      [
+        ":",
+        0.006021702196449041
+      ],
+      [
+        "...",
+        0.0055129812099039555
+      ],
+      [
+        " ____",
+        0.004970110487192869
+      ],
+      [
+        " and",
+        0.004587364848703146
+      ]
+    ]
+  },
+  "model_stats": {
+    "type": "model_stats",
+    "num_layers": 40,
+    "d_model": 5120,
+    "n_heads": 40,
+    "d_vocab": 151936,
+    "n_ctx": 2048,
+    "architecture": "pre_norm"
+  },
+  "raw_lens_check": {
+    "mode": "sample",
+    "samples": [
+      {
+        "layer": 0,
+        "kl_norm_vs_raw_bits": 0.0002480824545924892,
+        "top1_agree": true,
+        "p_top1_norm": 7.23783432476921e-06,
+        "p_top1_raw": 7.949301107146312e-06,
+        "p_answer_norm": 6.534005478897598e-06,
+        "p_answer_raw": 6.533718078571837e-06,
+        "answer_rank_norm": 100736,
+        "answer_rank_raw": 88475,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 11,
+        "kl_norm_vs_raw_bits": 1.5585735113873067,
+        "top1_agree": false,
+        "p_top1_norm": 3.352798375999555e-05,
+        "p_top1_raw": 0.088422991335392,
+        "p_answer_norm": 5.900156793359201e-06,
+        "p_answer_raw": 1.076281023415504e-06,
+        "answer_rank_norm": 88191,
+        "answer_rank_raw": 90758,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 21,
+        "kl_norm_vs_raw_bits": 4.470305487867287,
+        "top1_agree": false,
+        "p_top1_norm": 0.0001808197848731652,
+        "p_top1_raw": 0.3556567132472992,
+        "p_answer_norm": 5.636031801259378e-06,
+        "p_answer_raw": 1.336916426453172e-07,
+        "answer_rank_norm": 77215,
+        "answer_rank_raw": 70136,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 31,
+        "kl_norm_vs_raw_bits": 17.673506809201875,
+        "top1_agree": false,
+        "p_top1_norm": 0.5196493268013,
+        "p_top1_raw": 0.6817842721939087,
+        "p_answer_norm": 2.6226622139802203e-05,
+        "p_answer_raw": 2.8321214731036326e-12,
+        "answer_rank_norm": 1054,
+        "answer_rank_raw": 114,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      }
+    ],
+    "summary": {
+      "first_norm_only_semantic_layer": null,
+      "max_kl_norm_vs_raw_bits": 17.673506809201875,
+      "lens_artifact_risk": "high"
+    }
+  },
+  "copy_flag_columns": [
+    "copy_strict@0.95",
+    "copy_soft_k1@0.5",
+    "copy_soft_k2@0.5",
+    "copy_soft_k3@0.5"
+  ],
+  "ablation_summary": {
+    "L_copy_orig": null,
+    "L_sem_orig": 36,
+    "L_copy_nf": null,
+    "L_sem_nf": 36,
+    "delta_L_copy": null,
+    "delta_L_sem": 0
+  },
+  "control_prompt": {
+    "context_prompt": "Give the city name only, plain text. The capital of France is called simply",
+    "gold_answer": {
+      "string": "Paris",
+      "pieces": [
+        "ĠParis"
+      ],
+      "first_id": 12095,
+      "answer_ids": [
+        12095
+      ],
+      "variant": "with_space"
+    },
+    "gold_alignment": "ok"
+  },
+  "control_summary": {
+    "first_control_margin_pos": 0,
+    "max_control_margin": 0.9741542933185612
+  },
+  "tuned_lens": {
+    "status": "loaded",
+    "path": "/home/kkonstant/logos-in-layers/001_layers_baseline/tuned_lenses/Qwen3-14B",
+    "summaries": [
+      {
+        "L_copy": null,
+        "L_copy_H": 33,
+        "L_semantic": 39,
+        "delta_layers": null,
+        "copy_thresh": 0.95,
+        "copy_window_k": 1,
+        "copy_match_level": "id_subsequence",
+        "first_kl_below_0.5": 40,
+        "first_kl_below_1.0": 40,
+        "first_rank_le_1": 39,
+        "first_rank_le_5": 34,
+        "first_rank_le_10": 33,
+        "copy_soft_threshold": 0.5,
+        "copy_soft_window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "delta_layers_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "copy_detector": {
+          "strict": {
+            "thresh": 0.95,
+            "k": 1,
+            "L_copy_strict": null
+          },
+          "soft": {
+            "thresh": 0.5,
+            "window_ks": [
+              1,
+              2,
+              3
+            ],
+            "L_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          },
+          "deltas": {
+            "Δ_sem_minus_copy_strict": null,
+            "Δ_sem_minus_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          }
+        },
+        "L_surface_to_meaning_tuned": 36,
+        "answer_mass_at_L_surface_tuned": 0.36322012543678284,
+        "echo_mass_at_L_surface_tuned": 9.966245959353026e-05,
+        "L_geom_tuned": 35,
+        "cos_to_answer_at_L_geom_tuned": 0.07764384150505066,
+        "cos_to_prompt_max_at_L_geom_tuned": 0.05551949888467789,
+        "L_topk_decay_tuned": 1,
+        "topk_prompt_mass_at_L_tuned": 0.0827049845829606,
+        "topk_prompt_tau_tuned": 0.33,
+        "surface_delta_tuned": 0.05,
+        "geom_gamma_tuned": 0.02
+      },
+      {
+        "L_copy": null,
+        "L_copy_H": 36,
+        "L_semantic": 34,
+        "delta_layers": null,
+        "copy_thresh": 0.95,
+        "copy_window_k": 1,
+        "copy_match_level": "id_subsequence",
+        "first_kl_below_0.5": 40,
+        "first_kl_below_1.0": 40,
+        "first_rank_le_1": 34,
+        "first_rank_le_5": 32,
+        "first_rank_le_10": 32,
+        "copy_soft_threshold": 0.5,
+        "copy_soft_window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "delta_layers_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "copy_detector": {
+          "strict": {
+            "thresh": 0.95,
+            "k": 1,
+            "L_copy_strict": null
+          },
+          "soft": {
+            "thresh": 0.5,
+            "window_ks": [
+              1,
+              2,
+              3
+            ],
+            "L_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          },
+          "deltas": {
+            "Δ_sem_minus_copy_strict": null,
+            "Δ_sem_minus_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          }
+        },
+        "L_surface_to_meaning_tuned": 33,
+        "answer_mass_at_L_surface_tuned": 0.07039286196231842,
+        "echo_mass_at_L_surface_tuned": 0.0027804817878411825,
+        "L_geom_tuned": 34,
+        "cos_to_answer_at_L_geom_tuned": 0.11650995165109634,
+        "cos_to_prompt_max_at_L_geom_tuned": 0.0759894847869873,
+        "L_topk_decay_tuned": 1,
+        "topk_prompt_mass_at_L_tuned": 0.08265483565628529,
+        "topk_prompt_tau_tuned": 0.33,
+        "surface_delta_tuned": 0.05,
+        "geom_gamma_tuned": 0.02
+      },
+      {
+        "L_copy": null,
+        "L_copy_H": 34,
+        "L_semantic": 36,
+        "delta_layers": null,
+        "copy_thresh": 0.95,
+        "copy_window_k": 1,
+        "copy_match_level": "id_subsequence",
+        "first_kl_below_0.5": 40,
+        "first_kl_below_1.0": 40,
+        "first_rank_le_1": 36,
+        "first_rank_le_5": 32,
+        "first_rank_le_10": 32,
+        "copy_soft_threshold": 0.5,
+        "copy_soft_window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "delta_layers_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "copy_detector": {
+          "strict": {
+            "thresh": 0.95,
+            "k": 1,
+            "L_copy_strict": null
+          },
+          "soft": {
+            "thresh": 0.5,
+            "window_ks": [
+              1,
+              2,
+              3
+            ],
+            "L_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          },
+          "deltas": {
+            "Δ_sem_minus_copy_strict": null,
+            "Δ_sem_minus_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          }
+        },
+        "L_surface_to_meaning_tuned": 33,
+        "answer_mass_at_L_surface_tuned": 0.11417649686336517,
+        "echo_mass_at_L_surface_tuned": 0.001399675749329532,
+        "L_geom_tuned": 33,
+        "cos_to_answer_at_L_geom_tuned": 0.10081657767295837,
+        "cos_to_prompt_max_at_L_geom_tuned": 0.0797414779663086,
+        "L_topk_decay_tuned": 1,
+        "topk_prompt_mass_at_L_tuned": 0.082887745462358,
+        "topk_prompt_tau_tuned": 0.33,
+        "surface_delta_tuned": 0.05,
+        "geom_gamma_tuned": 0.02
+      }
+    ],
+    "provenance": {
+      "model_id": "Qwen/Qwen3-14B",
+      "clean_model_name": "Qwen3-14B",
+      "tl_version": "20250927T2212Z",
+      "model_commit": null,
+      "tokenizer_commit": null,
+      "translator": {
+        "num_layers": 40,
+        "d_model": 5120,
+        "rank": 256,
+        "final_identity": true,
+        "has_preconditioner": false,
+        "use_temperature": true,
+        "temperature_eps": 0.001,
+        "temperatures": [
+          0.6168480515480042,
+          0.6159378886222839,
+          0.6117470264434814,
+          0.610744297504425,
+          0.6178930401802063,
+          0.6088230609893799,
+          0.6088463664054871,
+          0.5972126126289368,
+          0.5999535322189331,
+          0.5995380878448486,
+          0.6092538237571716,
+          0.5997071266174316,
+          0.6071101427078247,
+          0.6109052300453186,
+          0.6160348653793335,
+          0.594760000705719,
+          0.5994611382484436,
+          0.6077650189399719,
+          0.6120664477348328,
+          0.6067652702331543,
+          0.603369951248169,
+          0.602470338344574,
+          0.6163109540939331,
+          0.6251868605613708,
+          0.6121619343757629,
+          0.6090013384819031,
+          0.640143871307373,
+          0.7005822658538818,
+          0.7712928652763367,
+          0.9508318901062012,
+          1.0337252616882324,
+          1.3375962972640991,
+          1.3902051448822021,
+          1.4190928936004639,
+          1.4145077466964722,
+          1.4458565711975098,
+          1.448549747467041,
+          1.442694067955017,
+          1.4416247606277466,
+          1.0
+        ]
+      },
+      "training": {
+        "seed": 316,
+        "total_steps": 1954,
+        "warmup_steps": 196,
+        "micro_batch": 32,
+        "grad_accum": 1,
+        "effective_batch": 32,
+        "tokens_per_step": 16384,
+        "layers_sampled_per_step": 11,
+        "use_temperature": true,
+        "temperature_eps": 0.001,
+        "dataset": {
+          "repo_id": "HuggingFaceFW/fineweb-edu",
+          "name": "CC-MAIN-2025-26",
+          "split": "train",
+          "revision": "v1.4.0",
+          "seq_len": 512,
+          "positions_per_seq": 12,
+          "position_fraction_range": [
+            0.6,
+            0.95
+          ],
+          "content_hash": "7a492e60f05fa05810e96fbd57bd12f86615d935d0a3e6f2d629d0a37af53c22",
+          "samples_streamed": 121071
+        },
+        "optimizer": {
+          "type": "AdamW",
+          "lr": 0.001,
+          "betas": [
+            0.9,
+            0.999
+          ],
+          "weight_decay": 0.0001
+        },
+        "regularization": {
+          "l2": 0.0001,
+          "smooth": 0.0001
+        },
+        "device": "cuda",
+        "dtype": "torch.float16",
+        "final_loss": 6.354084218740463
+      }
+    }
+  },
+  "gold_answer": {
+    "string": "Berlin",
+    "pieces": [
+      "ĠBerlin"
+    ],
+    "first_id": 19846,
+    "answer_ids": [
+      19846
+    ],
+    "variant": "with_space"
+  }
+}
