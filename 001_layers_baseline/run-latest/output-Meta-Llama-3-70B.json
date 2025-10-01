@@ -1110,6 +1110,18 @@
       "max_kl_norm_vs_raw_bits_window": 1.243740866839293,
       "mode": "window"
     },
+    "raw_lens_full": {
+      "pct_layers_kl_ge_1.0": 0.012345679012345678,
+      "pct_layers_kl_ge_0.5": 0.024691358024691357,
+      "n_norm_only_semantics_layers": 2,
+      "earliest_norm_only_semantic": 79,
+      "max_kl_norm_vs_raw_bits": 1.243740866839293,
+      "mode": "full",
+      "score": {
+        "lens_artifact_score": 0.3322822247441933,
+        "tier": "medium"
+      }
+    },
     "gold_alignment": "ok",
     "last_layer_consistency": {
       "kl_to_final_bits": 0.0007293472672488833,
@@ -1148,7 +1160,29 @@
       "mode": "auto",
       "path": "/home/kkonstant/logos-in-layers/001_layers_baseline/tuned_lenses/Meta-Llama-3-70B"
     },
-    "tuned_lens_regression": false
+    "tuned_lens_regression": false,
+    "confirmed_semantics": {
+      "L_semantic_norm": 40,
+      "L_semantic_raw": 40,
+      "L_semantic_tuned": null,
+      "Δ_window": 2,
+      "L_semantic_confirmed": 40,
+      "confirmed_source": "raw"
+    },
+    "L_semantic_confirmed": 40,
+    "config": {
+      "lens_artifact_score": {
+        "weights": {
+          "pct_ge_1.0": 0.6,
+          "norm_only": 0.3,
+          "max_kl_scaled": 0.1
+        },
+        "thresholds": {
+          "low": 0.2,
+          "high": 0.5
+        }
+      }
+    }
   },
   "final_prediction": {
     "type": "final_prediction",
@@ -1354,7 +1388,10 @@
     "reasons": [
       "norm_only_semantics_window"
     ],
-    "notes": "Family-level head calibration; treat probabilities comparatively only within model."
+    "notes": "Family-level head calibration; treat probabilities comparatively only within model.",
+    "preferred_lens_for_reporting": "norm",
+    "use_confirmed_semantics": true,
+    "notes_append": "Prism is diagnostic-only; treat probabilities comparatively within model."
   },
   "gold_answer": {
     "string": "Berlin",

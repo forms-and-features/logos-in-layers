@@ -1068,6 +1068,18 @@
       "max_kl_norm_vs_raw_bits_window": 99.53977194935224,
       "mode": "window"
     },
+    "raw_lens_full": {
+      "pct_layers_kl_ge_1.0": 0.9787234042553191,
+      "pct_layers_kl_ge_0.5": 0.9787234042553191,
+      "n_norm_only_semantics_layers": 1,
+      "earliest_norm_only_semantic": 46,
+      "max_kl_norm_vs_raw_bits": 99.53977194935224,
+      "mode": "full",
+      "score": {
+        "lens_artifact_score": 0.9872340425531915,
+        "tier": "high"
+      }
+    },
     "gold_alignment": "ok",
     "last_layer_consistency": {
       "kl_to_final_bits": 1.1352030458364017,
@@ -1434,7 +1446,29 @@
       "m=8": 475106470164.1723
     },
     "tuned_lens_skip_warning": 475106470164.1723,
-    "tuned_lens_regression": true
+    "tuned_lens_regression": true,
+    "confirmed_semantics": {
+      "L_semantic_norm": 46,
+      "L_semantic_raw": null,
+      "L_semantic_tuned": 46,
+      "Δ_window": 2,
+      "L_semantic_confirmed": 46,
+      "confirmed_source": "tuned"
+    },
+    "L_semantic_confirmed": 46,
+    "config": {
+      "lens_artifact_score": {
+        "weights": {
+          "pct_ge_1.0": 0.6,
+          "norm_only": 0.3,
+          "max_kl_scaled": 0.1
+        },
+        "thresholds": {
+          "low": 0.2,
+          "high": 0.5
+        }
+      }
+    }
   },
   "final_prediction": {
     "type": "final_prediction",
@@ -2091,6 +2125,26 @@
           "delta": null
         }
       }
+    },
+    "attribution": {
+      "percentiles": {
+        "p25": {
+          "ΔKL_tuned": 0.20847599351468915,
+          "ΔKL_temp": 0.7087143628427057,
+          "ΔKL_rot": -0.5002383693280166
+        },
+        "p50": {
+          "ΔKL_tuned": 0.6422822803286223,
+          "ΔKL_temp": 1.5495526773842485,
+          "ΔKL_rot": -0.9072703970556262
+        },
+        "p75": {
+          "ΔKL_tuned": 0.3926460229482416,
+          "ΔKL_temp": 1.000985807302584,
+          "ΔKL_rot": -0.6083397843543423
+        }
+      },
+      "prefer_tuned": false
     }
   },
   "measurement_guidance": {
@@ -2099,9 +2153,13 @@
     "reasons": [
       "warn_high_last_layer_kl",
       "norm_only_semantics_window",
-      "high_lens_artifact_risk"
+      "high_lens_artifact_risk",
+      "high_lens_artifact_score"
     ],
-    "notes": "Family-level head calibration; treat probabilities comparatively only within model."
+    "notes": "Family-level head calibration; treat probabilities comparatively only within model.",
+    "preferred_lens_for_reporting": "norm",
+    "use_confirmed_semantics": true,
+    "notes_append": "Prism is diagnostic-only; treat probabilities comparatively within model."
   },
   "gold_answer": {
     "string": "Berlin",
