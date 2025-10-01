@@ -70,6 +70,11 @@ https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-pure-next-token-tuned.csv
 … and similarly for other models. JSON files include a `tuned_lens` block (status/path/summaries/provenance), and diagnostics mirror tuned summaries (e.g., `L_surface_to_meaning_tuned`, `L_geom_tuned`, `L_topk_decay_tuned`). Note: `kl_to_final_bits_norm_temp` is norm‑only and may be blank in tuned CSVs.
 
+If present for a model, also include Full Raw‑vs‑Norm sidecar, they will appear as additional CSVs per moidel:
+0https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-pure-next-token-rawlens.csv
+...and similarly for other models, with per-layer raw vs norm for all layers; columns: layer, p_top1_raw, top1_token_id_raw, top1_token_str_raw, p_answer_raw, answer_rank_raw, p_top1_norm, top1_token_id_norm, top1_token_str_norm, p_answer_norm, answer_rank_norm, kl_norm_vs_raw_bits, norm_only_semantics.)
+
+
 - cross-model evaluation:
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-cross-models.md
 
