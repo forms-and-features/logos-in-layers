@@ -119,3 +119,17 @@ def test_orchestrator_smoke_writes_outputs():
         assert os.path.exists(pure)
         assert 'model_stats' in data and 'diagnostics' in data and 'final_prediction' in data
         assert 'ablation_summary' in data
+        assert 'provenance' in data and 'env' in data['provenance']
+        env_info = data['provenance']['env']
+        assert 'torch_version' in env_info
+        diag = data['diagnostics']
+        assert 'normalization_provenance' in diag
+        assert isinstance(diag['normalization_provenance'].get('per_layer'), list)
+        first_entry = diag['normalization_provenance']['per_layer'][0]
+        assert 'resid_norm_ratio' in first_entry and 'delta_resid_cos' in first_entry
+        assert 'numeric_health' in diag and 'any_nan' in diag['numeric_health']
+        assert 'unembed_bias' in diag
+        assert 'copy_mask' in diag and isinstance(diag['copy_mask'].get('ignored_token_ids'), list)
+        assert 'layer_map' in diag and isinstance(diag['layer_map'], list)
+        mg = data.get('measurement_guidance', {})
+        assert 'reasons' in mg and isinstance(mg['reasons'], list)

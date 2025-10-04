@@ -135,6 +135,20 @@ def test_prism_pure_next_token_helper_fields_match_manual_logic():
             and p_metrics.get("p_top1", 0.0) > COPY_SOFT_THRESHOLD
         )
 
+    answer_logit_gap = None
+    answer_vs_top1_gap = None
+    last_logits = logits_all[last_pos]
+    if first_ans_id is not None and 0 <= int(first_ans_id) < last_logits.shape[-1]:
+        ans_logit = float(last_logits[int(first_ans_id)].item())
+        top_vals, top_idx = torch.topk(last_logits, 2, largest=True, sorted=True)
+        top1_logit = float(top_vals[0].item())
+        top1_idx = int(top_idx[0].item())
+        if p_metrics.get("answer_rank") == 1 and top1_idx == int(first_ans_id):
+            if len(top_vals) > 1:
+                answer_logit_gap = ans_logit - float(top_vals[1].item())
+        elif p_metrics.get("answer_rank") and int(p_metrics.get("answer_rank")) > 1:
+            answer_vs_top1_gap = ans_logit - top1_logit
+
     manual = {
         "type": "pure_next_token_record",
         "prompt_id": "pos",
@@ -170,6 +184,10 @@ def test_prism_pure_next_token_helper_fields_match_manual_logic():
             -(final_probs * (final_probs + 1e-30).log()).sum().item() / math.log(2)
         ),
         "control_margin": None,
+        "resid_norm_ratio": None,
+        "delta_resid_cos": None,
+        "answer_logit_gap": answer_logit_gap,
+        "answer_vs_top1_gap": answer_vs_top1_gap,
     }
     for k_soft, label in COPY_SOFT_LABELS.items():
         manual[label] = soft_hits.get(k_soft, False)

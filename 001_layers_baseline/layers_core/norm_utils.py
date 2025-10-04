@@ -29,6 +29,11 @@ def detect_model_architecture(model):
     block = model.blocks[0]
     kids = list(block.children())
 
+    if kids and hasattr(block, "ln2"):
+        last_child = kids[-1]
+        if last_child is getattr(block, "ln2"):
+            return "post_norm"
+
     if hasattr(block, "ln2") and hasattr(block, "mlp"):
         try:
             ln2_idx = kids.index(block.ln2)
@@ -98,3 +103,38 @@ def apply_norm_or_skip(residual: torch.Tensor, norm_module):
             else:
                 out32 = normalized32
             return out32.to(dtype=in_dtype)
+
+
+def _norm_has_learned_scale(norm_mod):
+    if norm_mod is None:
+        return False
+    if isinstance(norm_mod, nn.LayerNorm):
+        return bool(norm_mod.weight is not None)
+    return _get_rms_scale(norm_mod) is not None
+
+
+def describe_norm_origin(model, layer_idx: int, probe_after_block: bool):
+    """Return (ln_source, eps_inside_sqrt, scale_gamma_used) for diagnostics."""
+    norm_module = get_correct_norm_module(model, layer_idx, probe_after_block=probe_after_block)
+    eps_inside = True  # apply_norm_or_skip always keeps eps inside sqrt
+
+    if norm_module is None:
+        return ("raw", eps_inside, False)
+
+    if layer_idx >= len(getattr(model, "blocks", [])):
+        ln_source = "ln_final"
+    else:
+        arch = detect_model_architecture(model)
+        if probe_after_block:
+            if arch == "post_norm":
+                ln_source = f"blocks[{layer_idx}].ln2"
+            else:
+                if layer_idx + 1 < len(model.blocks):
+                    ln_source = f"blocks[{layer_idx + 1}].ln1"
+                else:
+                    ln_source = "ln_final"
+        else:
+            ln_source = f"blocks[{layer_idx}].ln1"
+
+    scale_used = _norm_has_learned_scale(norm_module)
+    return (ln_source, eps_inside, scale_used)

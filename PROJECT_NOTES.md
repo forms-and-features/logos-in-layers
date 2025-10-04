@@ -490,6 +490,7 @@ Also record the **mass ratio** ( \text{AnsMass}^{(\ell)} / (\text{EchoMass}^{(\e
 * **CSV (per layer).** Add: `echo_mass_prompt`, `answer_mass`, `mass_ratio_ans_over_prompt` **for each lens** (prefix columns with `norm_`/`tuned_` or write to the respective sidecar).
 * **Run JSON (summary).** Add: `L_surface_to_meaning_norm`, `L_surface_to_meaning_tuned`, and the corresponding **confidence margins** at those depths: `answer_mass_at_L`, `echo_mass_at_L`.
 * **Numerics.** Use fp32 softmaxes already in the pipeline; ignore tokens in ( \mathcal{S} ) exactly as in the copy detector.
+* **Diagnostics.** The ignore mask (IDs + representative strings) is logged per model under `diagnostics.copy_mask`.
 
 ✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
@@ -949,7 +950,7 @@ Set `preferred_lens_for_reporting` from §1.26. Set `use_confirmed_semantics=tru
 
 ---
 
-### **1.29. Centralize KL helpers & de‑duplicate docs/tests**
+### [x] 1.29. Centralize KL helpers & de-duplicate docs/tests
 
 **Why.** Production paths already compute KL as **KL(P_layer ∥ P_final)** via a helper, but scattered examples and the optional sanity test still show `torch.kl_div(...)`. Keeping all KL math and examples behind one helper eliminates confusion and prevents silent orientation regressions.
 
@@ -962,9 +963,11 @@ Unify *all* KL computations and examples under `layers_core.numerics.kl_bits(p, 
 2. **Tests:** add `assert_close(kl_bits(p, q), (p*(p.log()-q.log())).sum()/ln2)` and `kl_bits(p, p)≈0`; confirm asymmetry `kl_bits(p,q)!=kl_bits(q,p)`.
 3. **Docs (§1.3):** swap the illustrative snippet to call `kl_bits(probs, final_probs)` and add: “All KL in this repo is **KL(P_layer ∥ P_final)** in **bits**, unless stated otherwise.”
 
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
 ---
 
-### **1.30. Normalizer provenance & per‑layer effect logging**
+### [x] 1.30. Normalizer provenance & per-layer effect logging
 
 **Why.** Even with architecture‑aware selection, auditability requires explicit provenance. When results are surprising, evaluators should see **which normalization module** was applied and how much it changed the residual.
 
@@ -991,9 +994,11 @@ Emit a `diagnostics.normalization_provenance` block and two per‑layer scalars 
    * `delta_resid_cos = cos(h_raw, h_norm)`
 3. **Validator:** warn on spikes (norm change > 3× or cosine < 0.8) before L_semantic.
 
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
 ---
 
-### **1.31. Unembedding‑bias audit & bias‑free cosine guarantee**
+### [x] 1.31. Unembedding-bias audit & bias-free cosine guarantee
 
 **Why.** Some families keep a non‑zero `lm_head.bias`. Cosines and direction metrics should be **bias‑free**; otherwise bias can spuriously boost agreement.
 
@@ -1011,9 +1016,11 @@ Audit the bias and guarantee that all geometric metrics use **bias‑free logits
 2. **Code:** ensure `cos_to_final`, `cos_to_answer`, `cos_to_prompt_max` use `(resid @ W_U)` (no `+ b`).
 3. **Unit test:** cosines invariant to adding a constant bias vector to logits.
 
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
 ---
 
-### **1.32. Determinism & environment capture**
+### [x] 1.32. Determinism & environment capture
 
 **Why.** Reproducibility across machines/runs is part of “measurement right.” Subtle changes in PyTorch/CUDA/mps or nondeterministic kernels can shift borderline thresholds.
 
@@ -1037,9 +1044,11 @@ Capture deterministic flags and environment in JSON.
 2. **Runtime:** set `torch.use_deterministic_algorithms(True)` where available; set `torch.backends.cudnn.benchmark = False`.
 3. **Flag:** add `diagnostics.flags.nondeterministic=true` when determinism cannot be guaranteed; propagate to `measurement_guidance.reasons`.
 
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
 ---
 
-### **1.33. Numeric‑health sentinels (NaN/Inf, overflow, underflow)**
+### [x] 1.33. Numeric-health sentinels (NaN/Inf, overflow, underflow)
 
 **Why.** Rare fp anomalies can silently corrupt a few layers and mislead collapse detection.
 
@@ -1057,9 +1066,11 @@ Continuous runtime checks with a compact summary.
 
 3. **Gate:** if flagged early layers overlap `L_copy*` or `L_semantic`, add a caution into `measurement_guidance.reasons`.
 
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
 ---
 
-### **1.34. Copy‑detector mask transparency & tests**
+### [x] 1.34. Copy-detector mask transparency & tests
 
 **Why.** The “ignore set” (whitespace, punctuation, markup) materially affects copy detection and surface‑mass. It must be explicit and tested across tokenizers.
 
@@ -1077,9 +1088,11 @@ Publish the mask per model and add tokenizer‑specific unit tests.
 2. **Tests:** for each tokenizer, assert expected coverage of whitespace/punctuation; regression‑test the mask size.
 3. **Docs:** add a pointer in §1.11/§1.13 that mask provenance is logged.
 
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
 ---
 
-### **1.35. Confidence margins for answer token**
+### [x] 1.35. Confidence margins for answer token
 
 **Why.** Ranks are robust; margins quantify confidence and make threshold crossings interpretable (e.g., rank‑1 with tiny margin vs decisive win).
 
@@ -1093,10 +1106,13 @@ Add two per‑layer scalars: *answer‑vs‑runner‑up* margin and *answer‑vs
    * `answer_logit_gap = logit(answer) − logit(second_best)` when `answer_rank==1`, else `null`.
    * `answer_vs_top1_gap = logit(answer) − logit(top1)` when `answer_rank>1`, else `null`.
 2. **JSON (summary):** first layer where `answer_logit_gap ≥ {0.5, 1.0}` (nats or bits; specify unit).
+3. **Diagnostics:** include an explicit `answer_margin_unit = "logit"` entry alongside the summary to remove ambiguity about the units.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 
-### **1.36. Layer‑index provenance map**
+### [x] 1.36. Layer-index provenance map
 
 **Why.** Off‑by‑one errors in indexing (post‑block vs pre‑block) are a classic source of confusion.
 
@@ -1115,6 +1131,8 @@ Emit a compact map from `layer` indices to **model block names** and decoded str
 ```
 
 2. **Evaluator hint:** set `measurement_guidance.reasons += ["layer_map_missing"]` if absent.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

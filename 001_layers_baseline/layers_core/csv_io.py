@@ -87,6 +87,12 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
             "topk_prompt_mass@50",
             # Negative control margin (PROJECT_NOTES §1.8)
             "control_margin",
+            # Normalization diagnostics (PROJECT_NOTES §1.30)
+            "resid_norm_ratio",
+            "delta_resid_cos",
+            # Answer-confidence margins (PROJECT_NOTES §1.35)
+            "answer_logit_gap",
+            "answer_vs_top1_gap",
         ])
         writer.writerow(header)
 
@@ -131,6 +137,10 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
                 _nz(rec.get("mass_ratio_ans_over_prompt")),
                 _nz(rec.get("topk_prompt_mass@50")),
                 _nz(rec.get("control_margin")),
+                _nz(rec.get("resid_norm_ratio")),
+                _nz(rec.get("delta_resid_cos")),
+                _nz(rec.get("answer_logit_gap")),
+                _nz(rec.get("answer_vs_top1_gap")),
             ])
             writer.writerow(row)
 

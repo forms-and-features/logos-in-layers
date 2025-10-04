@@ -57,6 +57,9 @@ def compute_pure_next_token_info(
     # When None, defaults to (0.70, 0.80, 0.90, 0.95) and will emit flags
     # labeled via format_copy_strict_label(). Pass an empty iterable to disable.
     copy_strict_thresholds: Optional[Iterable[float]] = None,
+    bias_tensor: Optional[torch.Tensor] = None,
+    raw_resid_vec: Optional[torch.Tensor] = None,
+    norm_resid_vec: Optional[torch.Tensor] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
     """Compute pure next-token metrics and summary structures.
 
@@ -67,6 +70,25 @@ def compute_pure_next_token_info(
     """
     last_pos = tokens_tensor.shape[1] - 1
     last_logits = logits_all[last_pos]
+    bias_free_logits = None
+    if geom_vec is not None and decoder_weight is not None:
+        try:
+            bias_free_logits = torch.matmul(
+                geom_vec.detach().to(dtype=torch.float32),
+                decoder_weight.detach().to(dtype=torch.float32),
+            )
+        except Exception:
+            bias_free_logits = None
+    if bias_free_logits is None:
+        bias_free_logits = last_logits
+        if bias_tensor is not None:
+            try:
+                bias_free_logits = bias_free_logits - bias_tensor.to(
+                    device=last_logits.device,
+                    dtype=last_logits.dtype,
+                )
+            except Exception:
+                pass
     last_entropy_bits = bits_entropy_from_logits(last_logits)
     last_full_probs = torch.softmax(last_logits, dim=0)
     token_str = "⟨NEXT⟩"
@@ -105,8 +127,14 @@ def compute_pure_next_token_info(
     )
 
     # Cosine to final direction
-    _curr_norm = torch.norm(last_logits) + 1e-12
-    cos_to_final = torch.dot((last_logits / _curr_norm), final_dir_vec).item()
+    cos_to_final = None
+    try:
+        logits_vec = bias_free_logits.to(dtype=torch.float32)
+        denom = torch.norm(logits_vec) + 1e-12
+        if torch.isfinite(denom) and denom > 0:
+            cos_to_final = torch.dot(logits_vec / denom, final_dir_vec.to(dtype=torch.float32)).item()
+    except Exception:
+        cos_to_final = None
 
     # Control margin
     control_margin = None
@@ -165,7 +193,7 @@ def compute_pure_next_token_info(
     if k1_ok and len(window_k1) >= 1:
         in_ctx = is_id_subseq(window_k1, list(ctx_ids_list))
         for tau in strict_tau_list:
-            label = f"copy_strict@{format(copy_threshold if False else tau, '.2f').rstrip('0').rstrip('.')}"
+            label = f"copy_strict@{format(tau, '.2f').rstrip('0').rstrip('.')}"
             hit = False
             try:
                 hit = (
@@ -181,6 +209,19 @@ def compute_pure_next_token_info(
         for tau in strict_tau_list:
             label = f"copy_strict@{format(tau, '.2f').rstrip('0').rstrip('.')}"
             strict_hits[label] = False
+
+    answer_logit_gap = None
+    answer_vs_top1_gap = None
+    if first_ans_token_id is not None and 0 <= int(first_ans_token_id) < last_logits.shape[-1]:
+        ans_id = int(first_ans_token_id)
+        ans_logit = float(last_logits[ans_id].item())
+        top1_current = int(_idx2[0].item())
+        answer_rank = metrics.get("answer_rank")
+        if answer_rank == 1 and top1_current == ans_id:
+            if len(_vals2) > 1:
+                answer_logit_gap = ans_logit - float(_vals2[1].item())
+        elif answer_rank is not None and answer_rank > 1:
+            answer_vs_top1_gap = ans_logit - float(_vals2[0].item())
 
     # Teacher entropy (final distribution at the NEXT position), in bits
     try:
@@ -218,6 +259,24 @@ def compute_pure_next_token_info(
             last_full_probs, prompt_vocab_ids, topk_prompt_mass_k
         )
 
+    resid_norm_ratio = None
+    delta_resid_cos = None
+    if raw_resid_vec is not None and norm_resid_vec is not None:
+        try:
+            raw_vec = raw_resid_vec.detach().to(dtype=torch.float32)
+            norm_vec = norm_resid_vec.detach().to(dtype=torch.float32)
+            raw_norm = torch.norm(raw_vec) + 1e-12
+            norm_norm = torch.norm(norm_vec)
+            if torch.isfinite(raw_norm) and raw_norm > 0:
+                resid_norm_ratio = float((norm_norm + 1e-12) / raw_norm)
+            denom = (torch.norm(raw_vec) * torch.norm(norm_vec)) + 1e-12
+            if torch.isfinite(denom) and denom > 0:
+                dot_val = torch.dot(raw_vec.flatten(), norm_vec.flatten())
+                delta_resid_cos = float(torch.clamp(dot_val / denom, -1.0, 1.0))
+        except Exception:
+            resid_norm_ratio = None
+            delta_resid_cos = None
+
     # Norm temperature KL to teacher (norm-only): KL(P(z/τ) || P_final)
     kl_norm_temp_bits = None
     if norm_temp_tau is not None and norm_temp_tau > 0:
@@ -247,6 +306,10 @@ def compute_pure_next_token_info(
         "geom_crossover": geom_crossover,
         "topk_prompt_mass@50": topk_prompt_mass,
         "kl_to_final_bits_norm_temp": kl_norm_temp_bits,
+        "resid_norm_ratio": resid_norm_ratio,
+        "delta_resid_cos": delta_resid_cos,
+        "answer_logit_gap": answer_logit_gap,
+        "answer_vs_top1_gap": answer_vs_top1_gap,
     }
     # Add strict-sweep flags to the flat record, if any
     for k_label, hit in strict_hits.items():

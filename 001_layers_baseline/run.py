@@ -6,6 +6,7 @@ import os
 import sys
 import json
 import gc  # For garbage collection
+import platform
 
 # --- deterministic bootstrap -------------------------------------------------
 import random, numpy as np
@@ -20,6 +21,11 @@ if torch.cuda.is_available():
 
 torch.use_deterministic_algorithms(True)   # PyTorch 2.x+
 torch.set_num_threads(1)  # optional; comment out if you need full CPU speed
+try:
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+except Exception:
+    pass
 # -----------------------------------------------------------------------------
 
 # Top-k settings for record emission
@@ -70,7 +76,11 @@ from layers_core.passes import run_prompt_pass
 from layers_core.contexts import UnembedContext, PrismContext
 from layers_core.probes import emit_test_prompts, emit_temperature_exploration
 from layers_core.token_utils import make_decode_id
-from layers_core.collapse_rules import format_copy_strict_label, format_copy_soft_label
+from layers_core.collapse_rules import (
+    format_copy_strict_label,
+    format_copy_soft_label,
+    build_copy_ignore_mask,
+)
 from layers_core.temperature import fit_norm_temperatures
 from layers_core.skip_sanity import evaluate_skip_layers
 from layers_core.summaries import build_unified_lens_metrics, tuned_rotation_vs_temp_attribution, compute_confirmed_semantics, compute_lens_artifact_score
@@ -229,7 +239,18 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             force_fp32=(config.fp32_unembed or AUTO_FP32_UNEMBED),
             cache=_unembed_cache,
         )
-        
+        bias_diag = {"present": False, "l2_norm": 0.0, "max_abs": 0.0}
+        if analysis_b_U is not None:
+            try:
+                bias_tensor = analysis_b_U.detach().to(dtype=torch.float32)
+                l2_norm = float(torch.norm(bias_tensor).item())
+                max_abs = float(torch.max(torch.abs(bias_tensor)).item())
+                bias_diag["present"] = bool(l2_norm > 0.0)
+                bias_diag["l2_norm"] = l2_norm
+                bias_diag["max_abs"] = max_abs
+            except Exception as exc:
+                bias_diag["error"] = str(exc)
+
         context_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
         ground_truth = "Berlin"  # For display/comparison
         # Stylistic filler ablation (PROJECT_NOTES §1.9): drop the adverb
@@ -299,7 +320,10 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 "K": 50,
                 "tau": 0.33,
             },
+            "answer_margin_unit": "logit",
         }
+        diag["unembed_bias"] = bias_diag
+        diag_flags = diag.setdefault("flags", {})
         # Prism sidecar setup (auto/on/off) and summary (filled below)
         prism_mode = getattr(CLI_ARGS, "prism", "auto")
         prism_dir_base = getattr(CLI_ARGS, "prism_dir", "prisms")
@@ -335,6 +359,23 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             # Raw-vs-Norm sanity block (PROJECT_NOTES §1.4)
             "raw_lens_check": init_raw_lens_check(RAW_LENS_MODE),
         }
+        try:
+            cudnn_version = torch.backends.cudnn.version() if torch.backends.cudnn.is_available() else None
+        except Exception:
+            cudnn_version = None
+        env_info = {
+            "torch_version": torch.__version__,
+            "cuda_version": torch.version.cuda,
+            "cudnn": cudnn_version,
+            "device": device,
+            "dtype_compute": str(dtype),
+            "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
+            "cudnn_benchmark": bool(getattr(torch.backends.cudnn, "benchmark", False)),
+            "seed": SEED,
+            "python": platform.python_version(),
+            "platform": platform.platform(),
+        }
+        json_data["provenance"] = {"env": env_info}
         # Initialize prism summary on diagnostics
         diag["prism_summary"] = {
             "mode": prism_mode,
@@ -468,6 +509,19 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
 
         # Robust single-id decode (tensor or int)
         decode_id = make_decode_id(model.tokenizer)
+        copy_mask_info = None
+        try:
+            vocab_size = getattr(model.cfg, "d_vocab", None)
+            if vocab_size is None:
+                vocab_size = getattr(model.cfg, "n_vocab", None)
+            if vocab_size is None and model.tokenizer is not None:
+                vocab_size = len(model.tokenizer)
+            if vocab_size is not None:
+                copy_mask_info = build_copy_ignore_mask(decode_id, int(vocab_size))
+        except Exception as exc:
+            diag_flags["copy_mask_error"] = str(exc)
+        if copy_mask_info is not None:
+            diag["copy_mask"] = copy_mask_info
 
         # Residual accessor now shared in layers_core.hooks.get_residual_safely
 
@@ -1061,6 +1115,65 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             except Exception:
                 pass
 
+        if not env_info.get("deterministic_algorithms", True):
+            diag_flags["nondeterministic"] = True
+
+        norm_spike = False
+        try:
+            per_layer_norm = (diag.get("normalization_provenance") or {}).get("per_layer", [])
+            L_sem_ref = diag.get("L_semantic")
+            for entry in per_layer_norm:
+                layer_idx = entry.get("layer")
+                ratio = entry.get("resid_norm_ratio")
+                cos_val = entry.get("delta_resid_cos")
+                try:
+                    ratio_val = float(ratio) if ratio is not None else None
+                except (TypeError, ValueError):
+                    ratio_val = None
+                try:
+                    cos_val_float = float(cos_val) if cos_val is not None else None
+                except (TypeError, ValueError):
+                    cos_val_float = None
+                trigger = False
+                if ratio_val is not None and ratio_val > 3.0:
+                    trigger = True
+                if cos_val_float is not None and cos_val_float < 0.8:
+                    trigger = True
+                if trigger and isinstance(layer_idx, int):
+                    if not isinstance(L_sem_ref, int) or layer_idx <= int(L_sem_ref):
+                        norm_spike = True
+                        break
+        except Exception:
+            norm_spike = False
+        if norm_spike:
+            diag_flags["normalization_spike"] = True
+
+        numeric_issue = False
+        numeric_health = diag.get("numeric_health") or {}
+        flagged_layers = numeric_health.get("layers_flagged") or []
+        limits: list[int] = []
+        for key in ("L_copy", "L_semantic"):
+            val = diag.get(key)
+            if isinstance(val, int):
+                limits.append(int(val))
+        for entry in flagged_layers:
+            layer_idx = entry.get("layer")
+            if not isinstance(layer_idx, int):
+                continue
+            if not limits:
+                numeric_issue = True
+                break
+            if any(layer_idx <= limit for limit in limits):
+                numeric_issue = True
+                break
+        if numeric_issue:
+            diag_flags["numeric_health_caution"] = True
+
+        if "copy_mask" not in diag:
+            diag_flags.setdefault("copy_mask_missing", True)
+        if not diag.get("layer_map"):
+            diag_flags.setdefault("layer_map_missing", True)
+
         # ---------------- Measurement guidance (PROJECT_NOTES §1.22 & §1.28) ---
         try:
             warn_high_last_layer_kl = False
@@ -1110,6 +1223,20 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     reasons.append("high_lens_artifact_score")
             except Exception:
                 pass
+            if diag_flags.get("nondeterministic"):
+                reasons.append("nondeterministic_env")
+            if diag_flags.get("normalization_spike"):
+                reasons.append("normalization_spike")
+            if diag_flags.get("numeric_health_caution"):
+                reasons.append("numeric_health_caution")
+            if diag_flags.get("copy_mask_missing"):
+                reasons.append("copy_mask_missing")
+            if "copy_mask_error" in diag_flags:
+                reasons.append("copy_mask_error")
+            if diag_flags.get("layer_map_missing"):
+                reasons.append("layer_map_missing")
+
+            reasons = list(dict.fromkeys(reasons))
 
             prefer_ranks = bool(reasons)
             suppress_abs_probs = prefer_ranks
@@ -1128,9 +1255,13 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             try:
                 use_conf = bool(((json_data.get("diagnostics") or {}).get("L_semantic_confirmed") is not None))
                 mg["use_confirmed_semantics"] = use_conf
-                mg["notes_append"] = "Prism is diagnostic-only; treat probabilities comparatively within model."
             except Exception:
                 pass
+            extra_notes = []
+            if diag_flags.get("nondeterministic"):
+                extra_notes.append("Run uses nondeterministic kernels; prefer rank comparisons.")
+            extra_notes.append("Prism is diagnostic-only; treat probabilities comparatively within model.")
+            mg["notes_append"] = " ".join(extra_notes)
             json_data["measurement_guidance"] = mg
         except Exception:
             # Best-effort; absence should not fail the run

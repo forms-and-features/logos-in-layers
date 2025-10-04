@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, Sequence, Tuple, List
 
+import math
 import torch
 import os
 
@@ -10,7 +11,12 @@ from .prism_sidecar import append_prism_record, append_prism_pure_next_token
 from .records import make_record, make_pure_record
 from .pure_emit import compute_pure_next_token_info
 from .numerics import bits_entropy_from_logits
-from .norm_utils import detect_model_architecture, get_correct_norm_module, apply_norm_or_skip
+from .norm_utils import (
+    detect_model_architecture,
+    get_correct_norm_module,
+    apply_norm_or_skip,
+    describe_norm_origin,
+)
 from .raw_lens import should_sample_layer, record_dual_lens_sample, compute_windowed_raw_norm, compute_full_raw_norm
 from .summaries import summarize_pure_records
 from .consistency import compute_last_layer_consistency
@@ -111,6 +117,91 @@ def run_prompt_pass(
     norm_logits_window: Dict[int, torch.Tensor] = {}
     raw_resid_window: Dict[int, torch.Tensor] = {}
     collected_by_layer: Dict[int, Dict[str, Any]] = {}
+    norm_arch = detect_model_architecture(model)
+    norm_strategy = "post_ln2" if norm_arch == "post_norm" else "next_ln1"
+    norm_provenance_entries: List[Dict[str, Any]] = []
+    normalization_effects: List[Dict[str, Any]] = []
+    layer_map_entries: List[Dict[str, Any]] = []
+    numeric_tracker = {
+        "any_nan": False,
+        "any_inf": False,
+        "max_abs_logit": [],
+        "min_prob": [],
+        "layers_flagged": [],
+    }
+
+    def _norm_effect_metrics(raw_vec: torch.Tensor | None, norm_vec: torch.Tensor | None):
+        if raw_vec is None or norm_vec is None:
+            return None, None
+        try:
+            raw_f = raw_vec.detach().to(dtype=torch.float32)
+            norm_f = norm_vec.detach().to(dtype=torch.float32)
+            raw_norm = torch.norm(raw_f) + 1e-12
+            norm_norm = torch.norm(norm_f)
+            ratio = None
+            if torch.isfinite(raw_norm) and raw_norm > 0:
+                ratio = float((norm_norm + 1e-12) / raw_norm)
+            denom = (torch.norm(raw_f) * torch.norm(norm_f)) + 1e-12
+            cos_val = None
+            if torch.isfinite(denom) and denom > 0:
+                cos_val = float(torch.clamp(torch.dot(raw_f.flatten(), norm_f.flatten()) / denom, -1.0, 1.0))
+            return ratio, cos_val
+        except Exception:
+            return None, None
+
+    def _update_numeric(layer_idx: int, resid_vec: torch.Tensor | None, norm_vec: torch.Tensor | None,
+                        logits_vec: torch.Tensor, probs_vec: torch.Tensor | None):
+        has_nan = False
+        has_inf = False
+        try:
+            if resid_vec is not None:
+                has_nan = has_nan or bool(torch.isnan(resid_vec).any())
+                has_inf = has_inf or bool(torch.isinf(resid_vec).any())
+        except Exception:
+            pass
+        try:
+            if norm_vec is not None:
+                has_nan = has_nan or bool(torch.isnan(norm_vec).any())
+                has_inf = has_inf or bool(torch.isinf(norm_vec).any())
+        except Exception:
+            pass
+        try:
+            has_nan = has_nan or bool(torch.isnan(logits_vec).any())
+            has_inf = has_inf or bool(torch.isinf(logits_vec).any())
+        except Exception:
+            pass
+        if has_nan or has_inf:
+            numeric_tracker["layers_flagged"].append({
+                "layer": layer_idx,
+                "lens": "norm",
+                "any_nan": has_nan,
+                "any_inf": has_inf,
+            })
+        numeric_tracker["any_nan"] = numeric_tracker["any_nan"] or has_nan
+        numeric_tracker["any_inf"] = numeric_tracker["any_inf"] or has_inf
+        try:
+            numeric_tracker["max_abs_logit"].append(float(torch.max(torch.abs(logits_vec)).item()))
+        except Exception:
+            pass
+        if probs_vec is not None:
+            try:
+                numeric_tracker["min_prob"].append(float(torch.min(probs_vec).item()))
+            except Exception:
+                pass
+
+    def _percentile(values: List[float], pct: float) -> Optional[float]:
+        if not values:
+            return None
+        vals = sorted(values)
+        if len(vals) == 1:
+            return float(vals[0])
+        rank = pct * (len(vals) - 1)
+        lower = int(math.floor(rank))
+        upper = int(math.ceil(rank))
+        if lower == upper:
+            return float(vals[lower])
+        weight = rank - lower
+        return float(vals[lower] * (1 - weight) + vals[upper] * weight)
 
     with torch.no_grad():
         residual_cache: Dict[str, Any] = {}
@@ -123,8 +214,18 @@ def run_prompt_pass(
 
             final_logits = logits[0, -1, :].float()
             final_probs = torch.softmax(final_logits, dim=0)
-            _final_norm = torch.norm(final_logits) + 1e-12
-            final_dir = (final_logits / _final_norm)
+            if unembed_ctx.b is not None:
+                try:
+                    final_logits_bias_free = final_logits - unembed_ctx.b.to(
+                        device=final_logits.device,
+                        dtype=final_logits.dtype,
+                    )
+                except Exception:
+                    final_logits_bias_free = final_logits
+            else:
+                final_logits_bias_free = final_logits
+            _final_norm = torch.norm(final_logits_bias_free) + 1e-12
+            final_dir = (final_logits_bias_free / _final_norm)
 
             # ---- Layer 0 (embeddings) ----
             if has_pos_embed:
@@ -182,11 +283,38 @@ def run_prompt_pass(
             last_pos = tokens.shape[1] - 1
             norm_module_pre = get_correct_norm_module(model, 0, probe_after_block=False)
             resid_norm_pre = apply_norm_or_skip(resid_raw, norm_module_pre)
+            raw_vec_L0 = resid_raw[0, last_pos, :].detach()
             geom_vec_norm_pre = resid_norm_pre[0, last_pos, :].detach()
             try:
-                raw_resid_window[0] = resid_raw[0, last_pos, :].detach().cpu()
+                raw_resid_window[0] = raw_vec_L0.cpu()
             except Exception:
                 pass
+
+            ratio0, cos0 = _norm_effect_metrics(raw_vec_L0, geom_vec_norm_pre)
+            ln_source0, eps_inside0, scale_used0 = describe_norm_origin(model, 0, probe_after_block=False)
+            norm_provenance_entries.append({
+                "layer": 0,
+                "ln_source": ln_source0,
+                "eps_inside_sqrt": bool(eps_inside0),
+                "scale_gamma_used": bool(scale_used0),
+                "resid_norm_ratio": ratio0,
+                "delta_resid_cos": cos0,
+            })
+            block_label0 = "blocks[0]" if getattr(model, "blocks", []) else "blocks[0]"
+            layer_map_entries.append({
+                "layer": 0,
+                "block": block_label0,
+                "stream": "pre_block",
+                "norm": ln_source0,
+            })
+            normalization_effects.append({
+                "layer": 0,
+                "resid_norm_ratio": ratio0,
+                "delta_resid_cos": cos0,
+            })
+            layer0_logits = norm_logits_all[last_pos]
+            layer0_probs = torch.softmax(layer0_logits, dim=0)
+            _update_numeric(0, raw_vec_L0, geom_vec_norm_pre, layer0_logits, layer0_probs)
 
             for pos in range(tokens.shape[1]):
                 layer_logits = norm_logits_all[pos]
@@ -277,6 +405,9 @@ def run_prompt_pass(
                 geom_gamma=GEOM_GAMMA,
                 norm_temp_tau=_tau_for(0),
                 copy_strict_thresholds=copy_strict_thresholds,
+                bias_tensor=unembed_ctx.b,
+                raw_resid_vec=raw_vec_L0,
+                norm_resid_vec=geom_vec_norm_pre,
             )
             json_data["pure_next_token_records"].append(
                 make_pure_record(
@@ -330,6 +461,7 @@ def run_prompt_pass(
                     geom_gamma=GEOM_GAMMA,
                     norm_temp_tau=None,
                     copy_strict_thresholds=(),
+                    bias_tensor=unembed_ctx.b,
                 )
                 tuned_json_data["pure_next_token_records"].append(
                     make_pure_record(
@@ -419,11 +551,41 @@ def run_prompt_pass(
 
                 norm_module_post = get_correct_norm_module(model, layer, probe_after_block=True)
                 resid_norm_post = apply_norm_or_skip(resid_raw, norm_module_post)
+                raw_vec_layer = resid_raw[0, last_pos, :].detach()
                 geom_vec_norm_post = resid_norm_post[0, last_pos, :].detach()
                 try:
-                    raw_resid_window[layer + 1] = resid_raw[0, last_pos, :].detach().cpu()
+                    raw_resid_window[layer + 1] = raw_vec_layer.cpu()
                 except Exception:
                     pass
+
+                ratio_layer, cos_layer = _norm_effect_metrics(raw_vec_layer, geom_vec_norm_post)
+                ln_source_layer, eps_inside_layer, scale_used_layer = describe_norm_origin(
+                    model, layer, probe_after_block=True
+                )
+                norm_provenance_entries.append({
+                    "layer": layer + 1,
+                    "ln_source": ln_source_layer,
+                    "eps_inside_sqrt": bool(eps_inside_layer),
+                    "scale_gamma_used": bool(scale_used_layer),
+                    "resid_norm_ratio": ratio_layer,
+                    "delta_resid_cos": cos_layer,
+                })
+                block_label = f"blocks[{layer}]"
+                stream_label = "post_block"
+                if ln_source_layer == "ln_final":
+                    block_label = "final"
+                    stream_label = "unembed_head"
+                layer_map_entries.append({
+                    "layer": layer + 1,
+                    "block": block_label,
+                    "stream": stream_label,
+                    "norm": ln_source_layer,
+                })
+                normalization_effects.append({
+                    "layer": layer + 1,
+                    "resid_norm_ratio": ratio_layer,
+                    "delta_resid_cos": cos_layer,
+                })
 
                 logits_all = norm_lens.forward(
                     model,
@@ -435,6 +597,9 @@ def run_prompt_pass(
                     force_fp32_unembed=unembed_ctx.force_fp32,
                     cache=unembed_ctx.cache,
                 )
+                layer_logits_last = logits_all[last_pos]
+                layer_probs_last = torch.softmax(layer_logits_last, dim=0)
+                _update_numeric(layer + 1, raw_vec_layer, geom_vec_norm_post, layer_logits_last, layer_probs_last)
 
                 tuned_logits_all = None
                 if tuned_adapter is not None:
@@ -564,6 +729,9 @@ def run_prompt_pass(
                     geom_gamma=GEOM_GAMMA,
                     norm_temp_tau=_tau_for(layer + 1),
                     copy_strict_thresholds=copy_strict_thresholds,
+                    bias_tensor=unembed_ctx.b,
+                    raw_resid_vec=raw_vec_layer,
+                    norm_resid_vec=geom_vec_norm_post,
                 )
                 json_data["pure_next_token_records"].append(
                     make_pure_record(
@@ -612,11 +780,12 @@ def run_prompt_pass(
                         control_ids=control_ids,
                         prompt_vocab_ids=prompt_vocab_ids,
                         decoder_weight=decoder_weight,
-                        geom_vec=geom_vec_tuned_post,
-                        topk_prompt_mass_k=TOPK_PROMPT_MASS_K,
-                        geom_gamma=GEOM_GAMMA,
-                        norm_temp_tau=None,
-                    )
+                    geom_vec=geom_vec_tuned_post,
+                    topk_prompt_mass_k=TOPK_PROMPT_MASS_K,
+                    geom_gamma=GEOM_GAMMA,
+                    norm_temp_tau=None,
+                    bias_tensor=unembed_ctx.b,
+                )
                     tuned_json_data["pure_next_token_records"].append(
                         make_pure_record(
                             prompt_id=prompt_id,
@@ -738,6 +907,7 @@ def run_prompt_pass(
                 topk_prompt_tau=TOPK_DECAY_TAU,
                 n_layers=int(model.cfg.n_layers),
             )
+            summary_diag.setdefault("answer_margin_unit", "logit")
 
             raw_summary_block = (json_data.get("raw_lens_check") or {}).get("summary") or {}
             radius = 4
@@ -854,6 +1024,21 @@ def run_prompt_pass(
                     ct_block["norm_only_flags"] = flags
             except Exception:
                 pass
+
+            summary_diag["normalization_provenance"] = {
+                "arch": norm_arch,
+                "strategy": norm_strategy,
+                "per_layer": norm_provenance_entries,
+            }
+            summary_diag["layer_map"] = layer_map_entries
+            numeric_summary = {
+                "any_nan": bool(numeric_tracker["any_nan"]),
+                "any_inf": bool(numeric_tracker["any_inf"]),
+                "max_abs_logit_p99": _percentile(numeric_tracker["max_abs_logit"], 0.99),
+                "min_prob_p01": _percentile(numeric_tracker["min_prob"], 0.01),
+                "layers_flagged": numeric_tracker["layers_flagged"],
+            }
+            summary_diag["numeric_health"] = numeric_summary
 
             if tuned_enabled and tuned_summaries is not None:
                 summary_tuned = summarize_pure_records(

@@ -1,5 +1,6 @@
 import torch
 import string
+from typing import Any, Callable, Dict
 
 
 def _format_threshold_label(threshold: float) -> str:
@@ -116,4 +117,34 @@ def is_pure_whitespace_or_punct(text: str) -> bool:
         return False
     if text.strip() == "":
         return True
-    return all(ch.isspace() or (ch in string.punctuation) for ch in text)
+    normalized = text.replace("▁", " ").replace("Ġ", " ").replace("Ċ", " ")
+    if normalized.strip() == "":
+        return True
+    return all(ch.isspace() or (ch in string.punctuation) for ch in normalized)
+
+
+def build_copy_ignore_mask(
+    decode_id_fn: Callable[[int], str],
+    vocab_size: int,
+    *,
+    sample_size: int = 16,
+) -> Dict[str, Any]:
+    """Return metadata about tokens ignored by copy detectors (whitespace/punct)."""
+    ignored_ids: list[int] = []
+    sample_tokens: list[str] = []
+    for token_id in range(int(vocab_size)):
+        try:
+            tok = decode_id_fn(token_id)
+        except Exception:
+            tok = None
+        if tok is None:
+            continue
+        if is_pure_whitespace_or_punct(tok):
+            ignored_ids.append(int(token_id))
+            if len(sample_tokens) < sample_size:
+                sample_tokens.append(tok)
+    return {
+        "ignored_token_ids": ignored_ids,
+        "ignored_token_str_sample": sample_tokens,
+        "size": len(ignored_ids),
+    }

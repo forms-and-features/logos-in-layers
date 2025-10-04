@@ -8,6 +8,7 @@ from .norm_utils import (
     apply_norm_or_skip,
     detect_model_architecture,
     get_correct_norm_module,
+    describe_norm_origin,
 )
 from .numerics import (
     bits_entropy_from_logits,
@@ -20,6 +21,7 @@ from .csv_io import (
 from .collapse_rules import (
     detect_copy_collapse,
     is_semantic_top1,
+    build_copy_ignore_mask,
 )
 from .device_policy import (
     choose_dtype,
@@ -78,6 +80,7 @@ __all__ = [
     "apply_norm_or_skip",
     "detect_model_architecture",
     "get_correct_norm_module",
+    "describe_norm_origin",
     # numerics
     "bits_entropy_from_logits",
     "safe_cast_for_unembed",
@@ -87,6 +90,7 @@ __all__ = [
     # collapse rules
     "detect_copy_collapse",
     "is_semantic_top1",
+    "build_copy_ignore_mask",
     # device policy
     "choose_dtype",
     "should_auto_promote_unembed",

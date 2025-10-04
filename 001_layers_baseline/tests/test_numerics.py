@@ -6,7 +6,7 @@ import _pathfix  # noqa: F401
 import math
 import torch
 
-from layers_core.numerics import bits_entropy_from_logits, safe_cast_for_unembed
+from layers_core.numerics import bits_entropy_from_logits, safe_cast_for_unembed, kl_bits
 
 
 def test_entropy_uniform_and_peaked():
@@ -49,3 +49,14 @@ def test_entropy_bits_matches_manual_reference():
         ent_nats = -torch.sum(torch.exp(logp) * logp).item()
         H_manual = ent_nats / math.log(2)
         assert abs(H_bits - H_manual) < 1e-6
+
+
+def test_kl_bits_basic_properties():
+    torch.manual_seed(0)
+    p = torch.tensor([0.4, 0.3, 0.2, 0.1], dtype=torch.float32)
+    q = torch.tensor([0.25, 0.25, 0.25, 0.25], dtype=torch.float32)
+    kl_pq = kl_bits(p, q)
+    manual = torch.sum(p * (torch.log(p + 1e-30) - torch.log(q + 1e-30))).item() / math.log(2)
+    assert abs(kl_pq - manual) < 1e-6
+    assert abs(kl_bits(p, p)) < 1e-9
+    assert kl_bits(q, p) != kl_pq

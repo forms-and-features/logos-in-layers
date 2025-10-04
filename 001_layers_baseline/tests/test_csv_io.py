@@ -56,11 +56,11 @@ def test_csv_writers_headers_and_rows():
             rows = list(csv.reader(f))
         header = rows[0]
         copy_cols = json_data["copy_flag_columns"]
-        expected_len = 6 + 2*top_k + 2 + len(copy_cols) + 19
+        expected_len = 6 + 2*top_k + 2 + len(copy_cols) + 23
         assert len(header) == expected_len
         rest_idx = header.index("rest_mass")
         assert header[rest_idx:rest_idx + 2 + len(copy_cols)] == ["rest_mass", "copy_collapse", *copy_cols]
-        tail = header[-19:]
+        tail = header[-23:]
         assert tail == [
             "entropy_collapse",
             "is_answer",
@@ -81,6 +81,10 @@ def test_csv_writers_headers_and_rows():
             "mass_ratio_ans_over_prompt",
             "topk_prompt_mass@50",
             "control_margin",
+            "resid_norm_ratio",
+            "delta_resid_cos",
+            "answer_logit_gap",
+            "answer_vs_top1_gap",
         ]
         # Validate row shapes and rest_mass range
         for r in rows[1:]:

@@ -48,6 +48,8 @@ def summarize_pure_records(
     first_rank_le_1: Optional[int] = None
     first_rank_le_5: Optional[int] = None
     first_rank_le_10: Optional[int] = None
+    first_gap_ge_0_5: Optional[int] = None
+    first_gap_ge_1_0: Optional[int] = None
 
     # Surface/geom/top-k summaries
     L_surface_to_meaning: Optional[int] = None
@@ -128,6 +130,17 @@ def summarize_pure_records(
             L_topk_decay = layer
             topk_mass_at_L = tk
 
+        gap_top = rec.get("answer_logit_gap")
+        if gap_top is not None:
+            try:
+                gap_float = float(gap_top)
+                if first_gap_ge_0_5 is None and gap_float >= 0.5:
+                    first_gap_ge_0_5 = layer
+                if first_gap_ge_1_0 is None and gap_float >= 1.0:
+                    first_gap_ge_1_0 = layer
+            except (TypeError, ValueError):
+                pass
+
     delta_soft: Dict[int, Optional[int]] = {}
     for k, layer_idx in L_copy_soft.items():
         if L_sem is None or layer_idx is None:
@@ -169,6 +182,10 @@ def summarize_pure_records(
                 "Δ_sem_minus_copy_strict": None if (L_copy is None or L_sem is None) else (L_sem - L_copy),
                 "Δ_sem_minus_copy_soft": {f"k{k}": delta_soft[k] for k in soft_window_set},
             },
+        },
+        "answer_margin_thresholds": {
+            "gap_ge_0.5": first_gap_ge_0_5,
+            "gap_ge_1.0": first_gap_ge_1_0,
         },
     }
 

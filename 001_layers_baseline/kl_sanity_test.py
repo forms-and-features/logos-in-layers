@@ -10,6 +10,7 @@ This validates that the normalization scaling fixes are working correctly.
 import torch
 import copy
 from layers_core.norm_utils import detect_model_architecture, get_correct_norm_module, apply_norm_or_skip
+from layers_core.numerics import kl_bits
 
 
 def run_kl_sanity_test(model, tokenizer):
@@ -83,18 +84,16 @@ def run_kl_sanity_test(model, tokenizer):
             # Compute KL divergences (use final token position)
             final_pos = -1
             
-            kl_logits = torch.kl_div(
-                torch.log_softmax(logits_unit[0, final_pos], dim=-1),
-                torch.softmax(logits_learned[0, final_pos], dim=-1),
-                reduction='sum'
-            ).item()
-            
-            kl_raw = torch.kl_div(
-                torch.log_softmax(model.lm_head(raw_resid)[0, final_pos], dim=-1),
-                torch.softmax(model.lm_head(scaled_raw_resid)[0, final_pos], dim=-1),
-                reduction='sum'
-            ).item()
-            
+            P_unit = torch.softmax(logits_unit[0, final_pos], dim=-1)
+            P_learned = torch.softmax(logits_learned[0, final_pos], dim=-1)
+            kl_logits = kl_bits(P_learned, P_unit)
+
+            logits_raw_ref = model.lm_head(raw_resid)[0, final_pos]
+            logits_raw_scaled = model.lm_head(scaled_raw_resid)[0, final_pos]
+            P_raw_ref = torch.softmax(logits_raw_ref, dim=-1)
+            P_raw_scaled = torch.softmax(logits_raw_scaled, dim=-1)
+            kl_raw = kl_bits(P_raw_scaled, P_raw_ref)
+
             print(f"  KL divergence (normalized logits): {kl_logits:.6f}")
             print(f"  KL divergence (raw residual):      {kl_raw:.6f}")
             print(f"  KL difference:                     {abs(kl_logits - kl_raw):.6f}")
