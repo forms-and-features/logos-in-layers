@@ -31,6 +31,13 @@ Other JSON fields:
 * diagnostics.prism_summary.metrics and tuned_lens.summary.metrics: rank milestones and KL at {25,50,75}% with deltas vs baseline.
 * measurement_guidance: { prefer_ranks, suppress_abs_probs, reasons[], notes }.
 
+Also read if present (per model):
+* provenance.env — capture torch/device/determinism differences; treat cross-model differences cautiously if determinism flags differ.
+* diagnostics.normalization_provenance — ensure comparable norm strategies (e.g., "post_ln2" vs "next_ln1"); annotate if mixed.
+* diagnostics.unembed_bias — note families with non-zero bias; cosine comparisons remain within-model only.
+* diagnostics.numeric_health — down‑weight any model with flagged early layers overlapping candidate collapse ranges.
+* diagnostics.copy_mask — note substantive differences in ignore‑set size or composition when comparing copy detectors.
+
 - CSV - layer-level results of the probe (part of the results of each probe), one per model:
 001_layers_baseline/run-latest/output-gemma-2-9b-records.csv
 001_layers_baseline/run-latest/output-gemma-2-27b-records.csv
@@ -88,6 +95,8 @@ If present, prefer the indicated lens and use confirmed semantics in summaries.
 
 Final-row caveat (head calibration): When comparing final rows across models, prefer rank/KL thresholds. If a model’s JSON has `warn_high_last_layer_kl = true`, treat final probability differences as head‑calibration artefacts and do not infer regressions. Known pattern: the Gemma family often shows non‑zero last‑layer KL due to a calibrated final head; be on the lookout for similar signatures in other families. If `raw_lens_check.summary.lens_artifact_risk` is `high` or `first_norm_only_semantic_layer` is present, downgrade confidence in pre‑final “early semantics” and lean on rank milestones over probabilities.
 
+Normalization gate: If norm strategies differ across models (e.g., post_ln2 vs next_ln1), restrict absolute timing claims; prefer normalized depth comparisons (e.g., fraction of total layers) and within‑family statements. Annotate mixed strategies explicitly.
+
 Also honor `measurement_guidance`: if `prefer_ranks = true` or `suppress_abs_probs = true`, lead with rank thresholds and avoid absolute probability claims except as within‑model qualitative trends.
 
 Gold‑token alignment caveat: Verify `gold_alignment` across models. For any model with `unresolved`, flag reduced comparability, rely on rank thresholds (`first_rank_le_{1,5,10}`), and avoid absolute probability claims. Stylistic ablation caveat: Filter depth summaries to `prompt_id = pos`, `prompt_variant = orig`. Compare `ΔL_sem`, `ΔL_copy`, and `ΔL_copy_soft[k]` (optionally normalized by `n_layers`); treat large positive shifts as stronger stylistic‑cue sensitivity and keep comparisons within-family when in doubt. When “top‑1” does not refer to the answer, label it as generic top‑1 (not `p_answer`), and include layer indices when citing any milestones (KL, cosine, rank, probabilities).
@@ -126,6 +135,8 @@ Compare copy-reflex across models using both `copy_collapse` and `copy_soft_k1@�
 Use rank‑based milestones (`first_rank_le_1`, `first_rank_le_5`, `first_rank_le_10`) for cross‑model comparisons; avoid cross‑model claims based solely on raw probabilities. Treat KL milestones (`first_kl_below_1.0`, `first_kl_below_0.5`) as within‑model diagnostics and compare their relative depths (layer/n_layers). Exclude models whose last‑layer `kl_to_final_bits` is not ≈ 0 from KL‑based conclusions, or annotate a final‑lens vs final‑head mismatch. For `cos_to_final`, report per‑model trajectories qualitatively as within‑model evidence of direction alignment; do not compare absolute cosine levels across families.
 When JSON includes `summary.L_semantic_confirmed`, report that value (and note the corroborating source raw/tuned) in addition to `L_semantic_norm`.
 
+If present, prefer L_semantic_confirmed for cross-model timing; otherwise cite L_semantic_norm and annotate any norm-only early semantics from raw/tuned corroboration windows.
+
 Include lens sanity from each model’s JSON `raw_lens_check.summary`: list models with `first_norm_only_semantic_layer` present (norm‑only semantics) and report `lens_artifact_risk` and `max_kl_norm_vs_raw_bits`. For models with `high` risk, downgrade confidence in early‑semantics claims and prefer rank‑based statements; note the `mode` (sample/full) for context.
 
 Raw‑vs‑Norm window (if present): report any `norm_only_semantics_layers` from `diagnostics.raw_lens_window` and the `max_kl_norm_vs_raw_bits_window`. Treat early “semantics” that disappear under the raw lens within ±4–8 layers as lens‑induced and downgrade those claims.
@@ -149,6 +160,8 @@ Quote EVAL line numbers or raw JSON or CSV snippets as needed.
 
 Prism Summary Across Models (if present)
 Prism is a shared‑decoder diagnostic for robustness/comparability, not the model’s head. Interpret “Helpful/Neutral/Regressive” strictly relative to the norm lens baseline, not as regressions vs the final head.
+
+Gate for "Helpful": require (i) earlier or equal first_rank_le_1 under Prism and (ii) no KL inflation > 0.2 bits at mid-depths (~50%). Otherwise classify as Neutral or Regressive. Treat Prism as diagnostic-only; never present Prism milestones as model-head truths.
 
 - Build a compact comparison (paragraph, no tables) across models with Prism artifacts (`compatible = true`): mention for each model k, Δ in `first_rank_le_{10,5,1}` (Prism vs baseline), and ΔKL at ~25/50/75% depths.
 - Interpret patterns: are Prism gains larger when `raw_lens_check.summary.lens_artifact_risk` is high? Concentrated at early/mid layers? Any regressions?

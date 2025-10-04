@@ -23,6 +23,14 @@ Also read:
 Use the `gold_answer` block for ID‑level alignment: `{ string, pieces, first_id, answer_ids, variant }`.
 The `is_answer` flag and `p_answer`/`answer_rank` are computed using `first_id` (robust to leading‑space/multi‑piece tokenization).
 
+Also read if present (advisory blocks):
+
+• provenance.env — { torch_version, cuda_version, cudnn, device, dtype_compute, deterministic_algorithms, cudnn_benchmark, seed, python, platform }.
+• diagnostics.normalization_provenance — { arch, strategy, per_layer[].ln_source, eps_inside_sqrt, scale_gamma_used }.
+• diagnostics.unembed_bias — { present, l2_norm, max_abs }. Treat all cosines as bias‑free; if bias present, note it as a calibration detail.
+• diagnostics.numeric_health — { any_nan, any_inf, max_abs_logit_p99, min_prob_p01, layers_flagged } — flag anomalies if they overlap candidate collapse layers.
+• diagnostics.copy_mask — { ignored_token_ids, ignored_token_str_sample, size } — note mask scope when interpreting copy detectors.
+
 Ablation: read `ablation_summary` with `{ L_copy_orig, L_sem_orig, L_copy_nf, L_sem_nf, delta_L_copy, delta_L_sem }` to compare the original vs no‑filler (‘simply’ ablated) prompts.
 
 
@@ -118,6 +126,14 @@ If the pure-next-token CSV marks `copy_collapse` = True in any of layers 0–3 (
 
 Confirm that "L_copy", "L_copy_soft[k], "L_semantic", "delta_layers", "L_copy_soft" (per k), and "delta_layers_soft" are present in diagnostics alongside the implementation flags (e.g. "use_norm_lens", "unembed_dtype").
 
+Additionally verify (quote one line each if present):
+* Normalizer provenance: diagnostics.normalization_provenance.strategy and per_layer[0].ln_source / per_layer[last].ln_source.
+* Per-layer normalizer effect: resid_norm_ratio and delta_resid_cos are well-behaved (no extreme spikes before L_semantic).
+* Unembedding bias: diagnostics.unembed_bias.present and l2_norm — note that all geometric metrics are bias‑free.
+* Environment & determinism: provenance.env (torch_version, device, deterministic_algorithms, seed). If deterministic_algorithms=false, add a reproducibility caution.
+* Numeric health: diagnostics.numeric_health.any_nan/any_inf and layers_flagged (treat overlaps with early copy/semantic layers as suspect).
+* Copy mask: diagnostics.copy_mask.size and sample — ensure the ignore set is plausible for the tokenizer.
+
 The strict copy rule remains ID‑level contiguous subsequence (k=1) with threshold τ=0.95 and margin δ=0.10. Soft detectors use τ_soft = 0.33 with window_ks from `copy_soft_config.window_ks`. When `L_copy_strict` is null, compute Δ using the earliest `L_copy_soft[k]` (report k).
 
 Cite `copy_thresh`, `copy_window_k`, `copy_match_level`, and `copy_soft_config` (threshold, window_ks, extra_thresholds); confirm `copy_flag_columns` mirrors these labels in the JSON/CSV. Gold‑token alignment: see `gold_answer`; alignment is ID-based. Confirm `diagnostics.gold_alignment` is `ok`. If `unresolved`, note fallback to string matching and prefer rank-based statements. Negative control: confirm `control_prompt` and `control_summary`. Ablation: confirm `ablation_summary` exists and that positive rows appear under both `prompt_variant = orig` and `no_filler`. For the main table, filter to `prompt_id = pos`, `prompt_variant = orig`.
@@ -157,7 +173,9 @@ Control margin (from JSON `control_summary`):
 - `first_control_margin_pos` = first layer with control_margin > 0;
 - `max_control_margin` = maximum margin across layers.
 If gold alignment for either gold token is unresolved, note the limitation and avoid absolute probability claims; prefer rank thresholds.
-Use only the pure-next-token CSV (it already contains entropy in bits plus the collapse flags).  The `rest_mass` column is provided for KL/entropy sanity-checks.
+Use the pure-next-token CSV for ranks, KL, cosine, masses, and coverage. If an entropy column (e.g., entropy_bits) is present, use it; otherwise either (a) omit entropy deltas, or (b) consult the records CSV specifically for entropy values (do not recompute from partial outputs). If present, also cite:
+* resid_norm_ratio and delta_resid_cos (normalizer effect);
+* answer_logit_gap and answer_vs_top1_gap (confidence margins).
 
 Ablation (no‑filler). From JSON `ablation_summary`, report:
 - `L_copy_orig = …`, `L_sem_orig = …`
@@ -225,6 +243,14 @@ but do not use it for the table or for bolding the collapse layer.
     - Confirmed semantics reported when available (summary.L_semantic_confirmed + source)
     - Full dual‑lens metrics cited (pct_layers_kl_ge_1.0, n_norm_only_semantics_layers, earliest_norm_only_semantic, lens_artifact_score tier)
     - Tuned‑lens attribution done (ΔKL_tuned, ΔKL_temp, ΔKL_rot at ~25/50/75%)
+    - normalization_provenance present (ln_source verified at layer 0 and final)
+    - per-layer normalizer effect metrics present (resid_norm_ratio, delta_resid_cos)
+   - unembed bias audited (bias-free cosine guaranteed)
+   - deterministic_algorithms = true (or caution noted)
+   - numeric_health clean (no NaN/Inf; no flagged early layers)
+   - copy_mask present and plausible for tokenizer
+   - layer_map present (if available) for indexing audit
+
 – Feel free to quote interesting rows from either CSV.
 – If you notice early layers dominated by punctuation, fillers, or copy-tokens in records.csv, flag that under “Punctuation / filler anchoring”.
 

@@ -949,6 +949,175 @@ Set `preferred_lens_for_reporting` from §1.26. Set `use_confirmed_semantics=tru
 
 ---
 
+### **1.29. Centralize KL helpers & de‑duplicate docs/tests**
+
+**Why.** Production paths already compute KL as **KL(P_layer ∥ P_final)** via a helper, but scattered examples and the optional sanity test still show `torch.kl_div(...)`. Keeping all KL math and examples behind one helper eliminates confusion and prevents silent orientation regressions.
+
+**What.**
+Unify *all* KL computations and examples under `layers_core.numerics.kl_bits(p, q)`; remove remaining `torch.kl_div` from code snippets and tests.
+
+**How.**
+
+1. **Code:** replace `torch.kl_div(...)` in `kl_sanity_test.py` with `kl_bits(...)`.
+2. **Tests:** add `assert_close(kl_bits(p, q), (p*(p.log()-q.log())).sum()/ln2)` and `kl_bits(p, p)≈0`; confirm asymmetry `kl_bits(p,q)!=kl_bits(q,p)`.
+3. **Docs (§1.3):** swap the illustrative snippet to call `kl_bits(probs, final_probs)` and add: “All KL in this repo is **KL(P_layer ∥ P_final)** in **bits**, unless stated otherwise.”
+
+---
+
+### **1.30. Normalizer provenance & per‑layer effect logging**
+
+**Why.** Even with architecture‑aware selection, auditability requires explicit provenance. When results are surprising, evaluators should see **which normalization module** was applied and how much it changed the residual.
+
+**What.**
+Emit a `diagnostics.normalization_provenance` block and two per‑layer scalars quantifying normalization’s effect.
+
+**How.**
+
+1. **JSON (`diagnostics.normalization_provenance`):**
+
+```json
+{
+  "arch": "pre_norm|post_norm",
+  "strategy": "post_ln2|next_ln1|raw",
+  "per_layer": [
+    {"layer": 0, "ln_source": "blocks[0].ln1|ln2|final", "eps_inside_sqrt": true, "scale_gamma_used": true}
+  ]
+}
+```
+
+2. **CSV (pure next‑token, per layer):**
+
+   * `resid_norm_ratio = ||h_norm||₂ / (||h_raw||₂ + 1e-12)`
+   * `delta_resid_cos = cos(h_raw, h_norm)`
+3. **Validator:** warn on spikes (norm change > 3× or cosine < 0.8) before L_semantic.
+
+---
+
+### **1.31. Unembedding‑bias audit & bias‑free cosine guarantee**
+
+**Why.** Some families keep a non‑zero `lm_head.bias`. Cosines and direction metrics should be **bias‑free**; otherwise bias can spuriously boost agreement.
+
+**What.**
+Audit the bias and guarantee that all geometric metrics use **bias‑free logits**.
+
+**How.**
+
+1. **JSON (`diagnostics.unembed_bias`):**
+
+```json
+{ "present": true|false, "l2_norm": float, "max_abs": float }
+```
+
+2. **Code:** ensure `cos_to_final`, `cos_to_answer`, `cos_to_prompt_max` use `(resid @ W_U)` (no `+ b`).
+3. **Unit test:** cosines invariant to adding a constant bias vector to logits.
+
+---
+
+### **1.32. Determinism & environment capture**
+
+**Why.** Reproducibility across machines/runs is part of “measurement right.” Subtle changes in PyTorch/CUDA/mps or nondeterministic kernels can shift borderline thresholds.
+
+**What.**
+Capture deterministic flags and environment in JSON.
+
+**How.**
+
+1. **JSON (`provenance.env`):**
+
+```json
+{
+  "torch_version": "...", "cuda_version": "...", "cudnn": "...",
+  "device": "cuda|mps|cpu", "dtype_compute": "bf16|fp16|fp32",
+  "deterministic_algorithms": true|false,
+  "cudnn_benchmark": false|true,
+  "seed": 316, "python": "...", "platform": "..."
+}
+```
+
+2. **Runtime:** set `torch.use_deterministic_algorithms(True)` where available; set `torch.backends.cudnn.benchmark = False`.
+3. **Flag:** add `diagnostics.flags.nondeterministic=true` when determinism cannot be guaranteed; propagate to `measurement_guidance.reasons`.
+
+---
+
+### **1.33. Numeric‑health sentinels (NaN/Inf, overflow, underflow)**
+
+**Why.** Rare fp anomalies can silently corrupt a few layers and mislead collapse detection.
+
+**What.**
+Continuous runtime checks with a compact summary.
+
+**How.**
+
+1. **Checks (per layer, per lens):** `any_nan`, `any_inf` on residuals/logits; `max_abs_logit`; `min_prob` after softmax (fp32).
+2. **JSON (`diagnostics.numeric_health`):**
+
+```json
+{ "any_nan": false, "any_inf": false, "max_abs_logit_p99": 18.4, "min_prob_p01": 1e-12, "layers_flagged": [ ... ] }
+```
+
+3. **Gate:** if flagged early layers overlap `L_copy*` or `L_semantic`, add a caution into `measurement_guidance.reasons`.
+
+---
+
+### **1.34. Copy‑detector mask transparency & tests**
+
+**Why.** The “ignore set” (whitespace, punctuation, markup) materially affects copy detection and surface‑mass. It must be explicit and tested across tokenizers.
+
+**What.**
+Publish the mask per model and add tokenizer‑specific unit tests.
+
+**How.**
+
+1. **JSON (`diagnostics.copy_mask`):**
+
+```json
+{ "ignored_token_ids": [...], "ignored_token_str_sample": ["▁", "!", ".", "”"], "size": 123 }
+```
+
+2. **Tests:** for each tokenizer, assert expected coverage of whitespace/punctuation; regression‑test the mask size.
+3. **Docs:** add a pointer in §1.11/§1.13 that mask provenance is logged.
+
+---
+
+### **1.35. Confidence margins for answer token**
+
+**Why.** Ranks are robust; margins quantify confidence and make threshold crossings interpretable (e.g., rank‑1 with tiny margin vs decisive win).
+
+**What.**
+Add two per‑layer scalars: *answer‑vs‑runner‑up* margin and *answer‑vs‑top1* margin when answer is not top‑1.
+
+**How.**
+
+1. **CSV (pure next‑token):**
+
+   * `answer_logit_gap = logit(answer) − logit(second_best)` when `answer_rank==1`, else `null`.
+   * `answer_vs_top1_gap = logit(answer) − logit(top1)` when `answer_rank>1`, else `null`.
+2. **JSON (summary):** first layer where `answer_logit_gap ≥ {0.5, 1.0}` (nats or bits; specify unit).
+
+---
+
+### **1.36. Layer‑index provenance map**
+
+**Why.** Off‑by‑one errors in indexing (post‑block vs pre‑block) are a classic source of confusion.
+
+**What.**
+Emit a compact map from `layer` indices to **model block names** and decoded stream descriptors.
+
+**How.**
+
+1. **JSON (`diagnostics.layer_map`):**
+
+```json
+[
+  {"layer": 0, "block": "blocks[0]", "stream": "post_block", "norm": "ln2|next_ln1"},
+  {"layer": N, "block": "final", "stream": "unembed_head"}
+]
+```
+
+2. **Evaluator hint:** set `measurement_guidance.reasons += ["layer_map_missing"]` if absent.
+
+---
+
 #### Wrap‑up
 
 Executing the items in **Group 1** upgrades the measurement pipeline from an informative prototype to a rigour‑grade toolchain. Only after this foundation is secure should we move on to the broader prompt battery and causal‑intervention work.
