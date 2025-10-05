@@ -1185,7 +1185,7 @@ Emit a compact map from `layer` indices to **model block names** and decoded str
 
 ---
 
-### 1.40. Gold‑token alignment summary (battery‑ready)
+### [x] 1.40. Gold‑token alignment summary (battery‑ready)
 
 **Why.** Alignment failures or variant fallbacks (leading‑space, multi‑piece) must be auditable before scaling to batteries/multilingual probes.
 **What.**
@@ -1193,6 +1193,8 @@ Emit a compact map from `layer` indices to **model block names** and decoded str
 * JSON: `diagnostics.gold_alignment = { ok: bool, variant: "with_space|no_space|fallback", first_id, answer_ids, pieces }` (already present) **plus** `gold_alignment_rate` (fraction over all prompts in the run; `1.0` for single‑prompt sweeps).
   **How.**
 * Accumulate across prompts in the runner; for single‑prompt runs, write `1.0` and keep the richer fields verbatim.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

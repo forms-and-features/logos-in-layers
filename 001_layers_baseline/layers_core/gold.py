@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 
 def _choose_variant(
@@ -145,3 +145,36 @@ def compute_gold_answer_info_from_sequences(
         info = {**info, "string": answer_str}
     return info
 
+
+def build_gold_alignment_entry(
+    prompt_id: str,
+    prompt_variant: str,
+    gold_info: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Format gold alignment metadata for downstream diagnostics.
+
+    Ensures optional list fields are materialised and records whether alignment
+    succeeded for the given prompt/variant combination.
+    """
+    status = str(gold_info.get("status", "unresolved"))
+    ok = (status == "ok")
+    return {
+        "prompt_id": prompt_id,
+        "prompt_variant": prompt_variant,
+        "ok": ok,
+        "status": status,
+        "variant": gold_info.get("variant"),
+        "first_id": gold_info.get("first_id"),
+        "answer_ids": list(gold_info.get("answer_ids") or []),
+        "pieces": list(gold_info.get("pieces") or []),
+        "string": gold_info.get("string"),
+    }
+
+
+def compute_gold_alignment_rate(entries: Iterable[Dict[str, Any]]) -> Optional[float]:
+    """Return fraction of entries with `ok == True`, or None if empty."""
+    snapshot = list(entries)
+    if not snapshot:
+        return None
+    success = sum(1 for entry in snapshot if entry.get("ok"))
+    return success / float(len(snapshot))

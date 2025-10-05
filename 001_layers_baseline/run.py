@@ -7,6 +7,7 @@ import sys
 import json
 import gc  # For garbage collection
 import platform
+from typing import Any, Dict, List
 
 # --- deterministic bootstrap -------------------------------------------------
 import random, numpy as np
@@ -66,7 +67,12 @@ from layers_core.raw_lens import (
     summarize_raw_lens_check,
 )
 from layers_core.windows import WindowManager
-from layers_core.gold import compute_gold_answer_info, compute_gold_answer_info_from_sequences
+from layers_core.gold import (
+    compute_gold_answer_info,
+    compute_gold_answer_info_from_sequences,
+    build_gold_alignment_entry,
+    compute_gold_alignment_rate,
+)
 from layers_core.prism import load_prism_artifacts
 from layers_core.head_transforms import detect_head_transforms
 from layers_core.unembed import prepare_unembed_weights
@@ -324,6 +330,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         }
         diag["unembed_bias"] = bias_diag
         diag_flags = diag.setdefault("flags", {})
+        gold_alignment_entries: List[Dict[str, Any]] = []
         # Prism sidecar setup (auto/on/off) and summary (filled below)
         prism_mode = getattr(CLI_ARGS, "prism", "auto")
         prism_dir_base = getattr(CLI_ARGS, "prism_dir", "prisms")
@@ -577,6 +584,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     raise
 
         # Provide ctx ids for copy detector and first answer id for metrics
+        primary_alignment_entry = build_gold_alignment_entry("pos", "orig", gold_info)
+        gold_alignment_entries.append(primary_alignment_entry)
         ctx_ids = gold_info.get("ctx_ids", [])
         first_ans_id = gold_info.get("first_id", None)
 
@@ -609,6 +618,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             except Exception as e:
                 print(f"Unexpected error during control gold alignment: {e}")
                 raise
+        control_alignment_entry = build_gold_alignment_entry("ctl", "orig", gold_info_ctl)
+        gold_alignment_entries.append(control_alignment_entry)
         ctx_ids_ctl = gold_info_ctl.get("ctx_ids", [])
         first_ans_id_ctl = gold_info_ctl.get("first_id", None)
         
@@ -711,7 +722,14 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     copy_strict_thresholds=copy_strict_tau_list,
                 )
                 diag.update(pass_summary)
-                diag["gold_alignment"] = "ok" if gold_info.get("status") == "ok" else "unresolved"
+                diag["gold_alignment"] = {
+                    "ok": primary_alignment_entry["ok"],
+                    "status": primary_alignment_entry["status"],
+                    "variant": primary_alignment_entry.get("variant"),
+                    "first_id": primary_alignment_entry.get("first_id"),
+                    "answer_ids": primary_alignment_entry.get("answer_ids"),
+                    "pieces": primary_alignment_entry.get("pieces"),
+                }
                 L_copy_orig = diag.get("L_copy")
                 L_sem_orig = diag.get("L_semantic")
                 json_data["diagnostics"] = diag
@@ -854,6 +872,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     "ctx_ids": [],
                     "ctx_len": 0,
                 }
+        nf_alignment_entry = build_gold_alignment_entry("pos", "no_filler", gold_info_nf)
+        gold_alignment_entries.append(nf_alignment_entry)
         ctx_ids_nf = gold_info_nf.get("ctx_ids", [])
         first_ans_id_nf = gold_info_nf.get("first_id", None)
         prism_ctx = PrismContext(stats=prism_stats, Q=prism_Q, active=prism_active)
@@ -978,12 +998,34 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 "answer_ids": gold_info_ctl.get("answer_ids", []),
                 "variant": gold_info_ctl.get("variant", "unknown"),
             },
-            "gold_alignment": "ok" if gold_info_ctl.get("status") == "ok" else "unresolved",
+            "gold_alignment": {
+                "ok": control_alignment_entry["ok"],
+                "status": control_alignment_entry["status"],
+                "variant": control_alignment_entry.get("variant"),
+                "first_id": control_alignment_entry.get("first_id"),
+                "answer_ids": control_alignment_entry.get("answer_ids"),
+                "pieces": control_alignment_entry.get("pieces"),
+            },
         }
         json_data["control_summary"] = {
             "first_control_margin_pos": first_pos,
             "max_control_margin": max_margin,
         }
+
+        try:
+            rate = compute_gold_alignment_rate(gold_alignment_entries)
+        except Exception:
+            rate = None
+        if rate is not None:
+            diag["gold_alignment_rate"] = rate
+            if rate < 1.0:
+                diag_flags["gold_alignment_partial"] = True
+        else:
+            diag["gold_alignment_rate"] = None
+        try:
+            diag["gold_alignment_prompts"] = gold_alignment_entries
+        except Exception:
+            pass
 
         # ---------------- Unified sidecar summaries (001_LAYERS_BASELINE_PLAN §1.21) -----
         tuned_metrics = None
@@ -1243,6 +1285,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 pass
             if diag_flags.get("repeatability_variance_high"):
                 reasons.append("repeatability_variance_high")
+            if diag_flags.get("gold_alignment_partial"):
+                reasons.append("gold_alignment_partial")
             if diag_flags.get("nondeterministic"):
                 reasons.append("nondeterministic_env")
             if diag_flags.get("normalization_spike"):
