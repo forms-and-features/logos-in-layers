@@ -130,6 +130,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
     json_data_tuned_outer = None
     tuned_provenance_outer = None
     tuned_diag_info_outer = None
+    tuned_audit_data_outer = None
     evaluation_pack: Optional[Dict[str, Any]] = None
     evaluation_pack_milestones: List[Dict[str, Any]] = []
     evaluation_pack_artifacts: List[Dict[str, Any]] = []
@@ -137,6 +138,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
     def evaluate_model():
         """The actual experiment code - all prints go to console"""
         nonlocal json_data_tuned_outer, tuned_provenance_outer, tuned_diag_info_outer
+        nonlocal tuned_audit_data_outer
         nonlocal evaluation_pack, evaluation_pack_milestones, evaluation_pack_artifacts
         _vprint(f"\n{'='*60}")
         _vprint(f"EVALUATING MODEL: {model_id}")
@@ -1103,6 +1105,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             audit_payload = tuned_spec.get("audit_data")
             tuned_audit_summary = build_tuned_audit_summary(audit_payload)
             tuned_audit_data = audit_payload
+            tuned_audit_data_outer = audit_payload
             if isinstance(tuned_audit_summary, dict):
                 tuned_is_calibration_only = tuned_audit_summary.get("tuned_is_calibration_only")
                 tuned_preferred_hint = tuned_audit_summary.get("preferred_semantics_lens_hint")
@@ -1498,7 +1501,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             except Exception as e:
                 print(f"⚠️ Failed to write tuned lens CSVs: {e}")
 
-            audit_rows = (tuned_audit_data or {}).get("variant_rows") if isinstance(tuned_audit_data, dict) else []
+            audit_rows = (tuned_audit_data_outer or {}).get("variant_rows") if isinstance(tuned_audit_data_outer, dict) else []
             if audit_rows:
                 try:
                     variants_path = os.path.join(
@@ -1510,7 +1513,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 except Exception as e:
                     print(f"⚠️ Failed to write tuned variants CSV: {e}")
 
-            positional_rows = (tuned_audit_data or {}).get("positional_rows") if isinstance(tuned_audit_data, dict) else []
+            positional_rows = (tuned_audit_data_outer or {}).get("positional_rows") if isinstance(tuned_audit_data_outer, dict) else []
             if positional_rows:
                 try:
                     positions_path = os.path.join(
