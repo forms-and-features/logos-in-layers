@@ -3,51 +3,36 @@ You're a top LLM interpretability researcher at a leading AI lab (think OpenAI, 
 We are analysing layer-by-layer logit-lens sweeps over ten open-weight base LLMs (Meta-Llama-3-8B, Meta-Llama-3-70B, Mistral-7B-v0.1, Mistral-Small-24B-Base-2501, Gemma-2-9B, Gemma-2-27B, Qwen-3-8B, Qwen-3-14B, Qwen2.5-72B, Yi-34B).
 
 With the help of an AI co-pilot, the user ran experiments on a few open-weights models:
-- the python script: 
+
+THE PYTHON SCRIPT: 
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run.py
 
-- structured output of the script for each of the models in JSON (model-level results) and CSV (detailed layer-by-layer results) files. Some runs may also include Prism sidecar CSVs and a `diagnostics.prism_summary` block in JSON for calibration comparison:
+THE CONTEXT:
+
+The broad plan of the current iteration of the experiment:
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_LAYERS_BASELINE_PLAN.md
+
+The plans for future stages of the experiment, provided here for context, NOT for evaluation; keep in mind that some potential improvements are deliberately left out of the scope of the current iteration of the experiment:
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/00x_PROJECT_PLAN.md
+
+Notes on the experiment, also provided for context:
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/NOTES.md
+
+STRUCTURED OUTPUTS OF THE SCRIPT:
+One JSON file for each model with model-level results:
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b.json
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b-records.csv
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b-pure-next-token.csv
-
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-8B.json
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-8B-records.csv
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-8B-pure-next-token.csv
-
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1.json
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-records.csv
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-pure-next-token.csv
-
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-8B.json
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-8B-records.csv
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-8B-pure-next-token.csv
-
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-14B.json
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-14B-records.csv
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-14B-pure-next-token.csv
-
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Yi-34B.json
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Yi-34B-records.csv
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Yi-34B-pure-next-token.csv
-
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-27b.json
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-27b-records.csv
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-27b-pure-next-token.csv
-
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-70B.json
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-70B-records.csv
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-70B-pure-next-token.csv
-
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501.json
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-records.csv
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-pure-next-token.csv
-
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen2.5-72B.json
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen2.5-72B-records.csv
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen2.5-72B-pure-next-token.csv
 
-- evaluation of those outputs by an LLM model, prompted to emulate an LLM interpretability researcher: 
+EVALUATION OF THESE OUTPUTS:
+Per-model evaluations performed by an LLM agent, which was prompted to act as an LLM interpretability researcher: 
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-Meta-Llama-3-8B.md
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-gemma-2-9b.md
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-Mistral-7B-v0.1.md
@@ -59,39 +44,151 @@ https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-Mistral-Small-24B-Base-2501.md
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-Qwen2.5-72B.md
 
-
-If Prism sidecars are present in the run (calibration overlay), they will appear as additional CSVs per model:
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-records-prism.csv
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-pure-next-token-prism.csv
-… and similarly for other models. JSON files include `diagnostics.prism_summary` when Prism was active.
-
-If Tuned‑Lens sidecars are present in the run (learned calibration overlay), they will appear as additional CSVs per model:
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-records-tuned.csv
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-pure-next-token-tuned.csv
-… and similarly for other models. JSON files include a `tuned_lens` block (status/path/summaries/provenance), and diagnostics mirror tuned summaries (e.g., `L_surface_to_meaning_tuned`, `L_geom_tuned`, `L_topk_decay_tuned`). Note: `kl_to_final_bits_norm_temp` is norm‑only and may be blank in tuned CSVs.
-
-If present for a model, also include Full Raw‑vs‑Norm sidecar, they will appear as additional CSVs per moidel:
-0https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-pure-next-token-rawlens.csv
-...and similarly for other models, with per-layer raw vs norm for all layers; columns: layer, p_top1_raw, top1_token_id_raw, top1_token_str_raw, p_answer_raw, answer_rank_raw, p_top1_norm, top1_token_id_norm, top1_token_str_norm, p_answer_norm, answer_rank_norm, kl_norm_vs_raw_bits, norm_only_semantics.)
-
-
-- cross-model evaluation:
+Cross-model evaluation performed by an LLM agent, which was prompted to act as an LLM interpretability researched:
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-cross-models.md
 
-- notes on the experiment:
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/NOTES.md
+DETAILED OUTPUTS IN CSV FORMAT:
+They were used in evaluations, you don't have to read them all, or any; they are provided for reference; read them when necessary.
 
-- broad plan of the experiment:
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_LAYERS_BASELINE_PLAN.md
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b-records.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b-pure-next-token.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b-records-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b-pure-next-token-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b-pure-next-token-rawlens-window.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b-pure-next-token-rawlens.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b-records-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b-pure-next-token-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b-pure-next-token-tuned-variants.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b-positions-tuned-audit.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b-milestones.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b-artifact-audit.csv
 
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-8B-records.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-8B-pure-next-token.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-8B-records-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-8B-pure-next-token-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-8B-pure-next-token-rawlens-window.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-8B-pure-next-token-rawlens.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-8B-records-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-8B-pure-next-token-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-8B-pure-next-token-tuned-variants.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-8B-positions-tuned-audit.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-8B-milestones.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-8B-artifact-audit.csv
 
-Your task is to:
-- review the experiment's code: anything wrong about the approach (other than limitations highlighted in model evaluation docs)?
-- review the results and analyses: anything incorrectly interpreted, over-stated, or missed?
-- do your own independent deep dive into the results, broadly following the structure of cross-model evaluation reports, and using your knowledge of latest LLM interpretability research (you may use search for articles, posts and code sources);
-- consider the usefulness of the findings for the realism vs nominalism debate, keeping in mind this is just the first iteration;
-- review the plan in https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_LAYERS_BASELINE_PLAN.md and, if necessary, propose additions and/or adjustments to the next steps, keeping in mind project context and goals; make sure that suggestions would actually bring non-negligible value to the project (no bike-shedding!).
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-records.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-pure-next-token.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-records-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-pure-next-token-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-pure-next-token-rawlens-window.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-pure-next-token-rawlens.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-records-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-pure-next-token-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-pure-next-token-tuned-variants.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-positions-tuned-audit.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-milestones.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1-artifact-audit.csv
 
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-8B-records.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-8B-pure-next-token.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-8B-records-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-8B-pure-next-token-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-8B-pure-next-token-rawlens-window.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-8B-pure-next-token-rawlens.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-8B-records-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-8B-pure-next-token-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-8B-pure-next-token-tuned-variants.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-8B-positions-tuned-audit.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-8B-milestones.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-8B-artifact-audit.csv
+
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-14B-records.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-14B-pure-next-token.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-14B-records-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-14B-pure-next-token-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-14B-pure-next-token-rawlens-window.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-14B-pure-next-token-rawlens.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-14B-records-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-14B-pure-next-token-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-14B-pure-next-token-tuned-variants.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-14B-positions-tuned-audit.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-14B-milestones.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-14B-artifact-audit.csv
+
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Yi-34B-records.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Yi-34B-pure-next-token.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Yi-34B-records-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Yi-34B-pure-next-token-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Yi-34B-pure-next-token-rawlens-window.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Yi-34B-pure-next-token-rawlens.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Yi-34B-records-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Yi-34B-pure-next-token-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Yi-34B-pure-next-token-tuned-variants.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Yi-34B-positions-tuned-audit.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Yi-34B-milestones.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Yi-34B-artifact-audit.csv
+
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-27b-records.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-27b-pure-next-token.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-27b-records-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-27b-pure-next-token-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-27b-pure-next-token-rawlens-window.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-27b-pure-next-token-rawlens.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-27b-records-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-27b-pure-next-token-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-27b-pure-next-token-tuned-variants.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-27b-positions-tuned-audit.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-27b-milestones.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-27b-artifact-audit.csv
+
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-70B-records.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-70B-pure-next-token.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-70B-records-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-70B-pure-next-token-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-70B-pure-next-token-rawlens-window.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-70B-milestones.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-70B-artifact-audit.csv
+
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Meta-Llama-3-70B-pure-next-token-rawlens.csv
+
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-records.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-pure-next-token.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-records-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-pure-next-token-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-pure-next-token-rawlens-window.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-pure-next-token-rawlens.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-records-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-pure-next-token-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-pure-next-token-tuned-variants.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-positions-tuned-audit.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-milestones.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-artifact-audit.csv
+
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen2.5-72B-records.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen2.5-72B-pure-next-token.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen2.5-72B-records-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen2.5-72B-pure-next-token-prism.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen2.5-72B-pure-next-token-rawlens-window.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen2.5-72B-pure-next-token-rawlens.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen2.5-72B-records-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen2.5-72B-pure-next-token-tuned.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen2.5-72B-pure-next-token-tuned-variants.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen2.5-72B-positions-tuned-audit.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen2.5-72B-milestones.csv
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen2.5-72B-artifact-audit.csv
+
+YOUR TASK:
+1. Review the experiment's code: anything wrong about the approach (other than limitations highlighted in model evaluation docs)?
+
+2. Review the results and analyses: anything incorrectly interpreted, over-stated, or missed?
+
+3. Do your own independent deep dive into the results, broadly following the structure of cross-model evaluation reports, and using your knowledge of latest LLM interpretability research (you may use search for articles, posts and code sources).
+
+4. Consider the usefulness of the findings for the realism vs nominalism debate, keeping in mind this is just the first iteration, and its deliberate limitations.
+
+5. Review the plan in https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_LAYERS_BASELINE_PLAN.md and, if necessary, propose additions and/or adjustments to this iteration of the project, keeping in mind project context and goals; make sure that suggestions would actually bring non-negligible value to this iteration of the project (no bike-shedding!). It's fine if you consider this iteration of the project complete.
+
+GUIDELINES:
 Use your knowledge of cutting-edge LLM research. Look up and read papers, if necessary.
 
 Be thorough and specific - this is important.
@@ -100,30 +197,13 @@ Make sure that statements are supported by evidence from the txt dump, don't spe
 
 Do not use tables unless for the cases explicitly requested in this prompt.
 
-Known limitations of the approach that we accepted in this iteration (but suggestions are appreciated):
-
-The script:
-* **Applies each model's own normaliser** with architecture-aware selection before unembed. Pre-norm models use the next block's ln1 (or ln_final at the end) for post-block probes; post-norm use the current block's ln2. LN/RMS statistics are computed in fp32 (RMS ε inside sqrt), then cast back to the residual dtype.
-* **Defines copy-collapse (L_\copy) by prompt-echo**: the first layer whose top-1 *next-token* (or a k=1 window) forms an ID-level contiguous subsequence of the prompt's token IDs with **p > 0.95** and margin **p1 − p2 > 0.10**. No entropy fallback; whitespace/punctuation top‑1s are ignored. Provenance fields are present in diagnostics (`copy_thresh`, `copy_window_k`, `copy_match_level`). Soft detectors (`L_copy_soft[k]`) reuse the same ID rule with a softer τ (default 0.33/0.50) and window sizes from `copy_soft_config.window_ks`.
-* **Defines semantic-collapse (L_\semantic)** as the first layer where the gold answer’s first ID is rank 1 (answer_rank==1) under the lens; falls back to string match if rank is unavailable.  Δ-collapse = L_\semantic − L_\copy captures how long the model clings to surface form before retrieving meaning; soft deltas (Δ_soft[k]) compare against `L_copy_soft[k]`.
-* Uses the positive prompt
-  `Give the city name only, plain text. The capital of Germany is called simply`
-  and also runs (i) a no_filler ablation variant ("… is called") and (ii) a France→Paris control. The depth summaries focus on `prompt_id=pos, prompt_variant=orig` for comparability; ablation deltas are reported in `ablation_summary`.
-* Runs on the device selected by `--device` (default **auto**, which picks cuda → mps → cpu by fit). Normalisation math runs in fp32 but residuals are cached in the model’s compute dtype. The unembedding is shadow‑promoted to fp32 for analysis when compute is bf16/fp16 (or via `--fp32-unembed`). The run is deterministically seeded (`SEED = 316`). Early-layer decoded tokens may be garbled; treat these artefacts as noise.
-* Outputs per model: a JSON meta file (diagnostics + summary, including `copy_flag_columns`, `copy_soft_config`, `L_copy_soft`, `delta_layers_soft`, `last_layer_consistency`, control, and ablation blocks; plus surface/geometry/coverage summaries and norm‑temp snapshots), a records CSV, and a pure‑next‑token CSV (one row per layer). The pure CSV includes existing flags (`copy_collapse`, `copy_strict@τ`, `copy_soft_k{1,2,3}@τ_soft`, `entropy_collapse`, `is_answer`) and also:
-  – **Surface mass**: `echo_mass_prompt`, `answer_mass`, `answer_minus_echo_mass`, `mass_ratio_ans_over_prompt`
-  – **Geometry**: `cos_to_answer`, `cos_to_prompt_max`, `geom_crossover`
-  – **Coverage**: `topk_prompt_mass@50`
-  – **Norm temperature (norm‑only)**: `kl_to_final_bits_norm_temp` = KL(P(z/τ) || P_final)
-  – Existing: `p_top1`, `p_top5`, `p_answer`, `answer_rank`, `kl_to_final_bits`, `cos_to_final`, `control_margin`
-  Evaluation markdown files are also written under `run-latest/`.
-
-Known limitations to keep in mind:
-
+KNOWN LIMITATIONS:
 * RMS-lens can distort absolute probabilities; comparisons should stay within-model, not across differing normalisation schemes.
 * Single-prompt probing risks over-fitting to tokenizer quirks; copy-collapse counts may swing if we tweak wording or punctuation.
 * Attention patterns and MLP activations are not inspected—only residual projections—so entropy bumps caused by internal gating may be mis-attributed.
+* Training the Prims was very time consuming and expensive; fitting the Tuned Lens for 70B and 72B models was not performed because of prohibitive costs.
 
 Accept these constraints as *scoping guards*: they keep this run self-consistent even if they leave some systematic bias uncorrected.
 
-Your response should read as a review, not as part of a conversation. DO NOT refer to user as "you", or to yourself as "I" - everything in the review MUST be in third person. The review should be in valid markdown format. Respond with review only and nothing else, no dialogue.
+RESPONSE FORMAT:
+Your response should read as a review, not as part of a conversation. DO NOT refer to user as "you", or to yourself as "I" - everything in the review MUST be in third person. DO NOT refer to the author of the project, or the "team" behind it - talk about the project itself using neutral, passive language. The review should be in valid markdown format. Respond with review only and nothing else, no dialogue.
