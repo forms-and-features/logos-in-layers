@@ -52,7 +52,7 @@ CAVEATS / RULES
 * If `warn_high_last_layer_kl=true`, do not infer final‑row probability regressions; focus on ranks/KL thresholds.
 
 TASK
-Write **EVAL** in GitHub‑flavoured Markdown with the sections below **in order**. If a claim cannot be grounded in a quoted CSV/JSON line, omit it. The result of your evaluation must be written to: 001_layers_baseline/run-latest/evaluation-Qwen3-14B.md
+Write **EVAL** in GitHub‑flavoured Markdown with the sections below **in order**. If a claim cannot be grounded in a quoted CSV/JSON line, omit it. The result of your evaluation must be written to: 001_layers_baseline/run-latest/evaluation-Qwen3-14B.md ; append your text to the file, do not overwrite it.
 
 Use tools to review JSON and CSV files as needed.
 
