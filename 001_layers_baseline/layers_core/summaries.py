@@ -618,8 +618,15 @@ def compute_lens_artifact_score(
     pct_layers_kl_ge_0_5: Optional[float],
     n_norm_only: int,
     max_kl_bits: Optional[float],
+    js_p50: Optional[float] = None,
+    l1_p50: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """Numeric lens-artefact score in [0,1] and tier label, per §1.27."""
+    """Numeric lens-artefact score in [0,1] and tier label, per §1.27.
+
+    The baseline score remains unchanged; ``lens_artifact_score_v2`` adds
+    optional contributions from symmetric divergence and L1 drift percentiles
+    (per §1.37).
+    """
     try:
         p1 = float(pct_layers_kl_ge_1 or 0.0)
         p05 = float(pct_layers_kl_ge_0_5 or 0.0)
@@ -634,4 +641,16 @@ def compute_lens_artifact_score(
         tier = "medium"
     else:
         tier = "high"
-    return {"lens_artifact_score": float(score), "tier": tier}
+    score_v2 = float(score)
+    try:
+        if js_p50 is not None:
+            score_v2 += 0.1 * min(1.0, max(0.0, float(js_p50)) / 0.1)
+    except Exception:
+        pass
+    try:
+        if l1_p50 is not None:
+            score_v2 += 0.05 * min(1.0, max(0.0, float(l1_p50)) / 0.5)
+    except Exception:
+        pass
+    score_v2 = max(0.0, min(1.0, score_v2))
+    return {"lens_artifact_score": float(score), "lens_artifact_score_v2": float(score_v2), "tier": tier}

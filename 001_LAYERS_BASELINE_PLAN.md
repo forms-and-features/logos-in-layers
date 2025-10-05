@@ -1136,7 +1136,7 @@ Emit a compact map from `layer` indices to **model block names** and decoded str
 
 ---
 
-### 1.37. Symmetric divergences & entropy gap in Raw‑vs‑Norm
+### [x] 1.37. Symmetric divergences & entropy gap in Raw‑vs‑Norm
 
 **Why.** `KL(P_norm ∥ P_raw)` can explode when `P_raw` has near‑zeros, obscuring whether disagreement is local or global. Symmetric and entropy‑based views reduce this ambiguity and make the lens‑artefact score more diagnostic.
 **What.**
@@ -1149,6 +1149,8 @@ Emit a compact map from `layer` indices to **model block names** and decoded str
 * Compute per‑layer with the existing prob vectors; reuse fp32 softmax.
 * Write columns to the `*-rawlens.csv` sidecar; record summary percentiles in `diagnostics.raw_lens_full`.
 * Keep the old score stable; surface a second `lens_artifact_score_v2` alongside (do not replace).
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

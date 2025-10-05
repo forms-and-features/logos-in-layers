@@ -1096,11 +1096,15 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
 
         try:
             full_block = diag.get("raw_lens_full") or {}
+            js_stats = (full_block.get("js_divergence_percentiles") or {})
+            l1_stats = (full_block.get("l1_prob_diff_percentiles") or {})
             score_info = compute_lens_artifact_score(
                 pct_layers_kl_ge_1=full_block.get("pct_layers_kl_ge_1.0"),
                 pct_layers_kl_ge_0_5=full_block.get("pct_layers_kl_ge_0.5"),
                 n_norm_only=int(full_block.get("n_norm_only_semantics_layers") or 0),
                 max_kl_bits=full_block.get("max_kl_norm_vs_raw_bits"),
+                js_p50=js_stats.get("p50"),
+                l1_p50=l1_stats.get("p50"),
             )
             if full_block:
                 full_block["score"] = score_info
@@ -1108,6 +1112,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             diag.setdefault("config", {})["lens_artifact_score"] = {
                 "weights": {"pct_ge_1.0": 0.6, "norm_only": 0.3, "max_kl_scaled": 0.1},
                 "thresholds": {"low": 0.2, "high": 0.5},
+                "v2_addends": {"js_p50": 0.1, "l1_p50": 0.05},
             }
         except Exception as e:
             try:

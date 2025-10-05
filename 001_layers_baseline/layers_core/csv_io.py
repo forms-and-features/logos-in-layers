@@ -224,6 +224,12 @@ def write_raw_lens_full_csv(records: List[Dict[str, Any]], csv_filepath: str) ->
             "answer_rank_norm",
             # cross
             "kl_norm_vs_raw_bits",
+            "kl_raw_to_norm_bits",
+            "js_divergence",
+            "entropy_bits_norm",
+            "entropy_bits_raw",
+            "entropy_gap_bits",
+            "l1_prob_diff",
             "norm_only_semantics",
         ]
         writer.writerow(header)
@@ -247,6 +253,12 @@ def write_raw_lens_full_csv(records: List[Dict[str, Any]], csv_filepath: str) ->
                 _nz(rec.get("p_answer_norm")),
                 _nz(rec.get("answer_rank_norm")),
                 _nz(rec.get("kl_norm_vs_raw_bits")),
+                _nz(rec.get("kl_raw_to_norm_bits")),
+                _nz(rec.get("js_divergence")),
+                _nz(rec.get("entropy_bits_norm")),
+                _nz(rec.get("entropy_bits_raw")),
+                _nz(rec.get("entropy_gap_bits")),
+                _nz(rec.get("l1_prob_diff")),
                 _nz(rec.get("norm_only_semantics")),
             ]
             writer.writerow(row)

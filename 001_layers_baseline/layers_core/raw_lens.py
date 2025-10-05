@@ -1,3 +1,4 @@
+import math
 import os
 from typing import Dict, Any, Optional, Iterable, List, Tuple
 
@@ -363,6 +364,21 @@ def compute_full_raw_norm(
     kl_ge_0_5 = 0
     norm_only_layers: List[int] = []
     max_kl_val: Optional[float] = None
+    js_values: List[float] = []
+    l1_values: List[float] = []
+    first_js_le_0_1: Optional[int] = None
+    first_l1_le_0_5: Optional[int] = None
+
+    def _entropy_bits_from_probs(probs: torch.Tensor) -> Optional[float]:
+        try:
+            p32 = probs.to(dtype=torch.float32)
+            log_p = torch.log(p32 + 1e-30)
+            ent_nats = -torch.sum(p32 * log_p)
+            return float(ent_nats.detach().cpu().item() / math.log(2))
+        except Exception:
+            return None
+
+    teacher_entropy_bits = _entropy_bits_from_probs(final_probs_cpu)
 
     for layer in available_layers:
         norm_logits = norm_logits_map.get(layer)
@@ -401,12 +417,49 @@ def compute_full_raw_norm(
             kl_nr = float(kl_bits(norm_probs, raw_probs))
         except Exception:
             kl_nr = None
+        try:
+            kl_rn = float(kl_bits(raw_probs, norm_probs))
+        except Exception:
+            kl_rn = None
+
+        js_divergence = None
+        try:
+            midpoint = 0.5 * (norm_probs + raw_probs)
+            midpoint = midpoint / midpoint.sum()
+            kl_nm = kl_bits(norm_probs, midpoint)
+            kl_rm = kl_bits(raw_probs, midpoint)
+            js_divergence = 0.5 * (kl_nm + kl_rm)
+        except Exception:
+            js_divergence = None
+
+        entropy_norm_bits = _entropy_bits_from_probs(norm_probs)
+        entropy_raw_bits = _entropy_bits_from_probs(raw_probs)
+        entropy_gap_bits = None
+        if entropy_norm_bits is not None and teacher_entropy_bits is not None:
+            entropy_gap_bits = entropy_norm_bits - teacher_entropy_bits
+
+        l1_prob_diff = None
+        try:
+            l1_prob_diff = float(torch.sum(torch.abs(norm_probs - raw_probs)).item())
+        except Exception:
+            l1_prob_diff = None
+
         if kl_nr is not None:
             max_kl_val = kl_nr if max_kl_val is None else max(max_kl_val, kl_nr)
             if kl_nr >= 1.0:
                 kl_ge_1 += 1
             if kl_nr >= 0.5:
                 kl_ge_0_5 += 1
+
+        if js_divergence is not None:
+            js_values.append(float(js_divergence))
+            if first_js_le_0_1 is None and js_divergence <= 0.1:
+                first_js_le_0_1 = layer
+
+        if l1_prob_diff is not None:
+            l1_values.append(float(l1_prob_diff))
+            if first_l1_le_0_5 is None and l1_prob_diff <= 0.5:
+                first_l1_le_0_5 = layer
 
         is_answer_norm = bool(metrics_norm.get("answer_rank") == 1)
         if metrics_norm.get("answer_rank") is None and collected_map.get(layer):
@@ -437,6 +490,12 @@ def compute_full_raw_norm(
                 "answer_rank_norm": metrics_norm.get("answer_rank"),
                 # cross
                 "kl_norm_vs_raw_bits": kl_nr,
+                "kl_raw_to_norm_bits": kl_rn,
+                "js_divergence": js_divergence,
+                "entropy_bits_norm": entropy_norm_bits,
+                "entropy_bits_raw": entropy_raw_bits,
+                "entropy_gap_bits": entropy_gap_bits,
+                "l1_prob_diff": l1_prob_diff,
                 "norm_only_semantics": norm_only,
             }
         )
@@ -448,5 +507,33 @@ def compute_full_raw_norm(
     summary["n_norm_only_semantics_layers"] = len(norm_only_layers)
     summary["earliest_norm_only_semantic"] = (min(norm_only_layers) if norm_only_layers else None)
     summary["max_kl_norm_vs_raw_bits"] = max_kl_val
+
+    def _percentile(values: List[float], pct: float) -> Optional[float]:
+        if not values:
+            return None
+        if len(values) == 1:
+            return float(values[0])
+        vals_sorted = sorted(values)
+        rank = (len(vals_sorted) - 1) * pct
+        low = int(math.floor(rank))
+        high = int(math.ceil(rank))
+        if low == high:
+            return float(vals_sorted[low])
+        fraction = rank - low
+        return float(vals_sorted[low] + (vals_sorted[high] - vals_sorted[low]) * fraction)
+
+    summary["js_divergence_percentiles"] = {
+        "p25": _percentile(js_values, 0.25),
+        "p50": _percentile(js_values, 0.50),
+        "p75": _percentile(js_values, 0.75),
+    }
+    summary["l1_prob_diff_percentiles"] = {
+        "p25": _percentile(l1_values, 0.25),
+        "p50": _percentile(l1_values, 0.50),
+        "p75": _percentile(l1_values, 0.75),
+    }
+    summary["first_js_le_0.1"] = first_js_le_0_1
+    summary["first_l1_le_0.5"] = first_l1_le_0_5
+    summary["teacher_entropy_bits"] = teacher_entropy_bits
 
     return summary, records

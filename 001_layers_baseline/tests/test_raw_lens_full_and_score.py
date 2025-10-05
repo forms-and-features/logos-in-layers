@@ -58,11 +58,16 @@ def test_full_raw_norm_basic():
 
     assert summary.get("mode") == "full"
     assert isinstance(rows, list) and len(rows) == 2
+    assert "js_divergence_percentiles" in summary
+    assert "l1_prob_diff_percentiles" in summary
     # Layer 0 should be norm-only semantics (norm rank=1 for id=2; raw rank!=1)
     r0 = [r for r in rows if r.get("layer") == 0][0]
     assert r0.get("norm_only_semantics") in (True, False)
     # KL fields present
     assert "kl_norm_vs_raw_bits" in r0
+    assert "js_divergence" in r0
+    assert "kl_raw_to_norm_bits" in r0
+    assert "l1_prob_diff" in r0
 
     # Lens-artefact score produces tier and a float
     score = compute_lens_artifact_score(
@@ -70,9 +75,12 @@ def test_full_raw_norm_basic():
         pct_layers_kl_ge_0_5=summary.get("pct_layers_kl_ge_0.5"),
         n_norm_only=int(summary.get("n_norm_only_semantics_layers") or 0),
         max_kl_bits=summary.get("max_kl_norm_vs_raw_bits"),
+        js_p50=(summary.get("js_divergence_percentiles") or {}).get("p50"),
+        l1_p50=(summary.get("l1_prob_diff_percentiles") or {}).get("p50"),
     )
-    assert set(score.keys()) == {"lens_artifact_score", "tier"}
+    assert set(score.keys()) == {"lens_artifact_score", "lens_artifact_score_v2", "tier"}
     assert isinstance(score["lens_artifact_score"], float)
+    assert isinstance(score["lens_artifact_score_v2"], float)
     assert score["tier"] in ("low", "medium", "high")
 
 
@@ -104,5 +112,6 @@ def test_score_handles_none_values():
         n_norm_only=0,
         max_kl_bits=None,
     )
-    assert set(score.keys()) == {"lens_artifact_score", "tier"}
+    assert set(score.keys()) == {"lens_artifact_score", "lens_artifact_score_v2", "tier"}
     assert isinstance(score["lens_artifact_score"], float)
+    assert isinstance(score["lens_artifact_score_v2"], float)
