@@ -1194,11 +1194,11 @@ Emit a compact map from `layer` indices to **model block names** and decoded str
   **How.**
 * Accumulate across prompts in the runner; for single‑prompt runs, write `1.0` and keep the richer fields verbatim.
 
-✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)y
 
 ---
 
-### 1.41. Residual‑norm trajectory classifier
+### [x] 1.41. Residual‑norm trajectory classifier
 
 **Why.** Monotone vs non‑monotone norm growth hints at “iterative refinement” vs “modular subcomputations.” A coarse classifier helps interpret depth curves.
 **What.**
@@ -1208,6 +1208,8 @@ Emit a compact map from `layer` indices to **model block names** and decoded str
   **How.**
 * Fit a per‑run linear model on log‑norms; set `shape` by slope sign and residual variance (spike = any early layer with `ratio > 3×` or `delta_resid_cos < 0.8`).
 * No CLI; attach to existing normalization provenance.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)y
 
 ---
 

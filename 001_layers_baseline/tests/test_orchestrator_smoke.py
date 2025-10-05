@@ -127,6 +127,8 @@ def test_orchestrator_smoke_writes_outputs():
         assert isinstance(diag['normalization_provenance'].get('per_layer'), list)
         first_entry = diag['normalization_provenance']['per_layer'][0]
         assert 'resid_norm_ratio' in first_entry and 'delta_resid_cos' in first_entry
+        assert 'raw_resid_norm' in first_entry
+        assert 'norm_trajectory' in diag
         assert 'numeric_health' in diag and 'any_nan' in diag['numeric_health']
         assert 'unembed_bias' in diag
         assert 'copy_mask' in diag and isinstance(diag['copy_mask'].get('ignored_token_ids'), list)

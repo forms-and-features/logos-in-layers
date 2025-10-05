@@ -134,7 +134,7 @@ def run_prompt_pass(
 
     def _norm_effect_metrics(raw_vec: torch.Tensor | None, norm_vec: torch.Tensor | None):
         if raw_vec is None or norm_vec is None:
-            return None, None
+            return None, None, None
         try:
             raw_f = raw_vec.detach().to(dtype=torch.float32)
             norm_f = norm_vec.detach().to(dtype=torch.float32)
@@ -147,9 +147,14 @@ def run_prompt_pass(
             cos_val = None
             if torch.isfinite(denom) and denom > 0:
                 cos_val = float(torch.clamp(torch.dot(raw_f.flatten(), norm_f.flatten()) / denom, -1.0, 1.0))
-            return ratio, cos_val
+            raw_norm_val = None
+            try:
+                raw_norm_val = float(torch.norm(raw_f).item())
+            except Exception:
+                raw_norm_val = None
+            return ratio, cos_val, raw_norm_val
         except Exception:
-            return None, None
+            return None, None, None
 
     def _update_numeric(layer_idx: int, resid_vec: torch.Tensor | None, norm_vec: torch.Tensor | None,
                         logits_vec: torch.Tensor, probs_vec: torch.Tensor | None):
@@ -369,7 +374,7 @@ def run_prompt_pass(
             except Exception:
                 pass
 
-            ratio0, cos0 = _norm_effect_metrics(raw_vec_L0, geom_vec_norm_pre)
+            ratio0, cos0, raw_norm0 = _norm_effect_metrics(raw_vec_L0, geom_vec_norm_pre)
             ln_source0, eps_inside0, scale_used0 = describe_norm_origin(model, 0, probe_after_block=False)
             norm_provenance_entries.append({
                 "layer": 0,
@@ -378,6 +383,7 @@ def run_prompt_pass(
                 "scale_gamma_used": bool(scale_used0),
                 "resid_norm_ratio": ratio0,
                 "delta_resid_cos": cos0,
+                "raw_resid_norm": raw_norm0,
             })
             block_label0 = "blocks[0]" if getattr(model, "blocks", []) else "blocks[0]"
             layer_map_entries.append({
@@ -390,6 +396,7 @@ def run_prompt_pass(
                 "layer": 0,
                 "resid_norm_ratio": ratio0,
                 "delta_resid_cos": cos0,
+                "raw_resid_norm": raw_norm0,
             })
             layer0_logits = norm_logits_all[last_pos]
             layer0_probs = torch.softmax(layer0_logits, dim=0)
@@ -637,7 +644,7 @@ def run_prompt_pass(
                 except Exception:
                     pass
 
-                ratio_layer, cos_layer = _norm_effect_metrics(raw_vec_layer, geom_vec_norm_post)
+                ratio_layer, cos_layer, raw_norm_layer = _norm_effect_metrics(raw_vec_layer, geom_vec_norm_post)
                 ln_source_layer, eps_inside_layer, scale_used_layer = describe_norm_origin(
                     model, layer, probe_after_block=True
                 )
@@ -648,6 +655,7 @@ def run_prompt_pass(
                     "scale_gamma_used": bool(scale_used_layer),
                     "resid_norm_ratio": ratio_layer,
                     "delta_resid_cos": cos_layer,
+                    "raw_resid_norm": raw_norm_layer,
                 })
                 block_label = f"blocks[{layer}]"
                 stream_label = "post_block"
@@ -664,6 +672,7 @@ def run_prompt_pass(
                     "layer": layer + 1,
                     "resid_norm_ratio": ratio_layer,
                     "delta_resid_cos": cos_layer,
+                    "raw_resid_norm": raw_norm_layer,
                 })
 
                 logits_all = norm_lens.forward(

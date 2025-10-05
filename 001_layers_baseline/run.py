@@ -89,7 +89,13 @@ from layers_core.collapse_rules import (
 )
 from layers_core.temperature import fit_norm_temperatures
 from layers_core.skip_sanity import evaluate_skip_layers
-from layers_core.summaries import build_unified_lens_metrics, tuned_rotation_vs_temp_attribution, compute_confirmed_semantics, compute_lens_artifact_score
+from layers_core.summaries import (
+    build_unified_lens_metrics,
+    tuned_rotation_vs_temp_attribution,
+    compute_confirmed_semantics,
+    compute_lens_artifact_score,
+    classify_norm_trajectory,
+)
 
 def clean_model_name(model_id):
     """Extract clean model name for filename"""
@@ -1181,30 +1187,17 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         norm_spike = False
         try:
             per_layer_norm = (diag.get("normalization_provenance") or {}).get("per_layer", [])
-            L_sem_ref = diag.get("L_semantic")
-            for entry in per_layer_norm:
-                layer_idx = entry.get("layer")
-                ratio = entry.get("resid_norm_ratio")
-                cos_val = entry.get("delta_resid_cos")
-                try:
-                    ratio_val = float(ratio) if ratio is not None else None
-                except (TypeError, ValueError):
-                    ratio_val = None
-                try:
-                    cos_val_float = float(cos_val) if cos_val is not None else None
-                except (TypeError, ValueError):
-                    cos_val_float = None
-                trigger = False
-                if ratio_val is not None and ratio_val > 3.0:
-                    trigger = True
-                if cos_val_float is not None and cos_val_float < 0.8:
-                    trigger = True
-                if trigger and isinstance(layer_idx, int):
-                    if not isinstance(L_sem_ref, int) or layer_idx <= int(L_sem_ref):
-                        norm_spike = True
-                        break
+            trajectory = classify_norm_trajectory(
+                per_layer_norm,
+                sem_layer=diag.get("L_semantic"),
+            )
+            if trajectory is not None:
+                diag["norm_trajectory"] = trajectory
+                norm_spike = bool(trajectory.get("n_spikes", 0))
+            else:
+                diag["norm_trajectory"] = None
         except Exception:
-            norm_spike = False
+            diag["norm_trajectory"] = None
         if norm_spike:
             diag_flags["normalization_spike"] = True
 

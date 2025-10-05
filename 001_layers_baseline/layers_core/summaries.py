@@ -1,4 +1,5 @@
 from typing import List, Dict, Any, Optional, Sequence, Tuple
+import math
 
 
 def summarize_pure_records(
@@ -654,3 +655,129 @@ def compute_lens_artifact_score(
         pass
     score_v2 = max(0.0, min(1.0, score_v2))
     return {"lens_artifact_score": float(score), "lens_artifact_score_v2": float(score_v2), "tier": tier}
+
+
+def classify_norm_trajectory(
+    entries: Sequence[Dict[str, Any]],
+    *,
+    sem_layer: Optional[int] = None,
+    spike_ratio_threshold: float = 3.0,
+    spike_cos_threshold: float = 0.8,
+    slope_plateau_threshold: float = 0.01,
+    monotonic_r2_threshold: float = 0.70,
+    eps: float = 1e-9,
+) -> Optional[Dict[str, Any]]:
+    """Classify residual norm trajectory based on per-layer normalization entries.
+
+    Args:
+        entries: Iterable of dicts containing at least ``layer`` and optionally
+            ``raw_resid_norm``, ``resid_norm_ratio``, and ``delta_resid_cos``.
+        sem_layer: Optional semantic layer threshold; spikes after this layer are
+            ignored when counting ``n_spikes``.
+
+    Returns:
+        Dict with ``shape``, ``slope``, ``r2``, ``n_spikes`` and bookkeeping
+        fields, or ``None`` if insufficient data is available.
+    """
+
+    if not entries:
+        return None
+
+    layers: List[int] = []
+    log_norms: List[float] = []
+    n_spikes = 0
+
+    for entry in entries:
+        layer_idx = entry.get("layer")
+        if not isinstance(layer_idx, int):
+            continue
+        ratio_val = entry.get("resid_norm_ratio")
+        cos_val = entry.get("delta_resid_cos")
+        raw_norm = entry.get("raw_resid_norm")
+        # Spike detection (restricted to semantic layer when provided)
+        consider_for_spike = (sem_layer is None) or (layer_idx <= int(sem_layer))
+        if consider_for_spike:
+            triggered = False
+            try:
+                if ratio_val is not None and float(ratio_val) > float(spike_ratio_threshold):
+                    triggered = True
+            except (TypeError, ValueError):
+                pass
+            try:
+                if cos_val is not None and float(cos_val) < float(spike_cos_threshold):
+                    triggered = True
+            except (TypeError, ValueError):
+                pass
+            if triggered:
+                n_spikes += 1
+
+        norm_val: Optional[float] = None
+        try:
+            if raw_norm is not None:
+                norm_val = float(raw_norm)
+        except (TypeError, ValueError):
+            norm_val = None
+        if norm_val is None:
+            try:
+                if ratio_val is not None:
+                    ratio_float = float(ratio_val)
+                    if ratio_float > 0:
+                        norm_val = 1.0 / ratio_float
+            except (TypeError, ValueError, ZeroDivisionError):
+                norm_val = None
+        if norm_val is None or not math.isfinite(norm_val) or norm_val <= 0:
+            continue
+        layers.append(layer_idx)
+        log_norms.append(math.log(norm_val + eps))
+
+    result: Dict[str, Any] = {
+        "shape": "unknown",
+        "slope": None,
+        "r2": None,
+        "n_spikes": int(n_spikes),
+        "sampled_layers": len(log_norms),
+    }
+
+    if len(log_norms) < 1:
+        if n_spikes > 0:
+            result["shape"] = "spike"
+        return result
+
+    if len(log_norms) == 1:
+        result["slope"] = 0.0
+        result["r2"] = None
+        result["shape"] = "spike" if n_spikes > 0 else "plateau"
+        return result
+
+    # Linear regression on log norms
+    x_vals = [float(x) for x in layers]
+    y_vals = log_norms
+    n = float(len(x_vals))
+    x_mean = sum(x_vals) / n
+    y_mean = sum(y_vals) / n
+    numerator = sum((x - x_mean) * (y - y_mean) for x, y in zip(x_vals, y_vals))
+    denominator = sum((x - x_mean) ** 2 for x in x_vals)
+    slope = numerator / denominator if denominator > 0 else 0.0
+    intercept = y_mean - slope * x_mean
+    ss_tot = sum((y - y_mean) ** 2 for y in y_vals)
+    ss_res = sum(((slope * x + intercept) - y) ** 2 for x, y in zip(x_vals, y_vals))
+    if ss_tot > 0:
+        r2 = 1.0 - (ss_res / ss_tot)
+    else:
+        r2 = 1.0
+
+    result["slope"] = slope
+    result["r2"] = r2
+
+    if n_spikes > 0:
+        result["shape"] = "spike"
+        return result
+
+    if abs(slope) <= slope_plateau_threshold:
+        result["shape"] = "plateau"
+    elif r2 >= monotonic_r2_threshold:
+        result["shape"] = "monotonic"
+    else:
+        result["shape"] = "non_monotonic"
+
+    return result
