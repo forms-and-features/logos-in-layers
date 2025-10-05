@@ -1303,7 +1303,7 @@ Add a **read‑only audit** that runs on the loaded tuned lens and emits:
 
 ---
 
-### 1.44. LLM‑Eval Pack (derived metrics & citations)
+### [x] 1.44. LLM‑Eval Pack (derived metrics & citations)
 
 **Why.** The evaluation prompts are executed by LLMs. Providing a compact, derived “eval view” of each run minimizes on‑the‑fly calculations, enforces consistency across models, and reduces errors. The pack aggregates key metrics introduced in §§1.37–1.43, adds normalized/derived summaries, and includes row‑level **citations** back to CSVs so LLMs can quote line numbers without scanning full files.
 
@@ -1413,6 +1413,8 @@ Emit a per‑model **JSON** block `evaluation_pack` (embedded in the main run JS
 * For `citations.layers`, record **0‑based row indices** from the pure CSV where each milestone occurs. If a milestone is null, set the row to null.
 * Generate the two CSVs from existing arrays; write them alongside the other sidecars.
 * Keep all additions **read‑only**; no model refits or translator edits.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)y
 
 ---
 

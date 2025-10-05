@@ -8,7 +8,9 @@ import csv
 import tempfile
 
 from layers_core.csv_io import (
+    write_artifact_audit_csv,
     write_csv_files,
+    write_milestones_csv,
     write_tuned_positions_csv,
     write_tuned_variants_csv,
 )
@@ -218,3 +220,89 @@ def test_write_tuned_positions_csv_headers(tmp_path):
         "2.2",
         "1.1",
     ]
+
+
+def test_write_milestones_csv(tmp_path):
+    rows = [
+        {
+            "layer": 1,
+            "is_copy_strict": True,
+            "is_copy_soft_k": "",
+            "is_semantic_norm": False,
+            "is_semantic_confirmed": False,
+            "answer_rank": 5,
+            "p_answer": 0.2,
+            "kl_to_final_bits": 1.4,
+            "entropy_bits": 2.0,
+            "lens": "norm",
+        },
+        {
+            "layer": 2,
+            "is_copy_strict": False,
+            "is_copy_soft_k": 1,
+            "is_semantic_norm": False,
+            "is_semantic_confirmed": False,
+            "answer_rank": 4,
+            "p_answer": 0.3,
+            "kl_to_final_bits": 1.2,
+            "entropy_bits": 1.8,
+            "lens": "norm",
+        },
+    ]
+    out_path = tmp_path / "milestones.csv"
+    write_milestones_csv(rows, str(out_path))
+    with out_path.open(newline='', encoding='utf-8') as f:
+        csv_rows = list(csv.reader(f))
+    assert csv_rows[0] == [
+        "layer",
+        "csv_row_index",
+        "is_copy_strict",
+        "is_copy_soft_k",
+        "is_semantic_norm",
+        "is_semantic_confirmed",
+        "answer_rank",
+        "p_answer",
+        "kl_to_final_bits",
+        "entropy_bits",
+        "lens",
+    ]
+    assert csv_rows[1][0:4] == ["1", "", "True", ""]
+    assert csv_rows[2][0:4] == ["2", "", "False", "1"]
+
+
+def test_write_artifact_audit_csv(tmp_path):
+    rows = [
+        {
+            "layer": "_summary",
+            "js_divergence": 0.05,
+            "kl_raw_to_norm_bits": 0.45,
+            "l1_prob_diff": 0.4,
+            "topk_jaccard_raw_norm@50": 0.6,
+            "lens_artifact_score_v2": 0.3,
+            "risk_tier": "medium",
+        },
+        {
+            "layer": 3,
+            "js_divergence": 0.08,
+            "kl_raw_to_norm_bits": 1.2,
+            "l1_prob_diff": 0.5,
+            "topk_jaccard_raw_norm@50": 0.55,
+            "lens_artifact_score_v2": "",
+            "risk_tier": "",
+        },
+    ]
+    out_path = tmp_path / "artifact.csv"
+    write_artifact_audit_csv(rows, str(out_path))
+    with out_path.open(newline='', encoding='utf-8') as f:
+        csv_rows = list(csv.reader(f))
+    assert csv_rows[0] == [
+        "layer",
+        "js_divergence",
+        "kl_raw_to_norm_bits",
+        "l1_prob_diff",
+        "topk_jaccard_raw_norm@50",
+        "lens_artifact_score_v2",
+        "risk_tier",
+    ]
+    assert csv_rows[1][0:3] == ["_summary", "0.05", "0.45"]
+    assert csv_rows[2][0:2] == ["3", "0.08"]

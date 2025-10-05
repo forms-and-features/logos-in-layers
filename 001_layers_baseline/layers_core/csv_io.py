@@ -322,6 +322,92 @@ def write_tuned_positions_csv(rows: List[Dict[str, Any]], filepath: str) -> None
             ])
 
 
+def write_milestones_csv(rows: List[Dict[str, Any]], filepath: str) -> None:
+    if not rows:
+        return
+
+    header = [
+        "layer",
+        "csv_row_index",
+        "is_copy_strict",
+        "is_copy_soft_k",
+        "is_semantic_norm",
+        "is_semantic_confirmed",
+        "answer_rank",
+        "p_answer",
+        "kl_to_final_bits",
+        "entropy_bits",
+        "lens",
+    ]
+
+    def _nz(val: Any) -> Any:
+        return "" if val is None else val
+
+    with open(filepath, 'w', newline='', encoding='utf-8') as f_csv:
+        writer = csv.writer(
+            f_csv,
+            delimiter=",",
+            quotechar='"',
+            quoting=csv.QUOTE_MINIMAL,
+            escapechar="\\",
+            lineterminator="\n",
+        )
+        writer.writerow(header)
+        for row in rows:
+            writer.writerow([
+                _nz(row.get("layer")),
+                _nz(row.get("row_index")),
+                _nz(row.get("is_copy_strict")),
+                _nz(row.get("is_copy_soft_k")),
+                _nz(row.get("is_semantic_norm")),
+                _nz(row.get("is_semantic_confirmed")),
+                _nz(row.get("answer_rank")),
+                _nz(row.get("p_answer")),
+                _nz(row.get("kl_to_final_bits")),
+                _nz(row.get("entropy_bits")),
+                _nz(row.get("lens")),
+            ])
+
+
+def write_artifact_audit_csv(rows: List[Dict[str, Any]], filepath: str) -> None:
+    if not rows:
+        return
+
+    header = [
+        "layer",
+        "js_divergence",
+        "kl_raw_to_norm_bits",
+        "l1_prob_diff",
+        "topk_jaccard_raw_norm@50",
+        "lens_artifact_score_v2",
+        "risk_tier",
+    ]
+
+    def _nz(val: Any) -> Any:
+        return "" if val is None else val
+
+    with open(filepath, 'w', newline='', encoding='utf-8') as f_csv:
+        writer = csv.writer(
+            f_csv,
+            delimiter=",",
+            quotechar='"',
+            quoting=csv.QUOTE_MINIMAL,
+            escapechar="\\",
+            lineterminator="\n",
+        )
+        writer.writerow(header)
+        for row in rows:
+            writer.writerow([
+                _nz(row.get("layer")),
+                _nz(row.get("js_divergence")),
+                _nz(row.get("kl_raw_to_norm_bits")),
+                _nz(row.get("l1_prob_diff")),
+                _nz(row.get("topk_jaccard_raw_norm@50")),
+                _nz(row.get("lens_artifact_score_v2")),
+                _nz(row.get("risk_tier")),
+            ])
+
+
 def write_raw_lens_full_csv(records: List[Dict[str, Any]], csv_filepath: str) -> None:
     """Write full-depth raw-vs-norm per-layer rows to CSV (one row per layer)."""
     if not records:

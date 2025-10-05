@@ -7,7 +7,7 @@ import sys
 import json
 import gc  # For garbage collection
 import platform
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 # --- deterministic bootstrap -------------------------------------------------
 import random, numpy as np
@@ -53,7 +53,9 @@ from layers_core.numerics import (
     bits_entropy_from_logits,
 )
 from layers_core.csv_io import (
+    write_artifact_audit_csv,
     write_csv_files,
+    write_milestones_csv,
     write_raw_lens_full_csv,
     write_raw_lens_window_csv,
     write_tuned_positions_csv,
@@ -85,6 +87,7 @@ from layers_core.unembed import prepare_unembed_weights
 from layers_core.lenses import NormLensAdapter, TunedLensAdapter
 from layers_core.tuned_lens import load_tuned_lens
 from layers_core.tuned_audit import build_tuned_audit_summary, build_provenance_snapshot
+from layers_core.eval_pack import build_evaluation_pack
 from layers_core.passes import run_prompt_pass
 from layers_core.contexts import UnembedContext, PrismContext
 from layers_core.probes import emit_test_prompts, emit_temperature_exploration
@@ -127,10 +130,14 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
     json_data_tuned_outer = None
     tuned_provenance_outer = None
     tuned_diag_info_outer = None
+    evaluation_pack: Optional[Dict[str, Any]] = None
+    evaluation_pack_milestones: List[Dict[str, Any]] = []
+    evaluation_pack_artifacts: List[Dict[str, Any]] = []
 
     def evaluate_model():
         """The actual experiment code - all prints go to console"""
         nonlocal json_data_tuned_outer, tuned_provenance_outer, tuned_diag_info_outer
+        nonlocal evaluation_pack, evaluation_pack_milestones, evaluation_pack_artifacts
         _vprint(f"\n{'='*60}")
         _vprint(f"EVALUATING MODEL: {model_id}")
         _vprint(f"{'='*60}")
@@ -310,6 +317,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         
         # Raw-vs-Norm dual-lens mode (env-controlled; default: sampled checks)
         RAW_LENS_MODE = get_raw_lens_mode(config.self_test)
+        clean_name = clean_model_name(model_id)
 
         # Track a last-layer consistency snapshot (lens vs model final head)
         last_layer_consistency = None
@@ -1356,6 +1364,28 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             # Best-effort; absence should not fail the run
             pass
 
+        try:
+            evaluation_pack, evaluation_pack_milestones, evaluation_pack_artifacts = build_evaluation_pack(
+                model_name=clean_name,
+                n_layers=getattr(model.cfg, "n_layers", None),
+                json_data=json_data,
+                json_data_tuned=json_data_tuned,
+                diag=diag,
+                measurement_guidance=json_data.get("measurement_guidance"),
+                tuned_audit_summary=tuned_audit_summary,
+                tuned_audit_data=tuned_audit_data,
+                clean_name=clean_name,
+            )
+            json_data["evaluation_pack"] = evaluation_pack
+        except Exception as exc:
+            evaluation_pack = None
+            evaluation_pack_milestones = []
+            evaluation_pack_artifacts = []
+            try:
+                json_data.setdefault("evaluation_pack_error", str(exc))
+            except Exception:
+                pass
+
         json_data_tuned_outer = json_data_tuned
         tuned_provenance_outer = tuned_provenance
         tuned_diag_info_outer = tuned_diag_info
@@ -1491,6 +1521,28 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     _vprint(f"✅ Tuned positional audit CSV saved to: {positions_path}")
                 except Exception as e:
                     print(f"⚠️ Failed to write tuned positional audit CSV: {e}")
+
+        if evaluation_pack_milestones:
+            try:
+                milestones_path = os.path.join(
+                    os.path.dirname(csv_filepath),
+                    f"output-{clean_name}-milestones.csv",
+                )
+                write_milestones_csv(evaluation_pack_milestones, milestones_path)
+                _vprint(f"✅ Milestones CSV saved to: {milestones_path}")
+            except Exception as e:
+                print(f"⚠️ Failed to write milestones CSV: {e}")
+
+        if evaluation_pack_artifacts:
+            try:
+                artifact_path = os.path.join(
+                    os.path.dirname(csv_filepath),
+                    f"output-{clean_name}-artifact-audit.csv",
+                )
+                write_artifact_audit_csv(evaluation_pack_artifacts, artifact_path)
+                _vprint(f"✅ Artifact audit CSV saved to: {artifact_path}")
+            except Exception as e:
+                print(f"⚠️ Failed to write artifact audit CSV: {e}")
 
         # Strip bulky per-token records from JSON to keep it compact
         json_data_compact = {k: v for k, v in json_data.items()
