@@ -4,7 +4,7 @@ You are an interpretability researcher from a top AI research lab (e.g. OpenAI, 
 INPUTS
 
 * SCRIPT – source code of the probe’s script (for context).
-* JSON – `001_layers_baseline/run-latest/output-Qwen3-14B.json` (compact summary; per‑token/per‑layer details live in CSVs).
+* JSON – 001_layers_baseline/run-latest/output-MODEL.json (compact summary; per‑token/per‑layer details live in CSVs).
   Read in particular:
   * `diagnostics.last_layer_consistency` (final‑head calibration)
   * `diagnostics.normalization_provenance`, `diagnostics.numeric_health`, `diagnostics.copy_mask`
@@ -27,18 +27,18 @@ INPUTS
   – `tuned_lens.provenance_snapshot` (dataset/revision/position window, rank, temperatures stats, preconditioner), if present
   – `evaluation_pack` (if present): milestones, artefact v2, repeatability, alignment, norm trajectory, entropy, tuned audit, citations to CSV rows
 * CSV – layer‑level results:
-  * `001_layers_baseline/run-latest/output-Qwen3-14B-records.csv`
-  * `001_layers_baseline/run-latest/output-Qwen3-14B-pure-next-token.csv`
+  * 001_layers_baseline/run-latest/output-MODEL-records.csv
+  * 001_layers_baseline/run-latest/output-MODEL-pure-next-token.csv
   Includes: flags (`copy_collapse`, strict sweep `copy_strict@τ` with τ∈{0.70,0.80,0.90,0.95}, `copy_soft_k{1,2,3}@τ_soft`, `entropy_collapse`, `is_answer`), prob/calibration (`p_top1`, `p_top5`, `p_answer`, `answer_rank`, `kl_to_final_bits`), norm‑temp (`kl_to_final_bits_norm_temp`), geometry (`cos_to_final`, `cos_to_answer`, `cos_to_prompt_max`, `geom_crossover`), surface mass (`echo_mass_prompt`, `answer_mass`, `answer_minus_echo_mass`, `mass_ratio_ans_over_prompt`), coverage (`topk_prompt_mass@50`), control (`control_margin = p(Paris) − p(Berlin)`), and **entropy columns** (`entropy_bits`, `teacher_entropy_bits`). Leading columns include `prompt_id` (`pos`/`ctl`) and `prompt_variant` (`orig`/`no_filler`).
 * Optional sidecars (if present):
-  * Prism: `output-Qwen3-14B-records-prism.csv`, `output-Qwen3-14B-pure-next-token-prism.csv`
-  * Tuned‑Lens: `output-Qwen3-14B-records-tuned.csv`, `output-Qwen3-14B-pure-next-token-tuned.csv`
-  * Raw‑vs‑Norm (window): `output-Qwen3-14B-pure-next-token-rawlens-window.csv`
-  * Raw‑vs‑Norm (full): `output-Qwen3-14B-pure-next-token-rawlens.csv` (augmented with: `js_divergence`, `kl_raw_to_norm_bits`, `l1_prob_diff`, `topk_jaccard_raw_norm@50`.)
-  * **Tuned variants**: `output-Qwen3-14B-pure-next-token-tuned-variants.csv` (full tuned / rotation‑only / temperature‑only)
-  * **Tuned positions audit**: `output-Qwen3-14B-positions-tuned-audit.csv`
-  * **Milestones (quick citation):** `output-Qwen3-14B-milestones.csv` (rows for L_copy/L_copy_soft/L_semantic/L_semantic_confirmed)
-  * **Artifact audit (quick scan):** `output-Qwen3-14B-artifact-audit.csv`
+  * Prism: output-MODEL-records-prism.csv, output-MODEL-pure-next-token-prism.csv
+  * Tuned‑Lens: output-MODEL-records-tuned.csv, output-MODEL-pure-next-token-tuned.csv
+  * Raw‑vs‑Norm (window): output-MODEL-pure-next-token-rawlens-window.csv
+  * Raw‑vs‑Norm (full): output-MODEL-pure-next-token-rawlens.csv (augmented with: `js_divergence`, `kl_raw_to_norm_bits`, `l1_prob_diff`, `topk_jaccard_raw_norm@50`.)
+  * **Tuned variants**: output-MODEL-pure-next-token-tuned-variants.csv (full tuned / rotation‑only / temperature‑only)
+  * **Tuned positions audit**: output-MODEL-positions-tuned-audit.csv
+  * **Milestones (quick citation):** output-MODEL-milestones.csv (rows for L_copy/L_copy_soft/L_semantic/L_semantic_confirmed)
+  * **Artifact audit (quick scan):** output-MODEL-artifact-audit.csv
   * If `evaluation_pack.citations` exists, use its row indices and filenames for line‑numbered quotes.
 
 Also use your own expertise in latest LLM research.
@@ -52,8 +52,7 @@ CAVEATS / RULES
 * If `warn_high_last_layer_kl=true`, do not infer final‑row probability regressions; focus on ranks/KL thresholds.
 
 TASK
-Write **EVAL** in GitHub‑flavoured Markdown with the sections below **in order**. If a claim cannot be grounded in a quoted CSV/JSON line, omit it. The result of your evaluation must be written to:
-`001_layers_baseline/run-latest/evaluation-MODEL.md`
+Write **EVAL** in GitHub‑flavoured Markdown with the sections below **in order**. If a claim cannot be grounded in a quoted CSV/JSON line, omit it. The result of your evaluation must be written to: 001_layers_baseline/run-latest/evaluation-Qwen3-14B.md
 
 Use tools to review JSON and CSV files as needed.
 

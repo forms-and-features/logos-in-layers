@@ -32,14 +32,7 @@ def build_prompt(template: str, model_id: str) -> str:
     # Replace MODEL placeholders with the model_id
     # Only the 'output-MODEL' tokens appear in the template; replace conservatively.
     content = template.replace("output-MODEL", f"output-{model_id}")
-    # Inject explicit destination for the EVAL output markdown file under INPUTS.
-    anchor = "\n- Your own research knowledge.\n"
-    insertion = (
-        f"\n- Your own research knowledge.\n\n"
-        f"- EVAL output file: 001_layers_baseline/run-latest/evaluation-{model_id}.md\n"
-    )
-    if anchor in content and f"evaluation-{model_id}.md" not in content:
-        content = content.replace(anchor, insertion)
+    content = template.replace("evaluation-MODEL", f"evaluation-{model_id}")
     return content
 
 
