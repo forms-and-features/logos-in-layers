@@ -72,6 +72,8 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
             "kl_to_final_bits",
             "kl_to_final_bits_norm_temp",
             "answer_rank",
+            "topk_jaccard_raw_norm@50",
+            "topk_jaccard_consecutive@50",
             # Representation-drift cosine (001_LAYERS_BASELINE_PLAN §1.5)
             "cos_to_final",
             # Geometric surface crossover (001_LAYERS_BASELINE_PLAN §1.14)
@@ -127,6 +129,8 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
                 _nz(rec.get("kl_to_final_bits")),
                 _nz(rec.get("kl_to_final_bits_norm_temp")),
                 _nz(rec.get("answer_rank")),
+                _nz(rec.get("topk_jaccard_raw_norm@50")),
+                _nz(rec.get("topk_jaccard_consecutive@50")),
                 _nz(rec.get("cos_to_final")),
                 _nz(rec.get("cos_to_answer")),
                 _nz(rec.get("cos_to_prompt_max")),
@@ -230,6 +234,8 @@ def write_raw_lens_full_csv(records: List[Dict[str, Any]], csv_filepath: str) ->
             "entropy_bits_raw",
             "entropy_gap_bits",
             "l1_prob_diff",
+            "topk_jaccard_raw_norm@50",
+            "topk_jaccard_consecutive@50",
             "norm_only_semantics",
         ]
         writer.writerow(header)
@@ -259,6 +265,8 @@ def write_raw_lens_full_csv(records: List[Dict[str, Any]], csv_filepath: str) ->
                 _nz(rec.get("entropy_bits_raw")),
                 _nz(rec.get("entropy_gap_bits")),
                 _nz(rec.get("l1_prob_diff")),
+                _nz(rec.get("topk_jaccard_raw_norm@50")),
+                _nz(rec.get("topk_jaccard_consecutive@50")),
                 _nz(rec.get("norm_only_semantics")),
             ]
             writer.writerow(row)

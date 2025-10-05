@@ -1,4 +1,5 @@
 import math
+import math
 import os
 from typing import Dict, Any, Optional, Iterable, List, Tuple
 
@@ -8,6 +9,11 @@ from .numerics import safe_cast_for_unembed, kl_bits
 from .metrics import compute_next_token_metrics
 from .collapse_rules import is_semantic_top1, is_pure_whitespace_or_punct
 from .unembed import unembed_mm
+
+
+TOPK_JACCARD_K = 50
+TOPK_JACCARD_CROSS_KEY = f"topk_jaccard_raw_norm@{TOPK_JACCARD_K}"
+TOPK_JACCARD_CONSEC_KEY = f"topk_jaccard_consecutive@{TOPK_JACCARD_K}"
 
 
 def get_raw_lens_mode(self_test: bool) -> str:
@@ -366,8 +372,13 @@ def compute_full_raw_norm(
     max_kl_val: Optional[float] = None
     js_values: List[float] = []
     l1_values: List[float] = []
+    jaccard_cross_values: List[float] = []
     first_js_le_0_1: Optional[int] = None
     first_l1_le_0_5: Optional[int] = None
+    first_jaccard_ge_0_5: Optional[int] = None
+    per_layer_cross: Dict[int, Optional[float]] = {}
+    per_layer_consecutive_norm: Dict[int, Optional[float]] = {}
+    prev_topk_norm: Optional[set] = None
 
     def _entropy_bits_from_probs(probs: torch.Tensor) -> Optional[float]:
         try:
@@ -377,6 +388,22 @@ def compute_full_raw_norm(
             return float(ent_nats.detach().cpu().item() / math.log(2))
         except Exception:
             return None
+
+    def _topk_id_set(probs: torch.Tensor, k: int) -> set:
+        k_eff = int(max(1, min(k, probs.shape[0])))
+        try:
+            topk_idx = torch.topk(probs, k_eff, largest=True, sorted=False).indices
+        except Exception:
+            return set()
+        return {int(idx) for idx in topk_idx.tolist()}
+
+    def _jaccard(a: set, b: set) -> Optional[float]:
+        if not a and not b:
+            return 1.0
+        union = a | b
+        if not union:
+            return None
+        return float(len(a & b) / len(union))
 
     teacher_entropy_bits = _entropy_bits_from_probs(final_probs_cpu)
 
@@ -444,13 +471,13 @@ def compute_full_raw_norm(
         except Exception:
             l1_prob_diff = None
 
-        if kl_nr is not None:
-            max_kl_val = kl_nr if max_kl_val is None else max(max_kl_val, kl_nr)
-            if kl_nr >= 1.0:
-                kl_ge_1 += 1
-            if kl_nr >= 0.5:
-                kl_ge_0_5 += 1
-
+        norm_topk = _topk_id_set(norm_probs, TOPK_JACCARD_K)
+        raw_topk = _topk_id_set(raw_probs, TOPK_JACCARD_K)
+        jaccard_cross = _jaccard(norm_topk, raw_topk)
+        if jaccard_cross is not None:
+            jaccard_cross_values.append(jaccard_cross)
+            if first_jaccard_ge_0_5 is None and jaccard_cross >= 0.5:
+                first_jaccard_ge_0_5 = layer
         if js_divergence is not None:
             js_values.append(float(js_divergence))
             if first_js_le_0_1 is None and js_divergence <= 0.1:
@@ -460,6 +487,20 @@ def compute_full_raw_norm(
             l1_values.append(float(l1_prob_diff))
             if first_l1_le_0_5 is None and l1_prob_diff <= 0.5:
                 first_l1_le_0_5 = layer
+
+        jaccard_consecutive_norm = None
+        if prev_topk_norm is not None:
+            jaccard_consecutive_norm = _jaccard(prev_topk_norm, norm_topk)
+        per_layer_cross[layer] = jaccard_cross
+        per_layer_consecutive_norm[layer] = jaccard_consecutive_norm
+        prev_topk_norm = norm_topk
+
+        if kl_nr is not None:
+            max_kl_val = kl_nr if max_kl_val is None else max(max_kl_val, kl_nr)
+            if kl_nr >= 1.0:
+                kl_ge_1 += 1
+            if kl_nr >= 0.5:
+                kl_ge_0_5 += 1
 
         is_answer_norm = bool(metrics_norm.get("answer_rank") == 1)
         if metrics_norm.get("answer_rank") is None and collected_map.get(layer):
@@ -496,6 +537,8 @@ def compute_full_raw_norm(
                 "entropy_bits_raw": entropy_raw_bits,
                 "entropy_gap_bits": entropy_gap_bits,
                 "l1_prob_diff": l1_prob_diff,
+                TOPK_JACCARD_CROSS_KEY: jaccard_cross,
+                TOPK_JACCARD_CONSEC_KEY: jaccard_consecutive_norm,
                 "norm_only_semantics": norm_only,
             }
         )
@@ -535,5 +578,14 @@ def compute_full_raw_norm(
     summary["first_js_le_0.1"] = first_js_le_0_1
     summary["first_l1_le_0.5"] = first_l1_le_0_5
     summary["teacher_entropy_bits"] = teacher_entropy_bits
+    summary["topk_overlap"] = {
+        "K": TOPK_JACCARD_K,
+        "jaccard_raw_norm_p50": _percentile(jaccard_cross_values, 0.50),
+        "first_jaccard_raw_norm_ge_0.5": first_jaccard_ge_0_5,
+        "per_layer_raw_norm": per_layer_cross,
+        "per_layer_consecutive_norm": per_layer_consecutive_norm,
+        "cross_key": TOPK_JACCARD_CROSS_KEY,
+        "consecutive_key": TOPK_JACCARD_CONSEC_KEY,
+    }
 
     return summary, records

@@ -60,6 +60,9 @@ def test_full_raw_norm_basic():
     assert isinstance(rows, list) and len(rows) == 2
     assert "js_divergence_percentiles" in summary
     assert "l1_prob_diff_percentiles" in summary
+    topk_info = summary.get("topk_overlap")
+    assert isinstance(topk_info, dict)
+    assert topk_info.get("K") == 50
     # Layer 0 should be norm-only semantics (norm rank=1 for id=2; raw rank!=1)
     r0 = [r for r in rows if r.get("layer") == 0][0]
     assert r0.get("norm_only_semantics") in (True, False)
@@ -68,6 +71,8 @@ def test_full_raw_norm_basic():
     assert "js_divergence" in r0
     assert "kl_raw_to_norm_bits" in r0
     assert "l1_prob_diff" in r0
+    assert "topk_jaccard_raw_norm@50" in r0
+    assert "topk_jaccard_consecutive@50" in r0
 
     # Lens-artefact score produces tier and a float
     score = compute_lens_artifact_score(

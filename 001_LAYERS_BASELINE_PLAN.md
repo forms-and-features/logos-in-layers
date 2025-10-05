@@ -1154,7 +1154,7 @@ Emit a compact map from `layer` indices to **model block names** and decoded str
 
 ---
 
-### 1.38. Top‑K overlap to qualify raw‑vs‑norm drift
+### [x] 1.38. Top‑K overlap to qualify raw‑vs‑norm drift
 
 **Why.** A large KL can be driven by tail mass. A **set‑level** overlap makes visible whether disagreement affects the high‑probability region.
 **What.**
@@ -1164,6 +1164,8 @@ Emit a compact map from `layer` indices to **model block names** and decoded str
   **How.**
 * Reuse the existing Top‑K machinery (already used for `topk_prompt_mass@50`).
 * Emit two columns in both the raw‑lens and primary CSVs; add a small summary block under `diagnostics.topk_overlap`.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

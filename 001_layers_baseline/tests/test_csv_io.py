@@ -56,11 +56,11 @@ def test_csv_writers_headers_and_rows():
             rows = list(csv.reader(f))
         header = rows[0]
         copy_cols = json_data["copy_flag_columns"]
-        expected_len = 6 + 2*top_k + 2 + len(copy_cols) + 23
+        expected_len = 6 + 2*top_k + 2 + len(copy_cols) + 25
         assert len(header) == expected_len
         rest_idx = header.index("rest_mass")
         assert header[rest_idx:rest_idx + 2 + len(copy_cols)] == ["rest_mass", "copy_collapse", *copy_cols]
-        tail = header[-23:]
+        tail = header[-25:]
         assert tail == [
             "entropy_collapse",
             "is_answer",
@@ -71,6 +71,8 @@ def test_csv_writers_headers_and_rows():
             "kl_to_final_bits",
             "kl_to_final_bits_norm_temp",
             "answer_rank",
+            "topk_jaccard_raw_norm@50",
+            "topk_jaccard_consecutive@50",
             "cos_to_final",
             "cos_to_answer",
             "cos_to_prompt_max",

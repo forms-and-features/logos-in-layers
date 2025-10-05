@@ -979,6 +979,20 @@ def run_prompt_pass(
                     summary_diag["raw_lens_full"] = full_summary
                 if full_rows:
                     json_data.setdefault("raw_lens_full_records", []).extend(full_rows)
+                    overlap_info = (full_summary or {}).get("topk_overlap") or {}
+                    per_layer_cross = overlap_info.get("per_layer_raw_norm") or {}
+                    per_layer_consec = overlap_info.get("per_layer_consecutive_norm") or {}
+                    cross_key = overlap_info.get("cross_key", "topk_jaccard_raw_norm@50")
+                    consec_key = overlap_info.get("consecutive_key", "topk_jaccard_consecutive@50")
+                    if per_layer_cross or per_layer_consec:
+                        for rec in json_data.get("pure_next_token_records", []):
+                            if rec.get("prompt_id") != prompt_id or rec.get("prompt_variant") != prompt_variant:
+                                continue
+                            layer_idx = rec.get("layer")
+                            if layer_idx in per_layer_cross:
+                                rec[cross_key] = per_layer_cross[layer_idx]
+                            if layer_idx in per_layer_consec:
+                                rec[consec_key] = per_layer_consec[layer_idx]
             except Exception as e:
                 # Best-effort: surface minimal error signal for debugging
                 try:
