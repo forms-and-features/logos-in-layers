@@ -7,7 +7,11 @@ import os
 import csv
 import tempfile
 
-from layers_core.csv_io import write_csv_files
+from layers_core.csv_io import (
+    write_csv_files,
+    write_tuned_positions_csv,
+    write_tuned_variants_csv,
+)
 
 
 def test_csv_writers_headers_and_rows():
@@ -97,3 +101,120 @@ def test_csv_writers_headers_and_rows():
             rest = float(r[rest_idx])
             assert 0.0 <= rest <= 1.0
             float(r[6])  # entropy_bits should be numeric
+
+
+def test_write_tuned_variants_csv_headers(tmp_path):
+    rows = [
+        {
+            "layer": 1,
+            "kl_bits_baseline": 3.2,
+            "kl_bits_tuned": 1.1,
+            "kl_bits_rot_only": 2.5,
+            "kl_bits_temp_only": 1.8,
+            "delta_kl_bits_tuned": 2.1,
+            "delta_kl_bits_rot_only": 0.7,
+            "delta_kl_bits_temp_only": 1.4,
+            "delta_kl_bits_interaction": 0.0,
+            "answer_rank_baseline": 42,
+            "answer_rank_tuned": 5,
+            "answer_rank_rot_only": 12,
+            "answer_rank_temp_only": 7,
+            "rank_shift_tuned": 37,
+            "rank_shift_rot_only": 30,
+            "rank_shift_temp_only": 35,
+            "entropy_bits_baseline": 4.0,
+            "entropy_bits_tuned": 2.0,
+        }
+    ]
+    out_path = tmp_path / "variants.csv"
+    write_tuned_variants_csv(rows, str(out_path))
+    with out_path.open(newline='', encoding='utf-8') as f:
+        csv_rows = list(csv.reader(f))
+    assert csv_rows[0] == [
+        "layer",
+        "kl_bits_baseline",
+        "kl_bits_tuned",
+        "kl_bits_rot_only",
+        "kl_bits_temp_only",
+        "delta_kl_bits_tuned",
+        "delta_kl_bits_rot_only",
+        "delta_kl_bits_temp_only",
+        "delta_kl_bits_interaction",
+        "answer_rank_baseline",
+        "answer_rank_tuned",
+        "answer_rank_rot_only",
+        "answer_rank_temp_only",
+        "rank_shift_tuned",
+        "rank_shift_rot_only",
+        "rank_shift_temp_only",
+        "entropy_bits_baseline",
+        "entropy_bits_tuned",
+    ]
+    assert csv_rows[1] == [
+        "1",
+        "3.2",
+        "1.1",
+        "2.5",
+        "1.8",
+        "2.1",
+        "0.7",
+        "1.4",
+        "0.0",
+        "42",
+        "5",
+        "12",
+        "7",
+        "37",
+        "30",
+        "35",
+        "4.0",
+        "2.0",
+    ]
+
+
+def test_write_tuned_positions_csv_headers(tmp_path):
+    rows = [
+        {
+            "pos_frac": 0.96,
+            "pos_index": 12,
+            "layer": 5,
+            "kl_bits_baseline": 3.0,
+            "kl_bits_tuned": 1.5,
+            "delta_kl_bits_tuned": 1.5,
+            "answer_rank_baseline": 30,
+            "answer_rank_tuned": 4,
+            "rank_shift_tuned": 26,
+            "entropy_bits_baseline": 2.2,
+            "entropy_bits_tuned": 1.1,
+        }
+    ]
+    out_path = tmp_path / "positions.csv"
+    write_tuned_positions_csv(rows, str(out_path))
+    with out_path.open(newline='', encoding='utf-8') as f:
+        csv_rows = list(csv.reader(f))
+    assert csv_rows[0] == [
+        "pos_frac",
+        "pos_index",
+        "layer",
+        "kl_bits_baseline",
+        "kl_bits_tuned",
+        "delta_kl_bits_tuned",
+        "answer_rank_baseline",
+        "answer_rank_tuned",
+        "rank_shift_tuned",
+        "entropy_bits_baseline",
+        "entropy_bits_tuned",
+    ]
+    assert csv_rows[1] == [
+        "0.96",
+        "12",
+        "5",
+        "3.0",
+        "1.5",
+        "1.5",
+        "30",
+        "4",
+        "26",
+        "2.2",
+        "1.1",
+    ]

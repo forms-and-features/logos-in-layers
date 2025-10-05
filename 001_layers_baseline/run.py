@@ -52,7 +52,13 @@ from layers_core.norm_utils import (
 from layers_core.numerics import (
     bits_entropy_from_logits,
 )
-from layers_core.csv_io import write_csv_files, write_raw_lens_window_csv, write_raw_lens_full_csv
+from layers_core.csv_io import (
+    write_csv_files,
+    write_raw_lens_full_csv,
+    write_raw_lens_window_csv,
+    write_tuned_positions_csv,
+    write_tuned_variants_csv,
+)
 from layers_core.device_policy import (
     choose_dtype,
     should_auto_promote_unembed,
@@ -78,6 +84,7 @@ from layers_core.head_transforms import detect_head_transforms
 from layers_core.unembed import prepare_unembed_weights
 from layers_core.lenses import NormLensAdapter, TunedLensAdapter
 from layers_core.tuned_lens import load_tuned_lens
+from layers_core.tuned_audit import build_tuned_audit_summary, build_provenance_snapshot
 from layers_core.passes import run_prompt_pass
 from layers_core.contexts import UnembedContext, PrismContext
 from layers_core.probes import emit_test_prompts, emit_temperature_exploration
@@ -1064,6 +1071,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 pass
 
         # Tuned-lens metrics (if tuned adapter/data present)
+        tuned_records = []
         try:
             if total_layers is not None and json_data_tuned is not None:
                 tuned_records = json_data_tuned.get("pure_next_token_records", [])
@@ -1078,6 +1086,19 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         except Exception:
             tuned_metrics = None
 
+        tuned_provenance_snapshot = build_provenance_snapshot(tuned_provenance) if tuned_provenance is not None else None
+        tuned_audit_summary = None
+        tuned_audit_data = None
+        tuned_is_calibration_only = None
+        tuned_preferred_hint = None
+        if tuned_spec is not None:
+            audit_payload = tuned_spec.get("audit_data")
+            tuned_audit_summary = build_tuned_audit_summary(audit_payload)
+            tuned_audit_data = audit_payload
+            if isinstance(tuned_audit_summary, dict):
+                tuned_is_calibration_only = tuned_audit_summary.get("tuned_is_calibration_only")
+                tuned_preferred_hint = tuned_audit_summary.get("preferred_semantics_lens_hint")
+
         if tuned_adapter is not None and tuned_spec is not None and json_data_tuned is not None:
             tuned_diag_info = {**tuned_diag_info, "summaries": tuned_spec.get("summaries", [])}
         diag["tuned_lens"] = tuned_diag_info
@@ -1088,8 +1109,12 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 "summaries": tuned_spec.get("summaries", []),
                 "provenance": tuned_provenance,
             }
+            if tuned_provenance_snapshot is not None:
+                tuned_block["provenance_snapshot"] = tuned_provenance_snapshot
             if tuned_metrics is not None:
                 tuned_block["summary"] = {"metrics": tuned_metrics}
+            if tuned_audit_summary is not None:
+                tuned_block["audit_summary"] = tuned_audit_summary
             # Attribution and prefer_tuned gate (001_LAYERS_BASELINE_PLAN §1.26)
             try:
                 attr = tuned_rotation_vs_temp_attribution(
@@ -1292,6 +1317,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 reasons.append("copy_mask_error")
             if diag_flags.get("layer_map_missing"):
                 reasons.append("layer_map_missing")
+            if tuned_is_calibration_only:
+                reasons.append("tuned_is_calibration_only")
 
             reasons = list(dict.fromkeys(reasons))
 
@@ -1306,9 +1333,14 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             }
             try:
                 prefer_tuned_gate = bool(((json_data.get("tuned_lens") or {}).get("attribution") or {}).get("prefer_tuned", False))
-                mg["preferred_lens_for_reporting"] = ("tuned" if prefer_tuned_gate else "norm")
             except Exception:
-                pass
+                prefer_tuned_gate = False
+            preferred_reporting = "tuned" if prefer_tuned_gate else "norm"
+            if tuned_preferred_hint == "tuned_for_calibration_only":
+                preferred_reporting = "norm"
+            mg["preferred_lens_for_reporting"] = preferred_reporting
+            if tuned_preferred_hint:
+                mg["preferred_semantics_lens_hint"] = tuned_preferred_hint
             try:
                 use_conf = bool(((json_data.get("diagnostics") or {}).get("L_semantic_confirmed") is not None))
                 mg["use_confirmed_semantics"] = use_conf
@@ -1435,6 +1467,30 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 _vprint(f"✅ Tuned Pure next-token CSV saved to: {tuned_pure_path}")
             except Exception as e:
                 print(f"⚠️ Failed to write tuned lens CSVs: {e}")
+
+            audit_rows = (tuned_audit_data or {}).get("variant_rows") if isinstance(tuned_audit_data, dict) else []
+            if audit_rows:
+                try:
+                    variants_path = os.path.join(
+                        os.path.dirname(csv_filepath),
+                        f"output-{clean_name}-pure-next-token-tuned-variants.csv",
+                    )
+                    write_tuned_variants_csv(audit_rows, variants_path)
+                    _vprint(f"✅ Tuned variants CSV saved to: {variants_path}")
+                except Exception as e:
+                    print(f"⚠️ Failed to write tuned variants CSV: {e}")
+
+            positional_rows = (tuned_audit_data or {}).get("positional_rows") if isinstance(tuned_audit_data, dict) else []
+            if positional_rows:
+                try:
+                    positions_path = os.path.join(
+                        os.path.dirname(csv_filepath),
+                        f"output-{clean_name}-positions-tuned-audit.csv",
+                    )
+                    write_tuned_positions_csv(positional_rows, positions_path)
+                    _vprint(f"✅ Tuned positional audit CSV saved to: {positions_path}")
+                except Exception as e:
+                    print(f"⚠️ Failed to write tuned positional audit CSV: {e}")
 
         # Strip bulky per-token records from JSON to keep it compact
         json_data_compact = {k: v for k, v in json_data.items()

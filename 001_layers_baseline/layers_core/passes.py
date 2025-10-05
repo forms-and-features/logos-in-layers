@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Sequence, Tuple, List
+from typing import Any, Dict, Optional, Sequence, Tuple, List, Set
 
 import math
 import torch
@@ -10,6 +10,7 @@ from .hooks import build_cache_hook, attach_residual_hooks, detach_hooks, get_re
 from .prism_sidecar import append_prism_record, append_prism_pure_next_token
 from .records import make_record, make_pure_record
 from .pure_emit import compute_pure_next_token_info
+from .metrics import compute_next_token_metrics
 from .numerics import bits_entropy_from_logits, safe_cast_for_unembed
 from .norm_utils import (
     detect_model_architecture,
@@ -29,6 +30,7 @@ SURFACE_DELTA = 0.05
 GEOM_GAMMA = 0.02
 TOPK_PROMPT_MASS_K = 50
 TOPK_DECAY_TAU = 0.33
+POS_GRID_FRACTIONS: Tuple[float, ...] = (0.20, 0.40, 0.60, 0.80, 0.92, 0.96, 0.98, 1.00)
 
 
 def _is_verbose_position(pos: int, token_str: str, seq_len: int, important_words: Sequence[str]) -> bool:
@@ -96,6 +98,39 @@ def run_prompt_pass(
             return None
         return norm_temp_taus[idx]
 
+    def _metrics_for_logits(
+        logits_vec: torch.Tensor,
+        final_probs_vec: torch.Tensor,
+        answer_id: Optional[int],
+    ) -> Tuple[Dict[str, Any], float, int]:
+        probs = torch.softmax(logits_vec, dim=0)
+        top1_idx = int(torch.argmax(probs).item())
+        metrics = compute_next_token_metrics(
+            probs,
+            top1_idx,
+            final_probs_vec,
+            answer_id,
+        )
+        entropy_bits_val = bits_entropy_from_logits(logits_vec)
+        return metrics, entropy_bits_val, top1_idx
+
+    def _float_or_none(val: Any) -> Optional[float]:
+        try:
+            return None if val is None else float(val)
+        except Exception:
+            return None
+
+    def _int_or_none(val: Any) -> Optional[int]:
+        try:
+            return None if val is None else int(val)
+        except Exception:
+            return None
+
+    def _rank_shift(base: Optional[int], variant: Optional[int]) -> Optional[int]:
+        if base is None or variant is None:
+            return None
+        return int(base) - int(variant)
+
     tuned_enabled = bool(tuned_spec and tuned_spec.get("adapter"))
     if tuned_enabled:
         tuned_adapter = tuned_spec["adapter"]
@@ -112,6 +147,17 @@ def run_prompt_pass(
         tuned_cache = None
         tuned_collected_records = []
         tuned_summaries = None
+
+    collect_audit = bool(tuned_enabled and prompt_id == "pos" and prompt_variant == "orig")
+    audit_data: Optional[Dict[str, Any]] = None
+    if collect_audit and tuned_spec is not None:
+        audit_data = {
+            "variant_rows": [],
+            "positional_rows": [],
+            "pos_grid": [],
+            "head_mismatch": None,
+        }
+        tuned_spec["audit_data"] = audit_data
 
     last_layer_consistency: Optional[Dict[str, Any]] = None
     detected_architecture: str = "unknown"
@@ -310,6 +356,37 @@ def run_prompt_pass(
                 final_logits_bias_free = final_logits
             _final_norm = torch.norm(final_logits_bias_free) + 1e-12
             final_dir = (final_logits_bias_free / _final_norm)
+
+            final_logits_all = logits[0].detach().to(dtype=torch.float32)
+            final_probs_by_pos: Dict[int, torch.Tensor] = {}
+            positional_target_indices: Set[int] = set()
+            pos_frac_lookup: Dict[int, float] = {}
+            if audit_data is not None:
+                seq_len = tokens.shape[1]
+                if seq_len <= 0:
+                    audit_data = None
+                    if tuned_spec is not None:
+                        tuned_spec["audit_data"] = None
+                else:
+                    max_index = max(0, seq_len - 1)
+                    pos_map: Dict[int, float] = {}
+                    for frac in POS_GRID_FRACTIONS:
+                        if not math.isfinite(frac):
+                            continue
+                        idx = int(round(max_index * float(frac)))
+                        idx = max(0, min(max_index, idx))
+                        pos_map.setdefault(idx, float(frac))
+                    pos_grid_entries = [
+                        {"pos_index": idx, "pos_frac": frac}
+                        for idx, frac in sorted(pos_map.items())
+                    ]
+                    audit_data["pos_grid"] = pos_grid_entries
+                    pos_frac_lookup = {entry["pos_index"]: entry["pos_frac"] for entry in pos_grid_entries}
+                    positional_target_indices = {entry["pos_index"] for entry in pos_grid_entries}
+                    for idx in positional_target_indices:
+                        final_probs_by_pos[idx] = torch.softmax(final_logits_all[idx], dim=0)
+            else:
+                pos_grid_entries: List[Dict[str, Any]] = []
 
             # ---- Layer 0 (embeddings) ----
             if has_pos_embed:
@@ -690,6 +767,10 @@ def run_prompt_pass(
                 _update_numeric(layer + 1, raw_vec_layer, geom_vec_norm_post, layer_logits_last, layer_probs_last)
 
                 tuned_logits_all = None
+                rot_logits_all = None
+                temp_only_logits_all = None
+                tau_value: Optional[float] = None
+                geom_vec_tuned_post = None
                 if tuned_adapter is not None:
                     tuned_logits_all = tuned_adapter.forward(
                         model,
@@ -702,12 +783,46 @@ def run_prompt_pass(
                         cache=tuned_cache,
                     )
                     try:
+                        tau_tensor = tuned_adapter.translator.temperature(layer)
+                        tau_value = float(tau_tensor.detach().cpu().item())
+                        if tau_value <= 0 or not math.isfinite(tau_value):
+                            tau_value = None
+                    except Exception:
+                        tau_value = None
+                    translated_seq = None
+                    try:
                         translated_seq = tuned_adapter.translator(
                             resid_norm_post[0, :, :], layer
                         )
                         geom_vec_tuned_post = translated_seq[last_pos, :].detach()
                     except Exception:
+                        translated_seq = None
                         geom_vec_tuned_post = None
+                    if translated_seq is not None:
+                        try:
+                            translated_cast = safe_cast_for_unembed(
+                                translated_seq,
+                                unembed_ctx.W,
+                                force_fp32_unembed=unembed_ctx.force_fp32,
+                            )
+                            rot_logits_all = unembed_mm(
+                                translated_cast,
+                                unembed_ctx.W,
+                                unembed_ctx.b,
+                                cache=tuned_cache,
+                            ).float()
+                        except Exception:
+                            rot_logits_all = None
+                    if tau_value is not None and tau_value > 0:
+                        try:
+                            temp_only_logits_all = (logits_all / float(tau_value)).to(dtype=torch.float32)
+                        except Exception:
+                            temp_only_logits_all = None
+                    else:
+                        try:
+                            temp_only_logits_all = logits_all.to(dtype=torch.float32)
+                        except Exception:
+                            temp_only_logits_all = logits_all
 
                 # Prism sidecar logits via adapter for per-position record emission
                 prism_logits_all = None
@@ -784,6 +899,46 @@ def run_prompt_pass(
                                 top_probs=tuned_top_probs,
                             )
                         )
+
+                        if (
+                            audit_data is not None
+                            and pos in positional_target_indices
+                        ):
+                            final_probs_pos = final_probs_by_pos.get(pos)
+                            pos_frac = pos_frac_lookup.get(pos)
+                            if final_probs_pos is not None and pos_frac is not None:
+                                ans_id_pos = first_ans_token_id if pos == last_pos else None
+                                base_metrics_pos, entropy_base_pos, _ = _metrics_for_logits(
+                                    layer_logits,
+                                    final_probs_pos,
+                                    ans_id_pos,
+                                )
+                                tuned_metrics_pos, entropy_tuned_pos, _ = _metrics_for_logits(
+                                    tuned_layer_logits,
+                                    final_probs_pos,
+                                    ans_id_pos,
+                                )
+                                kl_base_pos = _float_or_none(base_metrics_pos.get("kl_to_final_bits"))
+                                kl_tuned_pos = _float_or_none(tuned_metrics_pos.get("kl_to_final_bits"))
+                                delta_pos = None
+                                if kl_base_pos is not None and kl_tuned_pos is not None:
+                                    delta_pos = kl_base_pos - kl_tuned_pos
+                                rank_base_pos = _int_or_none(base_metrics_pos.get("answer_rank"))
+                                rank_tuned_pos = _int_or_none(tuned_metrics_pos.get("answer_rank"))
+                                pos_row = {
+                                    "pos_frac": pos_frac,
+                                    "pos_index": pos,
+                                    "layer": layer + 1,
+                                    "kl_bits_baseline": kl_base_pos,
+                                    "kl_bits_tuned": kl_tuned_pos,
+                                    "delta_kl_bits_tuned": delta_pos,
+                                    "answer_rank_baseline": rank_base_pos,
+                                    "answer_rank_tuned": rank_tuned_pos,
+                                    "rank_shift_tuned": _rank_shift(rank_base_pos, rank_tuned_pos),
+                                    "entropy_bits_baseline": float(entropy_base_pos),
+                                    "entropy_bits_tuned": float(entropy_tuned_pos),
+                                }
+                                audit_data["positional_rows"].append(pos_row)
 
                 # Pure next-token for this layer
                 view, collected, dual_ctx = compute_pure_next_token_info(
@@ -888,6 +1043,92 @@ def run_prompt_pass(
                         )
                     )
                     tuned_collected_records.append(tuned_collected)
+
+                    if audit_data is not None and tuned_logits_all is not None:
+                        kl_baseline = _float_or_none(collected.get("kl_to_final_bits"))
+                        kl_tuned = _float_or_none(tuned_collected.get("kl_to_final_bits"))
+                        entropy_baseline = _float_or_none(collected.get("entropy_bits"))
+                        entropy_tuned = _float_or_none(tuned_collected.get("entropy_bits"))
+                        rank_baseline = _int_or_none(collected.get("answer_rank"))
+                        rank_tuned = _int_or_none(tuned_collected.get("answer_rank"))
+
+                        rot_metrics = None
+                        rot_entropy = None
+                        if rot_logits_all is not None:
+                            try:
+                                rot_vec = rot_logits_all[last_pos]
+                                rot_metrics, rot_entropy, _ = _metrics_for_logits(
+                                    rot_vec,
+                                    final_probs,
+                                    first_ans_token_id,
+                                )
+                            except Exception:
+                                rot_metrics = None
+                                rot_entropy = None
+
+                        temp_metrics = None
+                        temp_entropy = None
+                        if temp_only_logits_all is not None:
+                            try:
+                                temp_vec = temp_only_logits_all[last_pos]
+                                temp_metrics, temp_entropy, _ = _metrics_for_logits(
+                                    temp_vec,
+                                    final_probs,
+                                    first_ans_token_id,
+                                )
+                            except Exception:
+                                temp_metrics = None
+                                temp_entropy = None
+
+                        def _delta(a: Optional[float], b: Optional[float]) -> Optional[float]:
+                            if a is None or b is None:
+                                return None
+                            return a - b
+
+                        kl_rot = _float_or_none((rot_metrics or {}).get("kl_to_final_bits"))
+                        kl_temp = _float_or_none((temp_metrics or {}).get("kl_to_final_bits"))
+                        rank_rot = _int_or_none((rot_metrics or {}).get("answer_rank"))
+                        rank_temp = _int_or_none((temp_metrics or {}).get("answer_rank"))
+
+                        delta_tuned = _delta(kl_baseline, kl_tuned)
+                        delta_rot = _delta(kl_baseline, kl_rot)
+                        delta_temp = _delta(kl_baseline, kl_temp)
+                        delta_interaction = None
+                        if delta_tuned is not None and delta_rot is not None and delta_temp is not None:
+                            delta_interaction = delta_tuned - (delta_rot + delta_temp)
+
+                        variant_row = {
+                            "layer": layer + 1,
+                            "kl_bits_baseline": kl_baseline,
+                            "kl_bits_tuned": kl_tuned,
+                            "kl_bits_rot_only": kl_rot,
+                            "kl_bits_temp_only": kl_temp,
+                            "delta_kl_bits_tuned": delta_tuned,
+                            "delta_kl_bits_rot_only": delta_rot,
+                            "delta_kl_bits_temp_only": delta_temp,
+                            "delta_kl_bits_interaction": delta_interaction,
+                            "answer_rank_baseline": rank_baseline,
+                            "answer_rank_tuned": rank_tuned,
+                            "answer_rank_rot_only": rank_rot,
+                            "answer_rank_temp_only": rank_temp,
+                            "rank_shift_tuned": _rank_shift(rank_baseline, rank_tuned),
+                            "rank_shift_rot_only": _rank_shift(rank_baseline, rank_rot),
+                            "rank_shift_temp_only": _rank_shift(rank_baseline, rank_temp),
+                            "entropy_bits_baseline": entropy_baseline,
+                            "entropy_bits_tuned": entropy_tuned,
+                        }
+                        audit_data["variant_rows"].append(variant_row)
+
+                        if layer == (n_layers - 1):
+                            try:
+                                tuned_logits_last = tuned_logits_all[last_pos].detach().to(device="cpu", dtype=torch.float32)
+                            except Exception:
+                                tuned_logits_last = None
+                            audit_data["head_mismatch"] = {
+                                "kl_bits_tuned_final": kl_tuned,
+                                "tuned_logits_last": tuned_logits_last,
+                                "final_probs": final_probs.detach().to(device="cpu", dtype=torch.float32),
+                            }
 
                 # Prism pure next-token row for this layer, if available
                 if prism_logits_all is not None:

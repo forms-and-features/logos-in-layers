@@ -1226,7 +1226,7 @@ Emit a compact map from `layer` indices to **model block names** and decoded str
 
 ---
 
-### 1.43. Tuned‑Lens Provenance & Generalization Audit (no refit)
+### [x] 1.43. Tuned‑Lens Provenance & Generalization Audit (no refit)
 
 **Why.** The tuned lens is already fitted and saved with sufficient provenance. Measurement integrity can be improved—without any re‑fitting—by (i) surfacing that provenance in run outputs, (ii) decomposing the loaded translator’s effect into **rotation‑only** vs **temperature‑only** at decode time, (iii) checking **positional generalization** (end‑of‑sequence OOD), and (iv) quantifying **final‑head mismatch calibration**. This makes tuned‑lens‑based milestones auditable and robust for later phases.
 
@@ -1298,6 +1298,8 @@ Add a **read‑only audit** that runs on the loaded tuned lens and emits:
 * **Positional OOD:** run decode at `pos_grid` by selecting earlier next‑token positions; reuse the same prompt and cached forward pass(es). Aggregate deltas and emit the positions sidecar plus JSON summary.
 * **Head mismatch:** compute `τ*_modelcal` by a 1‑D line search on the final‑layer tuned logits; store values in JSON.
 * **Plumbing:** write the new CSV sidecars alongside existing `*-tuned.csv` files; append the new JSON blocks under `tuned_lens.audit_summary` and `measurement_guidance.reasons` if the gate triggers.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)y
 
 ---
 

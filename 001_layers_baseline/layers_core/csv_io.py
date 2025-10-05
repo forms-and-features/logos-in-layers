@@ -216,6 +216,112 @@ def write_raw_lens_window_csv(records: List[Dict[str, Any]], csv_filepath: str) 
             writer.writerow(row)
 
 
+def write_tuned_variants_csv(rows: List[Dict[str, Any]], filepath: str) -> None:
+    if not rows:
+        return
+    header = [
+        "layer",
+        "kl_bits_baseline",
+        "kl_bits_tuned",
+        "kl_bits_rot_only",
+        "kl_bits_temp_only",
+        "delta_kl_bits_tuned",
+        "delta_kl_bits_rot_only",
+        "delta_kl_bits_temp_only",
+        "delta_kl_bits_interaction",
+        "answer_rank_baseline",
+        "answer_rank_tuned",
+        "answer_rank_rot_only",
+        "answer_rank_temp_only",
+        "rank_shift_tuned",
+        "rank_shift_rot_only",
+        "rank_shift_temp_only",
+        "entropy_bits_baseline",
+        "entropy_bits_tuned",
+    ]
+
+    def _nz(val: Any) -> Any:
+        return "" if val is None else val
+
+    with open(filepath, 'w', newline='', encoding='utf-8') as f_csv:
+        writer = csv.writer(
+            f_csv,
+            delimiter=",",
+            quotechar='"',
+            quoting=csv.QUOTE_MINIMAL,
+            escapechar="\\",
+            lineterminator="\n",
+        )
+        writer.writerow(header)
+        for row in rows:
+            writer.writerow([
+                _nz(row.get("layer")),
+                _nz(row.get("kl_bits_baseline")),
+                _nz(row.get("kl_bits_tuned")),
+                _nz(row.get("kl_bits_rot_only")),
+                _nz(row.get("kl_bits_temp_only")),
+                _nz(row.get("delta_kl_bits_tuned")),
+                _nz(row.get("delta_kl_bits_rot_only")),
+                _nz(row.get("delta_kl_bits_temp_only")),
+                _nz(row.get("delta_kl_bits_interaction")),
+                _nz(row.get("answer_rank_baseline")),
+                _nz(row.get("answer_rank_tuned")),
+                _nz(row.get("answer_rank_rot_only")),
+                _nz(row.get("answer_rank_temp_only")),
+                _nz(row.get("rank_shift_tuned")),
+                _nz(row.get("rank_shift_rot_only")),
+                _nz(row.get("rank_shift_temp_only")),
+                _nz(row.get("entropy_bits_baseline")),
+                _nz(row.get("entropy_bits_tuned")),
+            ])
+
+
+def write_tuned_positions_csv(rows: List[Dict[str, Any]], filepath: str) -> None:
+    if not rows:
+        return
+    header = [
+        "pos_frac",
+        "pos_index",
+        "layer",
+        "kl_bits_baseline",
+        "kl_bits_tuned",
+        "delta_kl_bits_tuned",
+        "answer_rank_baseline",
+        "answer_rank_tuned",
+        "rank_shift_tuned",
+        "entropy_bits_baseline",
+        "entropy_bits_tuned",
+    ]
+
+    def _nz(val: Any) -> Any:
+        return "" if val is None else val
+
+    with open(filepath, 'w', newline='', encoding='utf-8') as f_csv:
+        writer = csv.writer(
+            f_csv,
+            delimiter=",",
+            quotechar='"',
+            quoting=csv.QUOTE_MINIMAL,
+            escapechar="\\",
+            lineterminator="\n",
+        )
+        writer.writerow(header)
+        for row in rows:
+            writer.writerow([
+                _nz(row.get("pos_frac")),
+                _nz(row.get("pos_index")),
+                _nz(row.get("layer")),
+                _nz(row.get("kl_bits_baseline")),
+                _nz(row.get("kl_bits_tuned")),
+                _nz(row.get("delta_kl_bits_tuned")),
+                _nz(row.get("answer_rank_baseline")),
+                _nz(row.get("answer_rank_tuned")),
+                _nz(row.get("rank_shift_tuned")),
+                _nz(row.get("entropy_bits_baseline")),
+                _nz(row.get("entropy_bits_tuned")),
+            ])
+
+
 def write_raw_lens_full_csv(records: List[Dict[str, Any]], csv_filepath: str) -> None:
     """Write full-depth raw-vs-norm per-layer rows to CSV (one row per layer)."""
     if not records:
