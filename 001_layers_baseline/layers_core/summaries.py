@@ -65,6 +65,8 @@ def summarize_pure_records(
     L_topk_decay: Optional[int] = None
     topk_mass_at_L: Optional[float] = None
 
+    entropy_gaps: List[float] = []
+
     for rec in pure_records:
         layer = rec.get("layer")
         if L_copy is None and rec.get("copy_collapse"):
@@ -142,12 +144,34 @@ def summarize_pure_records(
             except (TypeError, ValueError):
                 pass
 
+        ent_bits = rec.get("entropy_bits")
+        teacher_bits = rec.get("teacher_entropy_bits")
+        if ent_bits is not None and teacher_bits is not None:
+            try:
+                entropy_gaps.append(float(ent_bits) - float(teacher_bits))
+            except (TypeError, ValueError):
+                pass
+
     delta_soft: Dict[int, Optional[int]] = {}
     for k, layer_idx in L_copy_soft.items():
         if L_sem is None or layer_idx is None:
             delta_soft[k] = None
         else:
             delta_soft[k] = L_sem - layer_idx
+
+    def _percentile(values: List[float], pct: float) -> Optional[float]:
+        if not values:
+            return None
+        if len(values) == 1:
+            return float(values[0])
+        vals_sorted = sorted(values)
+        rank = (len(vals_sorted) - 1) * pct
+        low = int(math.floor(rank))
+        high = int(math.ceil(rank))
+        if low == high:
+            return float(vals_sorted[low])
+        fraction = rank - low
+        return float(vals_sorted[low] + (vals_sorted[high] - vals_sorted[low]) * fraction)
 
     summary = {
         "L_copy": L_copy,
@@ -189,6 +213,13 @@ def summarize_pure_records(
             "gap_ge_1.0": first_gap_ge_1_0,
         },
     }
+
+    summary["entropy_gap_bits_percentiles"] = {
+        "p25": _percentile(entropy_gaps, 0.25),
+        "p50": _percentile(entropy_gaps, 0.50),
+        "p75": _percentile(entropy_gaps, 0.75),
+    }
+    summary["entropy_gap_samples"] = len(entropy_gaps)
 
     # Strict-copy threshold sweep (001_LAYERS_BASELINE_PLAN §1.23)
     tau_list = (0.70, 0.80, 0.90, 0.95)

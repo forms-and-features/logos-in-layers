@@ -17,6 +17,8 @@ def test_summarize_pure_records():
             "answer_rank": 100,
             "copy_soft_hits": {1: False, 2: False},
             "cos_to_final": 0.1,
+            "entropy_bits": 3.2,
+            "teacher_entropy_bits": 3.0,
         },
         {
             "layer": 1,
@@ -27,6 +29,8 @@ def test_summarize_pure_records():
             "answer_rank": 50,
             "copy_soft_hits": {1: True, 2: False},
             "cos_to_final": 0.25,
+            "entropy_bits": 2.9,
+            "teacher_entropy_bits": 2.8,
         },
         {
             "layer": 2,
@@ -37,6 +41,8 @@ def test_summarize_pure_records():
             "answer_rank": 10,
             "copy_soft_hits": {1: False, 2: True},
             "cos_to_final": 0.45,
+            "entropy_bits": 2.4,
+            "teacher_entropy_bits": 2.7,
         },
         {
             "layer": 3,
@@ -47,6 +53,8 @@ def test_summarize_pure_records():
             "answer_rank": 1,
             "copy_soft_hits": {1: False, 2: False},
             "cos_to_final": 0.65,
+            "entropy_bits": 2.1,
+            "teacher_entropy_bits": 2.5,
         },
     ]
 
@@ -95,3 +103,7 @@ def test_summarize_pure_records():
     assert set(ct.get("norm_only_flags", {}).keys()) == {"0.7", "0.8", "0.9", "0.95"}
     # stability is one of allowed values
     assert ct.get("stability") in {"stable", "mixed", "fragile", "none"}
+
+    entropy_summary = diag.get("entropy_gap_bits_percentiles")
+    assert isinstance(entropy_summary, dict)
+    assert set(entropy_summary.keys()) == {"p25", "p50", "p75"}

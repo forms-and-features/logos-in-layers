@@ -41,14 +41,15 @@ def test_csv_writers_headers_and_rows():
         with open(records_path, newline='', encoding='utf-8') as f:
             rows = list(csv.reader(f))
         header = rows[0]
-        expected_len = 2 + 4 + 2 * top_k + 1  # prompt_id + prompt_variant + (layer,pos,token,entropy) + topk + rest
+        expected_len = 2 + 5 + 2 * top_k + 1  # prompt_id + prompt_variant + (layer,pos,token,entropy,entropy_bits) + topk + rest
         assert len(header) == expected_len
         assert header[0] == "prompt_id"
         assert header[1] == "prompt_variant"
-        assert header[2:6] == ["layer", "pos", "token", "entropy"]
+        assert header[2:7] == ["layer", "pos", "token", "entropy", "entropy_bits"]
         assert header[-1] == "rest_mass"
         for r in rows[1:]:
             assert len(r) == expected_len
+            float(r[6])
             rest = float(r[-1])
             assert 0.0 <= rest <= 1.0
 
@@ -56,8 +57,10 @@ def test_csv_writers_headers_and_rows():
             rows = list(csv.reader(f))
         header = rows[0]
         copy_cols = json_data["copy_flag_columns"]
-        expected_len = 6 + 2*top_k + 2 + len(copy_cols) + 25
+        expected_len = 7 + 2*top_k + 2 + len(copy_cols) + 25
         assert len(header) == expected_len
+        assert header[5] == "entropy"
+        assert header[6] == "entropy_bits"
         rest_idx = header.index("rest_mass")
         assert header[rest_idx:rest_idx + 2 + len(copy_cols)] == ["rest_mass", "copy_collapse", *copy_cols]
         tail = header[-25:]
@@ -93,3 +96,4 @@ def test_csv_writers_headers_and_rows():
             assert len(r) == expected_len
             rest = float(r[rest_idx])
             assert 0.0 <= rest <= 1.0
+            float(r[6])  # entropy_bits should be numeric

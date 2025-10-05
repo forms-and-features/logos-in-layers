@@ -59,6 +59,7 @@ def test_prism_record_helper_matches_manual_block():
         "pos": pos,
         "token": token_str,
         "entropy": pent,
+        "entropy_bits": pent,
         "topk": [[tok, float(p.item())] for tok, p in zip(top_tokens, top_probs)],
     }
 
@@ -157,6 +158,7 @@ def test_prism_pure_next_token_helper_fields_match_manual_logic():
         "pos": last_pos,
         "token": "⟨NEXT⟩",
         "entropy": pent,
+        "entropy_bits": pent,
         "topk": [[tok, float(prob.item())] for tok, prob in zip(p_top_tokens, p_top_probs)],
         "copy_collapse": p_copy,
         COPY_STRICT_LABEL: p_copy,

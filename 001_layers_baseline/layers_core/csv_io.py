@@ -22,14 +22,24 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
             escapechar="\\",
             lineterminator="\n",
         )
-        header = ["prompt_id", "prompt_variant", "layer", "pos", "token", "entropy"]
+        header = ["prompt_id", "prompt_variant", "layer", "pos", "token", "entropy", "entropy_bits"]
         for i in range(1, top_k_verbose + 1):
             header.extend([f"top{i}", f"prob{i}"])
         header.append("rest_mass")
         writer.writerow(header)
 
         for rec in records:
-            row = [rec.get("prompt_id", ""), rec.get("prompt_variant", ""), rec.get("layer"), rec.get("pos"), rec.get("token"), rec.get("entropy")]
+            entropy_val = rec.get("entropy")
+            entropy_bits_val = rec.get("entropy_bits", entropy_val)
+            row = [
+                rec.get("prompt_id", ""),
+                rec.get("prompt_variant", ""),
+                rec.get("layer"),
+                rec.get("pos"),
+                rec.get("token"),
+                entropy_val,
+                entropy_bits_val,
+            ]
             topk_list = rec.get("topk", [])
             topk_prob_sum = 0.0
             for j in range(top_k_verbose):
@@ -53,7 +63,7 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
             escapechar="\\",
             lineterminator="\n",
         )
-        header = ["prompt_id", "prompt_variant", "layer", "pos", "token", "entropy"]
+        header = ["prompt_id", "prompt_variant", "layer", "pos", "token", "entropy", "entropy_bits"]
         for i in range(1, top_k_verbose + 1):
             header.extend([f"top{i}", f"prob{i}"])
         # Extended schema per 001_LAYERS_BASELINE_PLAN §1.3
@@ -99,7 +109,17 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
         writer.writerow(header)
 
         for rec in pure_next_token_records:
-            row = [rec.get("prompt_id", ""), rec.get("prompt_variant", ""), rec.get("layer"), rec.get("pos"), rec.get("token"), rec.get("entropy")]
+            entropy_val = rec.get("entropy")
+            entropy_bits_val = rec.get("entropy_bits", entropy_val)
+            row = [
+                rec.get("prompt_id", ""),
+                rec.get("prompt_variant", ""),
+                rec.get("layer"),
+                rec.get("pos"),
+                rec.get("token"),
+                entropy_val,
+                entropy_bits_val,
+            ]
             topk_list = rec.get("topk", [])
             topk_prob_sum = 0.0
             for j in range(top_k_verbose):

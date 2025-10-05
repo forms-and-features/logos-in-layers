@@ -34,6 +34,7 @@ def make_record(
         "pos": pos,
         "token": token,
         "entropy": entropy,
+        "entropy_bits": entropy,
         "topk": _pack_topk(top_tokens, top_probs),
     }
 
@@ -63,4 +64,3 @@ def make_pure_record(
     if extra:
         rec.update(extra)
     return rec
-

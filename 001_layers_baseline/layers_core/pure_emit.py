@@ -311,6 +311,7 @@ def compute_pure_next_token_info(
         "answer_logit_gap": answer_logit_gap,
         "answer_vs_top1_gap": answer_vs_top1_gap,
     }
+    record_extra["entropy_bits"] = float(last_entropy_bits)
     # Add strict-sweep flags to the flat record, if any
     for k_label, hit in strict_hits.items():
         # Avoid duplicating the base strict label if identical formatting
@@ -348,6 +349,13 @@ def compute_pure_next_token_info(
         "topk_prompt_mass@50": topk_prompt_mass,
         "kl_to_final_bits_norm_temp": kl_norm_temp_bits,
     }
+    collected["entropy_bits"] = float(last_entropy_bits)
+    collected["teacher_entropy_bits"] = teacher_entropy_bits
+    if teacher_entropy_bits is not None:
+        try:
+            collected["entropy_gap_bits"] = float(last_entropy_bits) - float(teacher_entropy_bits)
+        except Exception:
+            collected["entropy_gap_bits"] = None
     if strict_hits:
         collected["copy_strict_hits"] = strict_hits
 

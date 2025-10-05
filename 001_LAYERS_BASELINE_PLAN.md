@@ -1213,7 +1213,7 @@ Emit a compact map from `layer` indices to **model block names** and decoded str
 
 ---
 
-### 1.42. Entropy columns for each lens (layer‑local)
+### [x] 1.42. Entropy columns for each lens (layer‑local)
 
 **Why.** The “entropy − teacher” drift is informative only if both sides are logged per layer/lens, not inferred from a single side.
 **What.**
@@ -1221,6 +1221,8 @@ Emit a compact map from `layer` indices to **model block names** and decoded str
 * Add `entropy_bits` per layer in **primary** CSV and in tuned sidecars; JSON summaries: `entropy_gap_bits@{25,50,75}%`.
   **How.**
 * Compute `−∑ p log₂ p` at decode time; reuse teacher entropy already persisted; add three percentile summaries into `summary.entropy`.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)y
 
 ---
 

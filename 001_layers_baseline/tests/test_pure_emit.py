@@ -59,12 +59,16 @@ def test_compute_pure_next_token_info_basic():
     assert set(dual_ctx.keys()) >= {"layer", "last_pos", "last_logits_norm", "final_probs", "first_ans_id", "ground_truth"}
     assert "top1_token_id" in view["record_extra"]
     assert "top1_token_str" in view["record_extra"]
+    assert "entropy_bits" in view["record_extra"]
+    assert "teacher_entropy_bits" in view["record_extra"]
     assert "resid_norm_ratio" in view["record_extra"]
     assert "delta_resid_cos" in view["record_extra"]
     assert "answer_logit_gap" in view["record_extra"]
     assert "answer_vs_top1_gap" in view["record_extra"]
     # Strict-sweep hits are included in collected or record extra
     assert "copy_strict_hits" in collected
+    assert "entropy_bits" in collected
+    assert "teacher_entropy_bits" in collected
     for lab in ("copy_strict@0.7", "copy_strict@0.8", "copy_strict@0.9", "copy_strict@0.95"):
         assert lab in collected["copy_strict_hits"]
 
