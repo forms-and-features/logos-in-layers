@@ -158,6 +158,9 @@ def test_run_prompt_pass_minimal():
     assert "raw_lens_window" in summary
     window_records = json_data.get("raw_lens_window_records", [])
     assert isinstance(window_records, list)
+    repeat_diag = summary.get("repeatability")
+    assert isinstance(repeat_diag, dict)
+    assert repeat_diag.get("status") in {"ok", "skipped", "unavailable"}
     assert arch in ("pre_norm", "post_norm", "unknown")
     # last consistency may be None in stub; permissive
     # Prism disabled path should produce no sidecar rows
@@ -217,8 +220,58 @@ def test_run_prompt_pass_control_margin():
     ctl_rows = [rec for rec in json_data["pure_next_token_records"] if rec.get("prompt_id") == "ctl"]
     assert len(ctl_rows) > 0
     assert any("control_margin" in rec for rec in ctl_rows)
+    repeat_diag_ctl = summary.get("repeatability")
+    assert isinstance(repeat_diag_ctl, dict)
+    assert repeat_diag_ctl.get("status") in {"ok", "skipped", "unavailable"}
 
 
+def test_repeatability_metrics_report_when_nondeterministic():
+    model = _ModelStub()
+    norm_lens = NormLensAdapter()
+    W_U = torch.randn(model.cfg.d_model, 11, dtype=torch.float32)
+    b_U = torch.randn(11, dtype=torch.float32)
+    mm_cache = {}
+    unembed_ctx = UnembedContext(W=W_U, b=b_U, force_fp32=True, cache=mm_cache)
+    prism_ctx = PrismContext(stats=None, Q=None, active=False)
+    window_mgr = WindowManager(1, extra_window_ks=COPY_SOFT_WINDOW_KS)
+    json_data = {"records": [], "pure_next_token_records": [], "raw_lens_check": {"mode": "off", "samples": [], "summary": None}}
+    json_data_prism = {"records": [], "pure_next_token_records": []}
+
+    summary, _, _, _ = run_prompt_pass(
+            model=model,
+            context_prompt="repeatability",
+            ground_truth="Berlin",
+            prompt_id="pos",
+            prompt_variant="orig",
+            window_manager=window_mgr,
+            norm_lens=norm_lens,
+            unembed_ctx=unembed_ctx,
+            copy_threshold=0.95,
+            copy_margin=0.10,
+            copy_soft_threshold=COPY_SOFT_THRESHOLD,
+            copy_soft_window_ks=COPY_SOFT_WINDOW_KS,
+            copy_strict_label=COPY_STRICT_LABEL,
+            copy_soft_labels=COPY_SOFT_LABELS,
+            copy_soft_extra_labels={},
+            entropy_collapse_threshold=1.0,
+            top_k_record=5,
+            top_k_verbose=20,
+            keep_residuals=False,
+            out_dir=None,
+            RAW_LENS_MODE='off',
+            json_data=json_data,
+            json_data_prism=json_data_prism,
+            prism_ctx=prism_ctx,
+            decode_id_fn=_decode_id,
+            ctx_ids_list=[1, 2, 3, 4],
+            first_ans_token_id=None,
+            important_words=["Germany", "Berlin"],
+            head_scale_cfg=None,
+            head_softcap_cfg=None,
+        )
+    repeat_diag = summary.get("repeatability")
+    assert isinstance(repeat_diag, dict)
+    assert repeat_diag.get("status") in {"ok", "skipped", "unavailable"}
 def test_run_prompt_pass_with_prism_sidecar():
     model = _ModelStub()
     norm_lens = NormLensAdapter()

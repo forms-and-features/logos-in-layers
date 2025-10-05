@@ -10,7 +10,7 @@ from .hooks import build_cache_hook, attach_residual_hooks, detach_hooks, get_re
 from .prism_sidecar import append_prism_record, append_prism_pure_next_token
 from .records import make_record, make_pure_record
 from .pure_emit import compute_pure_next_token_info
-from .numerics import bits_entropy_from_logits
+from .numerics import bits_entropy_from_logits, safe_cast_for_unembed
 from .norm_utils import (
     detect_model_architecture,
     get_correct_norm_module,
@@ -23,6 +23,7 @@ from .consistency import compute_last_layer_consistency
 from .lenses import PrismLensAdapter
 from .contexts import UnembedContext, PrismContext
 from .surface import build_prompt_vocab_ids
+from .unembed import unembed_mm
 
 SURFACE_DELTA = 0.05
 GEOM_GAMMA = 0.02
@@ -77,6 +78,7 @@ def run_prompt_pass(
     tuned_spec: Optional[Dict[str, Any]] = None,
     norm_temp_taus: Optional[Sequence[Optional[float]]] = None,
     copy_strict_thresholds: Optional[Sequence[float]] = None,
+    enable_repeatability_check: bool = True,
 ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], str, Dict[str, Any]]:
     """Run a single prompt pass and append outputs into json_data structures.
 
@@ -202,6 +204,83 @@ def run_prompt_pass(
             return float(vals[lower])
         weight = rank - lower
         return float(vals[lower] * (1 - weight) + vals[upper] * weight)
+
+    def _redecode_layer_logits(layer_idx: int, raw_vec_cpu: torch.Tensor) -> Optional[torch.Tensor]:
+        if raw_vec_cpu is None:
+            return None
+        try:
+            target_device = getattr(unembed_ctx.W, "device", raw_vec_cpu.device)
+        except Exception:
+            target_device = raw_vec_cpu.device
+        vec = raw_vec_cpu.to(device=target_device)
+        resid = vec.unsqueeze(0).unsqueeze(0)
+        if layer_idx <= 0:
+            norm_module = get_correct_norm_module(model, 0, probe_after_block=False)
+        else:
+            norm_module = get_correct_norm_module(model, layer_idx - 1, probe_after_block=True)
+        normed = apply_norm_or_skip(resid, norm_module)
+        norm_vec = normed.squeeze(0).squeeze(0)
+        cast_vec = safe_cast_for_unembed(norm_vec.unsqueeze(0), unembed_ctx.W, force_fp32_unembed=unembed_ctx.force_fp32)
+        logits = unembed_mm(cast_vec, unembed_ctx.W, unembed_ctx.b, cache=unembed_ctx.cache).squeeze(0)
+        return logits.detach().to(device=torch.device("cpu"))
+
+    def _compute_repeatability_metrics() -> Dict[str, Any]:
+        if not enable_repeatability_check:
+            return {"status": "skipped", "reason": "disabled"}
+        if torch.are_deterministic_algorithms_enabled():
+            return {"status": "skipped", "reason": "deterministic_env"}
+
+        layer_keys = sorted(set(norm_logits_window.keys()) & set(raw_resid_window.keys()))
+        if not layer_keys:
+            return {"status": "unavailable"}
+
+        rank_devs: List[float] = []
+        layers_count = 0
+        flips = 0
+
+        for layer_idx in layer_keys:
+            orig_logits = norm_logits_window.get(layer_idx)
+            raw_vec = raw_resid_window.get(layer_idx)
+            if orig_logits is None or raw_vec is None:
+                continue
+            try:
+                new_logits = _redecode_layer_logits(layer_idx, raw_vec)
+            except Exception:
+                continue
+            if new_logits is None:
+                continue
+            try:
+                orig_logits_f = orig_logits.to(dtype=torch.float32)
+            except Exception:
+                orig_logits_f = torch.tensor([])
+            if orig_logits_f.numel() == 0:
+                continue
+            new_logits_f = new_logits.to(dtype=torch.float32)
+            layers_count += 1
+            orig_top1 = int(torch.argmax(orig_logits_f).item())
+            new_top1 = int(torch.argmax(new_logits_f).item())
+            if new_top1 != orig_top1:
+                flips += 1
+            try:
+                rank = int((new_logits_f > new_logits_f[orig_top1]).sum().item()) + 1
+            except Exception:
+                rank = 1
+            rank_devs.append(abs(rank - 1))
+
+        if layers_count == 0:
+            return {"status": "unavailable"}
+
+        max_dev = max(rank_devs) if rank_devs else 0.0
+        p95_dev = _percentile(rank_devs, 0.95) if rank_devs else 0.0
+        flip_rate = float(flips) / float(layers_count)
+
+        return {
+            "status": "ok",
+            "layers_checked": layers_count,
+            "max_rank_dev": float(max_dev),
+            "p95_rank_dev": float(p95_dev if p95_dev is not None else 0.0),
+            "top1_flip_rate": float(flip_rate),
+        }
 
     with torch.no_grad():
         residual_cache: Dict[str, Any] = {}
@@ -1053,6 +1132,8 @@ def run_prompt_pass(
                 "layers_flagged": numeric_tracker["layers_flagged"],
             }
             summary_diag["numeric_health"] = numeric_summary
+
+            summary_diag["repeatability"] = _compute_repeatability_metrics()
 
             if tuned_enabled and tuned_summaries is not None:
                 summary_tuned = summarize_pure_records(

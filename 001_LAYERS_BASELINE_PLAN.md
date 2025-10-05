@@ -1169,7 +1169,7 @@ Emit a compact map from `layer` indices to **model block names** and decoded str
 
 ---
 
-### 1.39. Repeatability micro‑check (same prompt, same run)
+### [x] 1.39. Repeatability micro‑check (same prompt, same run)
 
 **Why.** Non‑deterministic kernels can shift borderline ranks. A cheap intra‑run repeatability gauge prevents over‑interpreting one‑off flips.
 **What.**
@@ -1180,6 +1180,8 @@ Emit a compact map from `layer` indices to **model block names** and decoded str
   **How.**
 * After the forward pass (residuals cached), re‑decode logits with a no‑grad path twice; compare per‑layer ranks.
 * No CLI; auto‑skip if `provenance.env.deterministic_algorithms == true`.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

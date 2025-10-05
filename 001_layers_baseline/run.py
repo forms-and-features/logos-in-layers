@@ -715,6 +715,19 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 L_copy_orig = diag.get("L_copy")
                 L_sem_orig = diag.get("L_semantic")
                 json_data["diagnostics"] = diag
+                try:
+                    repeat_diag = (diag.get("repeatability") or {})
+                    if repeat_diag.get("status") == "ok":
+                        max_dev = float(repeat_diag.get("max_rank_dev", 0.0) or 0.0)
+                        flip_rate = float(repeat_diag.get("top1_flip_rate", 0.0) or 0.0)
+                        if max_dev > 5.0 or flip_rate > 0.02:
+                            diag_flags["repeatability_variance_high"] = True
+                    elif repeat_diag.get("status") == "skipped":
+                        diag_flags.setdefault("repeatability_skipped", repeat_diag.get("reason"))
+                    elif repeat_diag.get("status") == "unavailable":
+                        diag_flags.setdefault("repeatability_unavailable", True)
+                except Exception:
+                    pass
                 if last_layer_consistency is not None:
                     json_data["diagnostics"]["last_layer_consistency"] = last_layer_consistency
                 # KL_temp percentile snapshots
@@ -1228,6 +1241,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     reasons.append("high_lens_artifact_score")
             except Exception:
                 pass
+            if diag_flags.get("repeatability_variance_high"):
+                reasons.append("repeatability_variance_high")
             if diag_flags.get("nondeterministic"):
                 reasons.append("nondeterministic_env")
             if diag_flags.get("normalization_spike"):
