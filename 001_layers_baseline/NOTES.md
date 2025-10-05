@@ -34,7 +34,7 @@
 
 # Technical Implementation Notes
 
-The sections below were migrated from `PROJECT_NOTES.md` verbatim for historical completeness.
+The sections below were migrated from `001_LAYERS_BASELINE_PLAN.md` verbatim for historical completeness.
 
 ## Current State
 - **001_layers_baseline**: Complete layer-by-layer analysis with 4 models
@@ -74,7 +74,7 @@ The experiment supports CUDA, MPS and CPU with automatic dtype selection. Device
 Copy‑collapse is now detected at the token‑ID level via a contiguous subsequence match against the prompt using a rolling window `k=1`. Defaults tightened to `copy_threshold=0.95` and `copy_margin=0.10`; no entropy fallback inside the copy rule (entropy collapse is tracked separately). Trivial whitespace/punctuation echoes are ignored. Provenance fields (`copy_thresh`, `copy_window_k`, `copy_match_level`) are included in diagnostics.
 
 ## Per‑layer probability and KL metrics (2025-08-26)
-Added the following per‑layer pure next‑token metrics (PROJECT_NOTES §1.3):
+Added the following per‑layer pure next‑token metrics (001_LAYERS_BASELINE_PLAN §1.3):
 
 - CSV columns: `p_top1`, `p_top5` (cumulative), `p_answer`, `kl_to_final_bits`, `answer_rank`.
 - JSON diagnostics: `first_kl_below_0.5`, `first_kl_below_1.0`, `first_rank_le_1`, `first_rank_le_5`, `first_rank_le_10`.

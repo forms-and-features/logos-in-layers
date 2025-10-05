@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for unified sidecar summaries (PROJECT_NOTES §1.21).
+"""Unit tests for unified sidecar summaries (001_LAYERS_BASELINE_PLAN §1.21).
 
 Covers:
 - Rank milestone extraction and delta signs

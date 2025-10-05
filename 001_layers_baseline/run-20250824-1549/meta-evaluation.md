@@ -198,7 +198,7 @@ The engineering is **competent and careful** on normalization and numerics; the 
 [2]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-gemma-2-9b.json "raw.githubusercontent.com"
 [3]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-cross-models.md "raw.githubusercontent.com"
 [4]: https://arxiv.org/pdf/2303.08112?utm_source=chatgpt.com "[PDF] Eliciting Latent Predictions from Transformers with the Tuned Lens"
-[5]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/PROJECT_NOTES.md "raw.githubusercontent.com"
+[5]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_LAYERS_BASELINE_PLAN.md "raw.githubusercontent.com"
 [6]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-14B.json "raw.githubusercontent.com"
 [7]: https://neuralblog.github.io/logit-prisms/?utm_source=chatgpt.com "Logit Prisms: Decomposing Transformer Outputs for ..."
 [8]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen2.5-72B.json "raw.githubusercontent.com"

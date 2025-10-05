@@ -67,7 +67,7 @@ This creates a fresh `run-latest/` (rotating any previous one to `run-YYYYMMDD-H
 - `output-<model>-records.csv`: per-layer/per-position top‑k with rest_mass
 - `output-<model>-pure-next-token.csv`: per-layer next-token top‑k with collapse flags
   - Both CSVs include a `prompt_id` column (`pos` for Germany→Berlin; `ctl` for France→Paris)
-  - Both CSVs include a `prompt_variant` column (`orig` | `no_filler`) for the positive prompt ablation (PROJECT_NOTES §1.9)
+  - Both CSVs include a `prompt_variant` column (`orig` | `no_filler`) for the positive prompt ablation (001_LAYERS_BASELINE_PLAN §1.9)
   - Pure next-token CSV adds `control_margin = p(Paris) − p(Berlin)` for control rows
 
 Run a single model to a custom directory:
@@ -89,7 +89,7 @@ Notes:
 
 ## Further Reading
 
-For details and methodology notes, see `PROJECT_NOTES.md`. 
+For details and methodology notes, see `001_LAYERS_BASELINE_PLAN.md` and `00x_PROJECT_PLAN.md`. 
 
 ## License
 

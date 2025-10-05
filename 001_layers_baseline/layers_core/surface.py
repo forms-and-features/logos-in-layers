@@ -1,4 +1,4 @@
-"""Helpers for surface-mass and geometric diagnostics (PROJECT_NOTES §1.13–§1.15)."""
+"""Helpers for surface-mass and geometric diagnostics (001_LAYERS_BASELINE_PLAN §1.13–§1.15)."""
 
 from __future__ import annotations
 

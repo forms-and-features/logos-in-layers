@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-KL sanity test from PROJECT_NOTES.md section 1.1:
+KL sanity test from 001_LAYERS_BASELINE_PLAN.md section 1.1:
 Test multiple layers: decode with γ=1 vs learned γ.
 The KL between them should match KL between raw hidden states with/without γ.
 
@@ -15,7 +15,7 @@ from layers_core.numerics import kl_bits
 
 def run_kl_sanity_test(model, tokenizer):
     """
-    KL sanity test from PROJECT_NOTES.md section 1.1:
+    KL sanity test from 001_LAYERS_BASELINE_PLAN.md section 1.1:
     Test multiple layers: decode with γ=1 vs learned γ.
     The KL between them should match KL between raw hidden states with/without γ.
     """

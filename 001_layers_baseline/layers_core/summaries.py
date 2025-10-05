@@ -189,7 +189,7 @@ def summarize_pure_records(
         },
     }
 
-    # Strict-copy threshold sweep (PROJECT_NOTES §1.23)
+    # Strict-copy threshold sweep (001_LAYERS_BASELINE_PLAN §1.23)
     tau_list = (0.70, 0.80, 0.90, 0.95)
     # Find earliest layer for each threshold using collected['copy_strict_hits']
     # (flat keys like 'copy_strict@0.70' are present on CSV view rows, not on collected)
@@ -321,7 +321,7 @@ def summarize_pure_records(
     return summary
 
 
-# --- Unified sidecar summaries (PROJECT_NOTES §1.21) ------------------------
+# --- Unified sidecar summaries (001_LAYERS_BASELINE_PLAN §1.21) ------------------------
 
 from typing import Tuple
 
@@ -408,7 +408,7 @@ def build_unified_lens_metrics(
     prompt_id: str = "pos",
     prompt_variant: str = "orig",
 ) -> Dict[str, Any]:
-    """Compute unified sidecar metrics for a lens vs baseline (PROJECT_NOTES §1.21).
+    """Compute unified sidecar metrics for a lens vs baseline (001_LAYERS_BASELINE_PLAN §1.21).
 
     Returns a dict with keys: rank_milestones, kl_bits_at_percentiles, first_kl_le_1.0
     where each contains baseline/alt/delta entries. The alt subkey is named by
@@ -540,7 +540,7 @@ def compute_confirmed_semantics(
 ) -> Dict[str, Any]:
     """Compute L_semantic_confirmed by corroboration from raw/tuned within ±Δ of L.
 
-    Returns a dict with keys as per PROJECT_NOTES §1.25.
+    Returns a dict with keys as per 001_LAYERS_BASELINE_PLAN §1.25.
     """
     out = {
         "L_semantic_norm": L_semantic_norm,

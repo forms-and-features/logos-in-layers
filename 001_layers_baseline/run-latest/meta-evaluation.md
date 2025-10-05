@@ -6,7 +6,7 @@
 
 The project builds a careful, architecture‑aware **logit‑/norm‑lens** pipeline and applies it to ten open‑weight base LLMs to compare **surface‑form copy** vs **semantic collapse** across depth. The code implements multiple best‑practice guardrails (correct RMS/LN normalization; fp32 statistics; raw‑vs‑norm checks; rank‑based milestones; calibration sanity on the final head). The outputs are internally consistent, and the per‑model JSON meta files document the run conditions and diagnostics clearly (e.g., “layer0_position_info”, “last_layer_consistency”, “raw_lens_check”). For several families (e.g., Gemma‑2, Qwen‑3, Mistral‑7B), the runs replicate a now‑familiar pattern: **early direction, late calibration**—cosine to the final head rises relatively early while KL to the final head falls late; the answer reaches rank‑1 only near the end. This is directly aligned with the literature’s critique that the vanilla logit lens is brittle and calibration‑sensitive; the project’s optional **Tuned‑Lens** sidecars generally reduce KL and shift rank milestones in the expected direction. ([GitHub][1])
 
-Where the evaluation over‑reaches, it is mostly in cross‑family generalization and occasional indexing inconsistencies (baseline vs tuned‑lens summaries). The single‑item prompt is a deliberate scoping guard, but it constrains philosophical leverage; stronger claims against austere nominalism will require **causal** and **cross‑context** evidence (e.g., feature‑level interventions and invariances across many relations/entities). The plan in `PROJECT_NOTES.md` is sensible; a few focused additions would materially raise the evidential value without bike‑shedding. ([GitHub][2])
+Where the evaluation over‑reaches, it is mostly in cross‑family generalization and occasional indexing inconsistencies (baseline vs tuned‑lens summaries). The single‑item prompt is a deliberate scoping guard, but it constrains philosophical leverage; stronger claims against austere nominalism will require **causal** and **cross‑context** evidence (e.g., feature‑level interventions and invariances across many relations/entities). The plan in `001_LAYERS_BASELINE_PLAN.md` is sensible; a few focused additions would materially raise the evidential value without bike‑shedding. ([GitHub][2])
 
 ---
 
@@ -140,7 +140,7 @@ Philosophically, the present sweep offers **initial** pressure against **austere
 * Qwen‑3‑8B/14B: late collapse (≈31–34/36; ≈34–39/40); tuned reduces KL ~4 bits @ p50. ([GitHub][5])
 * Gemma‑2‑9B: strict copy at L0; warn_high_last_layer_kl; rank‑1 only at final layer. ([GitHub][3])
 * Llama‑3‑70B: tuned lens missing; baseline only; use ranks. ([GitHub][6])
-* Project plan & normalization policy (§1.1) captured in `PROJECT_NOTES.md`. ([GitHub][2])
+* Project plan & normalization policy (§1.1) captured in `001_LAYERS_BASELINE_PLAN.md`. ([GitHub][2])
 * Tuned‑Lens paper and motivation. ([arXiv][8])
 * RMSNorm formula (ε in √). ([arXiv][10])
 * Superposition motivation for feature‑level tests. ([arXiv][9])
@@ -148,7 +148,7 @@ Philosophically, the present sweep offers **initial** pressure against **austere
 ---
 
 [1]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-Meta-Llama-3-8B.md "raw.githubusercontent.com"
-[2]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/PROJECT_NOTES.md "raw.githubusercontent.com"
+[2]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_LAYERS_BASELINE_PLAN.md "raw.githubusercontent.com"
 [3]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-gemma-2-9b.md "raw.githubusercontent.com"
 [4]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Mistral-7B-v0.1.json "raw.githubusercontent.com"
 [5]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/output-Qwen3-8B.json "raw.githubusercontent.com"
@@ -228,7 +228,7 @@ The `nondeterministic` flag is set when deterministic algorithms cannot be enabl
 
 The cross-model evaluation reports normalized collapse depths spanning 0.50 (Llama-3-70B) to 1.0 (Gemma-2-9B/27B, Qwen2.5-72B). The narrative correctly notes that Llama-3-70B's early collapse (40/80=0.50) aligns with strong MMLU performance (79.5%), while the late-collapsing Qwen2.5-72B also achieves high MMLU. This **contradicts** a simple "earlier collapse → better reasoning" hypothesis, undermining any straightforward causal claim.
 
-However, the evaluation then pivots to "suggestive, not causal" framing, which is appropriate. The issue is that the project's philosophical framing (in PROJECT_NOTES.md §1 "Linking collapse depth to public scores") invites readers to interpret depth as a semantic milestone, yet the empirical spread is so wide (0.50 to 1.0, a factor of 2) that depth alone provides little predictive power. Within-family comparisons (Llama 70B vs 8B) do show earlier collapse at scale, but this could reflect better head calibration or longer context integration, not necessarily semantic sophistication.
+However, the evaluation then pivots to "suggestive, not causal" framing, which is appropriate. The issue is that the project's philosophical framing (in 001_LAYERS_BASELINE_PLAN.md §1 "Linking collapse depth to public scores") invites readers to interpret depth as a semantic milestone, yet the empirical spread is so wide (0.50 to 1.0, a factor of 2) that depth alone provides little predictive power. Within-family comparisons (Llama 70B vs 8B) do show earlier collapse at scale, but this could reflect better head calibration or longer context integration, not necessarily semantic sophistication.
 
 **Critique:** The evaluation correctly applies the "correlational, not causal" disclaimer but does not emphasize that the *variance* in collapse depths across equal-performing models (e.g., Qwen2.5-72B at 1.0 vs Mistral-Small-24B at 0.825, both strong) suggests collapse depth is confounded by architectural choices (final head transforms, normalization schemes, training recipes) orthogonal to semantic competence. The write-up should state explicitly: "Collapse depth reflects a model's internal computation path, not its endpoint capability."
 
@@ -358,7 +358,7 @@ The baseline sweep provides **robust evidence against austere nominalism**, whic
 
 The current baseline sweep does **not** yet adjudicate between metalinguistic nominalism (MN) and realism. MN treats internal structure as sophisticated facts about linguistic predicates (e.g., the model encodes "capital-of" as a predicate relation over word-tokens). Realism posits that internal structure tracks mind-independent universals (e.g., the capital-of *relation itself*).
 
-The planned probes in PROJECT_NOTES §§4-5 (vector portability across modalities §4.7, synthetic language swap §5.2, paraphrase robustness §4.2, multilingual consistency §4.3) are designed to stress this distinction. None of these have been executed yet.
+The planned probes in 001_LAYERS_BASELINE_PLAN §§4-5 (vector portability across modalities §4.7, synthetic language swap §5.2, paraphrase robustness §4.2, multilingual consistency §4.3) are designed to stress this distinction. None of these have been executed yet.
 
 **Critical Observation:** The mass vs geometry discordance (§3.2) and entropy drift patterns (§3.4) are **equally consistent** with MN and realism. Both frameworks predict:
 - Iterative refinement (compositional predicates in MN; convergence to universal structures in realism)

@@ -54,7 +54,7 @@ def parse_cli():
                    help="Output directory to save CSV & JSON results (default: current script directory or value forwarded by parent launcher)")
     p.add_argument("--self-test",
                    action="store_true",
-                   help="Run KL sanity test to validate normalization scaling (PROJECT_NOTES.md section 1.1). Can also run standalone: python kl_sanity_test.py MODEL_ID")
+                   help="Run KL sanity test to validate normalization scaling (001_LAYERS_BASELINE_PLAN.md section 1.1). Can also run standalone: python kl_sanity_test.py MODEL_ID")
     # Prism sidecar controls
     p.add_argument("--prism",
                    default=os.environ.get("LOGOS_PRISM", "auto"),

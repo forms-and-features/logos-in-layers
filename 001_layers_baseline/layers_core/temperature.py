@@ -1,4 +1,4 @@
-"""Norm-lens temperature calibration helpers (PROJECT_NOTES §1.16).
+"""Norm-lens temperature calibration helpers (001_LAYERS_BASELINE_PLAN §1.16).
 
 Runs entirely on CPU to avoid device-specific op gaps (e.g., MPS logspace).
 """

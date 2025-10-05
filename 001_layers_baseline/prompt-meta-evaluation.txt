@@ -82,7 +82,7 @@ https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/
 https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/NOTES.md
 
 - broad plan of the experiment:
-https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/PROJECT_NOTES.md
+https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_LAYERS_BASELINE_PLAN.md
 
 
 Your task is to:
@@ -90,7 +90,7 @@ Your task is to:
 - review the results and analyses: anything incorrectly interpreted, over-stated, or missed?
 - do your own independent deep dive into the results, broadly following the structure of cross-model evaluation reports, and using your knowledge of latest LLM interpretability research (you may use search for articles, posts and code sources);
 - consider the usefulness of the findings for the realism vs nominalism debate, keeping in mind this is just the first iteration;
-- review the plan in https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/PROJECT_NOTES.md and, if necessary, propose additions and/or adjustments to the next steps, keeping in mind project context and goals; make sure that suggestions would actually bring non-negligible value to the project (no bike-shedding!).
+- review the plan in https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_LAYERS_BASELINE_PLAN.md and, if necessary, propose additions and/or adjustments to the next steps, keeping in mind project context and goals; make sure that suggestions would actually bring non-negligible value to the project (no bike-shedding!).
 
 Use your knowledge of cutting-edge LLM research. Look up and read papers, if necessary.
 

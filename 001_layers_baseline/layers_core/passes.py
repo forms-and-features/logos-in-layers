@@ -957,7 +957,7 @@ def run_prompt_pass(
             if window_records:
                 json_data.setdefault("raw_lens_window_records", []).extend(window_records)
 
-            # Full dual-lens sweep across all available layers (PROJECT_NOTES §1.24)
+            # Full dual-lens sweep across all available layers (001_LAYERS_BASELINE_PLAN §1.24)
             try:
                 full_summary, full_rows = compute_full_raw_norm(
                     norm_logits_map=norm_logits_window,
@@ -986,7 +986,7 @@ def run_prompt_pass(
                 except Exception:
                     pass
 
-            # Cross-validate strict-copy earliest layers across thresholds against raw lens (PROJECT_NOTES §1.23)
+            # Cross-validate strict-copy earliest layers across thresholds against raw lens (001_LAYERS_BASELINE_PLAN §1.23)
             try:
                 ct_block = summary_diag.setdefault("copy_thresholds", {})
                 L_map = (ct_block.get("L_copy_strict") or {})

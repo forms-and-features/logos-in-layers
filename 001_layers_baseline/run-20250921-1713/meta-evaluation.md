@@ -143,7 +143,7 @@ These checks confirm the reports’ main claims against the artifacts; they also
 
 As a **baseline**, this run is in strong shape: the right metrics are logged, the right sanity checks are in place, and the write‑ups mostly lean on rank‑ and cosine‑based claims. The next iteration should (i) add tuned‑lens translators, (ii) broaden copy detection slightly, (iii) retire Prism from conclusions, and (iv) pivot from descriptive to **causal** analyses (activation patching + scrubbing; SAE features). Those changes will transform a plausible anti‑*austere nominalism* gesture into a rigorous, falsifiable argument about **reusable internal structure**—and put the project in a position to probe **realism vs metalinguistic nominalism** with genuine teeth. ([GitHub][1])
 
-[1]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/PROJECT_NOTES.md "raw.githubusercontent.com"
+[1]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_LAYERS_BASELINE_PLAN.md "raw.githubusercontent.com"
 [2]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-cross-models.md "raw.githubusercontent.com"
 [3]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-gemma-2-27b.md "raw.githubusercontent.com"
 [4]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-Meta-Llama-3-8B.md "raw.githubusercontent.com"

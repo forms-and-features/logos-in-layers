@@ -1,97 +1,47 @@
 ROLE
-You are an interpretability researcher from a top AI research lab (e.g. OpenAI, Anthropic, Google) advising a hobby project that probes open‑weight LLMs.
-You are reviewing results of probes of multiple LLM models.
+You are an interpretability researcher from a top AI research lab (e.g. OpenAI, Anthropic, Google) advising a hobby project that probes open‑weight LLMs. You are reviewing results of probes of multiple LLM models.
 
 INPUTS
-- SCRIPT – probing script:
-001_layers_baseline/run.py
+- SCRIPT – probing script: 001_layers_baseline/run.py
+- JSON – structured results (one per model): 001_layers_baseline/run-latest/output-<MODEL>.json
+  Each JSON is a compact summary; per‑token/per‑layer details live in CSVs.
+  Read also:
+  * diagnostics.last_layer_consistency (final‑head calibration)
+  * diagnostics.raw_lens_window / diagnostics.raw_lens_full
+  * diagnostics.normalization_provenance, diagnostics.numeric_health, diagnostics.copy_mask
+  * measurement_guidance { prefer_ranks, suppress_abs_probs, reasons[], preferred_lens_for_reporting?, use_confirmed_semantics? }
+  * tuned_lens.audit_summary (if present): rotation_vs_temperature, positional, head_mismatch, tuned_is_calibration_only, preferred_semantics_lens_hint
+  * evaluation_pack (if present): milestones, artifact (…v2), repeatability, alignment, norm_trajectory, entropy, tuned_audit, citations
+- CSV – layer‑level results (one per model):
+  * output-<MODEL>-records.csv
+  * output-<MODEL>-pure-next-token.csv
+    Contains: flags (`copy_collapse`, strict sweep `copy_strict@τ` where τ∈{0.70,0.80,0.90,0.95}, `copy_soft_k{1,2,3}@τ_soft`, `entropy_collapse`, `is_answer`),
+    prob/calibration (`p_top1`, `p_top5`, `p_answer`, `answer_rank`, `kl_to_final_bits`),
+    geometry (`cos_to_final`, `cos_to_answer`, `cos_to_prompt_max`, `geom_crossover`),
+    surface mass (`echo_mass_prompt`, `answer_mass`, `answer_minus_echo_mass`, `mass_ratio_ans_over_prompt`),
+    coverage (`topk_prompt_mass@50`),
+    control (`control_margin`),
+    entropy (`entropy_bits`) and teacher entropy (`teacher_entropy_bits`) for drift.
+- CSV – Optional sidecars per model:
+  * Prism: output-<MODEL>-records-prism.csv; output-<MODEL>-pure-next-token-prism.csv
+  * Tuned‑Lens: output-<MODEL>-records-tuned.csv; output-<MODEL>-pure-next-token-tuned.csv
+  * Raw‑vs‑Norm (window): output-<MODEL>-pure-next-token-rawlens-window.csv
+  * Raw‑vs‑Norm (full): output-<MODEL>-pure-next-token-rawlens.csv
+    (Augmented per §1.37–1.38 with: js_divergence, kl_raw_to_norm_bits, l1_prob_diff, topk_jaccard_raw_norm@50)
+  * Tuned‑variants (component ablations): output-<MODEL>-pure-next-token-tuned-variants.csv  (full tuned / rotation‑only / temperature‑only)
+  * Tuned positions audit: output-<MODEL>-positions-tuned-audit.csv
+  * Milestones (quick citation): output-<MODEL>-milestones.csv
+  * Artifact audit (quick scan): output-<MODEL>-artifact-audit.csv
 
-- JSON – structured results of the probe (part of the results of each probe), one file per model:
-001_layers_baseline/run-latest/output-gemma-2-9b.json
-001_layers_baseline/run-latest/output-gemma-2-27b.json
-001_layers_baseline/run-latest/output-Meta-Llama-3-8B.json
-001_layers_baseline/run-latest/output-Meta-Llama-3-70B.json
-001_layers_baseline/run-latest/output-Mistral-7B-v0.1.json
-001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501.json
-001_layers_baseline/run-latest/output-Qwen3-8B.json
-001_layers_baseline/run-latest/output-Qwen3-14B.json
-001_layers_baseline/run-latest/output-Qwen2.5-72B.json
-001_layers_baseline/run-latest/output-Yi-34B.json
-Note: each JSON is a compact summary; the bulky per-token records are stored only in the CSVs.
-Diagnostics now also include last-layer head-calibration fields under `diagnostics.last_layer_consistency`:
-`{ kl_to_final_bits, top1_agree, p_top1_lens, p_top1_model, p_answer_lens, answer_rank_lens, temp_est, kl_after_temp_bits, cfg_transform, kl_after_transform_bits, warn_high_last_layer_kl }`.
-Prism (if present): also read `diagnostics.prism_summary` for each model: `{ mode, artifact_path, present, compatible, k, layers, error }`.
+Also use your own expertise in latest LLM research.
 
-Each JSON also includes a `gold_answer` block for ID‑level alignment: `{ string, pieces, first_id, answer_ids, variant }`, and `diagnostics.gold_alignment` (ok/unresolved). Treat `is_answer`/`p_answer`/`answer_rank` as computed against `gold_answer.first_id`. JSON additionally includes the negative-control fields: `control_prompt` (context, control gold alignment) and `control_summary` `{ first_control_margin_pos, max_control_margin }`. Ablation: read `ablation_summary` with `{ L_copy_orig, L_sem_orig, L_copy_nf, L_sem_nf, delta_L_copy, delta_L_sem }`.
-Other JSON fields:
-* diagnostics.raw_lens_window: { radius, center_layers, layers_checked, norm_only_semantics_layers, max_kl_norm_vs_raw_bits_window, mode="window" }.
-* summary.cos_milestones: cosine thresholds ge_{0.2,0.4,0.6} per lens (norm/tuned).
-* summary.depth_fractions: normalized depths for L_semantic, first_rank_le_{10,5,1}, L_copy_strict, and L_copy_soft[k].
-* summary.copy_thresholds: { tau_list, L_copy_strict, L_copy_strict_frac, norm_only_flags, stability } — threshold-sweep robustness and norm-only cross‑validation.
-* diagnostics.prism_summary.metrics and tuned_lens.summary.metrics: rank milestones and KL at {25,50,75}% with deltas vs baseline.
-* measurement_guidance: { prefer_ranks, suppress_abs_probs, reasons[], notes }.
-
-Also read if present (per model):
-* provenance.env — capture torch/device/determinism differences; treat cross-model differences cautiously if determinism flags differ.
-* diagnostics.normalization_provenance — ensure comparable norm strategies (e.g., "post_ln2" vs "next_ln1"); annotate if mixed.
-* diagnostics.unembed_bias — note families with non-zero bias; cosine comparisons remain within-model only.
-* diagnostics.numeric_health — down‑weight any model with flagged early layers overlapping candidate collapse ranges.
-* diagnostics.copy_mask — note substantive differences in ignore‑set size or composition when comparing copy detectors.
-
-- CSV - layer-level results of the probe (part of the results of each probe), one per model:
-001_layers_baseline/run-latest/output-gemma-2-9b-records.csv
-001_layers_baseline/run-latest/output-gemma-2-27b-records.csv
-001_layers_baseline/run-latest/output-Meta-Llama-3-8B-records.csv
-001_layers_baseline/run-latest/output-Meta-Llama-3-70B-records.csv
-001_layers_baseline/run-latest/output-Mistral-7B-v0.1-records.csv
-001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-records.csv
-001_layers_baseline/run-latest/output-Qwen3-8B-records.csv
-001_layers_baseline/run-latest/output-Qwen3-14B-records.csv
-001_layers_baseline/run-latest/output-Qwen2.5-72B-records.csv
-001_layers_baseline/run-latest/output-Yi-34B-records.csv
-
-- CSV - pure next-token results (part of the results of each probe) – one per model:
-001_layers_baseline/run-latest/output-gemma-2-9b-pure-next-token.csv
-001_layers_baseline/run-latest/output-gemma-2-27b-pure-next-token.csv
-001_layers_baseline/run-latest/output-Meta-Llama-3-8B-pure-next-token.csv
-001_layers_baseline/run-latest/output-Meta-Llama-3-70B-pure-next-token.csv
-001_layers_baseline/run-latest/output-Mistral-7B-v0.1-pure-next-token.csv
-001_layers_baseline/run-latest/output-Mistral-Small-24B-Base-2501-pure-next-token.csv
-001_layers_baseline/run-latest/output-Qwen3-8B-pure-next-token.csv
-001_layers_baseline/run-latest/output-Qwen3-14B-pure-next-token.csv
-001_layers_baseline/run-latest/output-Qwen2.5-72B-pure-next-token.csv
-001_layers_baseline/run-latest/output-Yi-34B-pure-next-token.csv
-
- Both CSV flavours contain a `rest_mass` column (probability mass not covered by the top-k tokens) and leading `prompt_id` (`pos`/`ctl`) and `prompt_variant` (`orig`/`no_filler`) columns. The pure-next-token CSV also adds:
- - Flags: `copy_collapse`, strict-sweep `copy_strict@τ` where τ ∈ {0.70,0.80,0.90,0.95}, `copy_soft_k{1,2,3}@τ_soft`, `entropy_collapse`, `is_answer`
- - Prob/calibration: `p_top1`, `p_top5` (cumulative), `p_answer`, `answer_rank`, `kl_to_final_bits` (bits)
- - Geometry: `cos_to_final` (within-model), `cos_to_answer`, `cos_to_prompt_max`, `geom_crossover`
- - Surface mass: `echo_mass_prompt`, `answer_mass`, `answer_minus_echo_mass`, `mass_ratio_ans_over_prompt`
- - Coverage: `topk_prompt_mass@50`
- - Norm temp (norm-only): `kl_to_final_bits_norm_temp` = KL(P(z/τ)||P_final)
- - Control: `control_margin = p(Paris) − p(Berlin)`
- Treat cosines and top‑k coverage as within‑model trends; avoid cross‑family comparisons of absolute values. Do not treat `rest_mass` as a lens-fidelity metric; diagnose fidelity/calibration via `diagnostics.last_layer_consistency` and `raw_lens_check.summary`.
-
-If present for a model, include Prism sidecars for calibration comparison:
-001_layers_baseline/run-latest/output-<model>-records-prism.csv
-001_layers_baseline/run-latest/output-<model>-pure-next-token-prism.csv
-
-If present for a model, also include Tuned‑Lens sidecars (same schema):
-001_layers_baseline/run-latest/output-<model>-records-tuned.csv
-001_layers_baseline/run-latest/output-<model>-pure-next-token-tuned.csv
-The pure CSVs also include `teacher_entropy_bits`; use it to report entropy drift `(entropy − teacher_entropy_bits)` at representative depths.
-
-If present for a model, also include Windowed Raw‑vs‑Norm sidecar:
-001_layers_baseline/run-latest/output-<MODEL>-pure-next-token-rawlens-window.csv
-Columns: layer, lens ∈ {raw,norm}, p_top1, top1_token_id, top1_token_str, p_answer, answer_rank, kl_norm_vs_raw_bits.
-
-If present for a model, also include Full Raw‑vs‑Norm sidecar:
-001_layers_baseline/run-latest/output-<MODEL>-pure-next-token-rawlens.csv
-(Per-layer raw vs norm for all layers; columns: layer, p_top1_raw, top1_token_id_raw, top1_token_str_raw, p_answer_raw, answer_rank_raw, p_top1_norm, top1_token_id_norm, top1_token_str_norm, p_answer_norm, answer_rank_norm, kl_norm_vs_raw_bits, norm_only_semantics.)
-
-Also read the measurement guidance block in JSON:
-measurement_guidance: { prefer_ranks, suppress_abs_probs, reasons[], preferred_lens_for_reporting?, use_confirmed_semantics? }.
-If present, prefer the indicated lens and use confirmed semantics in summaries.
+RULES
+- Treat all **cosine/coverage** as within‑model trends; avoid cross‑family absolute comparisons.
+- Prefer **rank milestones** and **KL thresholds** over absolute probabilities; if `suppress_abs_probs=true` or risk tier = high, avoid absolute p entirely.
+- If `preferred_semantics_lens_hint` or `preferred_lens_for_reporting` is set, report semantics under that lens by default; still include baseline for context.
+- If `tuned_is_calibration_only=true`, treat tuned lens as calibration aid; prefer norm lens for semantics.
+- If `warn_high_last_layer_kl=true`, do not infer final‑row probability regressions; focus on rank/KL thresholds.
+- Do **not** recompute JS/Jaccard/KL/entropy from scratch; read values from the provided JSON/CSVs.
 
 Final-row caveat (head calibration): When comparing final rows across models, prefer rank/KL thresholds. If a model’s JSON has `warn_high_last_layer_kl = true`, treat final probability differences as head‑calibration artefacts and do not infer regressions. Known pattern: the Gemma family often shows non‑zero last‑layer KL due to a calibrated final head; be on the lookout for similar signatures in other families. If `raw_lens_check.summary.lens_artifact_risk` is `high` or `first_norm_only_semantic_layer` is present, downgrade confidence in pre‑final “early semantics” and lean on rank milestones over probabilities.
 
@@ -101,100 +51,60 @@ Also honor `measurement_guidance`: if `prefer_ranks = true` or `suppress_abs_pro
 
 Gold‑token alignment caveat: Verify `gold_alignment` across models. For any model with `unresolved`, flag reduced comparability, rely on rank thresholds (`first_rank_le_{1,5,10}`), and avoid absolute probability claims. Stylistic ablation caveat: Filter depth summaries to `prompt_id = pos`, `prompt_variant = orig`. Compare `ΔL_sem`, `ΔL_copy`, and `ΔL_copy_soft[k]` (optionally normalized by `n_layers`); treat large positive shifts as stronger stylistic‑cue sensitivity and keep comparisons within-family when in doubt. When “top‑1” does not refer to the answer, label it as generic top‑1 (not `p_answer`), and include layer indices when citing any milestones (KL, cosine, rank, probabilities).
 
-Use tools to review these JSON and CSV files as needed.
-
-- EVALS – evaluations of probe results, one per model:
-001_layers_baseline/run-latest/evaluation-gemma-2-9b.md
-001_layers_baseline/run-latest/evaluation-gemma-2-27b.md
-001_layers_baseline/run-latest/evaluation-Meta-Llama-3-8B.md
-001_layers_baseline/run-latest/evaluation-Meta-Llama-3-70B.md
-001_layers_baseline/run-latest/evaluation-Mistral-7B-v0.1.md
-001_layers_baseline/run-latest/evaluation-Mistral-Small-24B-Base-2501.md
-001_layers_baseline/run-latest/evaluation-Qwen3-8B.md
-001_layers_baseline/run-latest/evaluation-Qwen3-14B.md
-001_layers_baseline/run-latest/evaluation-Qwen2.5-72B.md
-001_layers_baseline/run-latest/evaluation-Yi-34B.md
-
-- CROSS‑EVAL output file: 001_layers_baseline/run-latest/evaluation-cross-models.md
-
-- Parameters: copy_threshold = 0.95, copy_margin = 0.10
-  Copy rule: ID-level contiguous subsequence (k=1), τ=0.95, δ=0.10; no entropy fallback; ignore whitespace/punctuation tokens for copy. Soft detectors use `copy_soft_config.threshold` with `window_ks`. Use `copy_thresh`, `copy_window_k`, `copy_match_level`, and `copy_soft_config` from diagnostics; note `L_copy` may be null while `L_copy_soft[k]` fires.
-
-- Your own expertise.
-
 TASK
-Write CROSS‑EVAL in GitHub‑flavoured Markdown answering the items below.  
-Draw only from SCRIPT, EVALS files (they are your key input), JSON and CSV (as necessary); avoid broad philosophical claims.
-The result of your evaluation must be in that file, don't put it into your response to me.
+Write CROSS‑EVAL in GitHub‑flavoured Markdown answering the items below. Use SCRIPT, model JSONs, CSVs, and EVALS (single‑model write‑ups) as necessary; avoid broad philosophical claims.
 
-1. Result synthesis
+Use tools to review these JSON and CSV files as needed.
 
 Write concise but thorough paragraphs that correlate quantitative patterns across models, drawing on your extensive knowledge of LLM interpretability research; relate them to published interpretability findings (cite DOI/arXiv).
 
-Compare copy-reflex across models using both `copy_collapse` and `copy_soft_k1@τ_soft` flags in the pure-next-token CSVs (treat any model whose CSV marks either flag True in layers 0–3 as having a copy-reflex); highlight any outlier.
-Use rank‑based milestones (`first_rank_le_1`, `first_rank_le_5`, `first_rank_le_10`) for cross‑model comparisons; avoid cross‑model claims based solely on raw probabilities. Treat KL milestones (`first_kl_below_1.0`, `first_kl_below_0.5`) as within‑model diagnostics and compare their relative depths (layer/n_layers). Exclude models whose last‑layer `kl_to_final_bits` is not ≈ 0 from KL‑based conclusions, or annotate a final‑lens vs final‑head mismatch. For `cos_to_final`, report per‑model trajectories qualitatively as within‑model evidence of direction alignment; do not compare absolute cosine levels across families.
-When JSON includes `summary.L_semantic_confirmed`, report that value (and note the corroborating source raw/tuned) in addition to `L_semantic_norm`.
+1. Result synthesis
+   Correlate quantitative patterns across models. Use:
+   - `first_rank_le_{10,5,1}` and `L_semantic_confirmed` (if present) for timing.
+   - Δ̂ = (L_sem − L_copy_variant)/n_layers (from evaluation_pack if present).
+   - Tuned audit: report `delta_kl_rot_{p25,p50,p75}` and `pos_ood_gap`; note `tuned_is_calibration_only`.
+   - Head mismatch: quote `tau_star_modelcal` and the before/after final‑KL.
 
-If present, prefer L_semantic_confirmed for cross-model timing; otherwise cite L_semantic_norm and annotate any norm-only early semantics from raw/tuned corroboration windows.
+2. Copy reflex (early layers 0–3)
+   Use pure‑CSV flags: `copy_collapse` OR `copy_soft_k1@τ_soft`=True in layers 0–3 → mark “copy‑reflex”. Call out outliers. Normalize timing by depth.
 
-Include lens sanity from each model’s JSON `raw_lens_check.summary`: list models with `first_norm_only_semantic_layer` present (norm‑only semantics) and report `lens_artifact_risk` and `max_kl_norm_vs_raw_bits`. For models with `high` risk, downgrade confidence in early‑semantics claims and prefer rank‑based statements; note the `mode` (sample/full) for context.
+3. Lens artefact risk
+   Report:
+   - From diagnostics.raw_lens_full and artifact‑audit CSV: `lens_artifact_score_v2` (and legacy score), `js_divergence_p50`, `l1_prob_diff_p50`, `jaccard_raw_norm_p50`, `pct_layers_kl_ge_1.0`, `n_norm_only_semantics_layers`, earliest norm‑only layer.
+   - Risk tier (low/medium/high). For high tier, restrict to rank/KL milestones and confirmed semantics.
 
-Raw‑vs‑Norm window (if present): report any `norm_only_semantics_layers` from `diagnostics.raw_lens_window` and the `max_kl_norm_vs_raw_bits_window`. Treat early “semantics” that disappear under the raw lens within ±4–8 layers as lens‑induced and downgrade those claims.
-If the Full Raw‑vs‑Norm sidecar is present, also report:
-- pct_layers_kl_ge_1.0, pct_layers_kl_ge_0.5, n_norm_only_semantics_layers, earliest_norm_only_semantic (from diagnostics.raw_lens_full).
-Treat larger values as higher artefact risk; prefer rank milestones and confirmed semantics accordingly.
+4. Confirmed semantics
+   If `summary.L_semantic_confirmed` exists, report its layer and `confirmed_source` (raw/tuned/both). Otherwise, cite `L_semantic_norm` and annotate any norm‑only early semantics.
 
-Investigate and write a paragraph about notable similarities and differences between models of the same family (Qwen, gemma).
+5. Entropy & confidence
+   Compare entropy drift `(entropy_bits − teacher_entropy_bits)` at representative depths (use summary percentiles or evaluation_pack.entropy). Summarize whether drift shrinks as rank improves and KL falls.
 
-Use `L_copy_strict` if present; otherwise compute Δ using the earliest `L_copy_soft[k]` (k ∈ {1,2,3}) and report the k used. Normalize Δ by depth: Δ̂ = (L_semantic − L_copy_variant) / n_layers.
+6. Normalization & numeric health
+   Note norm strategy (post_ln2 vs next_ln1), early spikes (resid_norm_ratio / delta_resid_cos), and any numeric health flags overlapping candidate layers.
 
-Summarize emergence timing with Δ̂, rank milestones, and whether KL decreases with depth alongside rank improvements. You may mention within‑model rises in `cos_to_final` as evidence of direction alignment, but do not draw cross‑family comparisons from cosine.
+7. Repeatability
+   Quote `diagnostics.repeatability` (max_rank_dev, p95_rank_dev, top1_flip_rate); if flagged high variance, treat near‑threshold rank differences cautiously.
 
-For each model describe the entropy drop between L_copy and L_semantic (e.g. ‘sharp 13-bit plunge’, ‘gradual 6-bit taper’). Use the entropy column in pure-next-token CSV.
+8. Family patterns
+   Within families (e.g., Qwen, Gemma), summarize consistencies/differences in collapse depth, artefact tier, tuned audit, and control margins.
 
-Group models into “meaning emerges at early (< 70 % depth) vs late (≥ 70 %)” instead of citing raw layer numbers.
+10. Prism Summary Across Models (if present)
+- Treat Prism as a shared‑decoder diagnostic. Report KL deltas at the sampled depths and any rank‑milestone shifts relative to baseline norm lens. Classify as Helpful / Neutral / Regressive.
 
-Does sharper collapse coincide with wider d_model or more heads (information already in the model_stats JSON)?
+11. Investigate and write a paragraph about notable similarities and differences between models of the same family (Qwen, gemma).
 
-Quote EVAL line numbers or raw JSON or CSV snippets as needed.
-
-Prism Summary Across Models (if present)
-Prism is a shared‑decoder diagnostic for robustness/comparability, not the model’s head. Interpret “Helpful/Neutral/Regressive” strictly relative to the norm lens baseline, not as regressions vs the final head.
-
-Gate for "Helpful": require (i) earlier or equal first_rank_le_1 under Prism and (ii) no KL inflation > 0.2 bits at mid-depths (~50%). Otherwise classify as Neutral or Regressive. Treat Prism as diagnostic-only; never present Prism milestones as model-head truths.
-
-- Build a compact comparison (paragraph, no tables) across models with Prism artifacts (`compatible = true`): mention for each model k, Δ in `first_rank_le_{10,5,1}` (Prism vs baseline), and ΔKL at ~25/50/75% depths.
-- Interpret patterns: are Prism gains larger when `raw_lens_check.summary.lens_artifact_risk` is high? Concentrated at early/mid layers? Any regressions?
-- Keep claims within‑model; avoid absolute probability comparisons across models. Note any missing Prism artifacts without speculation.
-
-Tuned‑Lens Summary Across Models (if present)
-Treat Tuned‑Lens as a learned translator with an independent temperature path; compare it to:
-(a) the norm lens, and (b) the norm lens with per-layer temperature (norm_temp).
-
-For each model with tuned sidecars:
-- Report Δ in first_rank_le_{10,5,1} (tuned vs norm) and ΔKL at ~25/50/75% depths.
-- Also report ΔKL_temp at ~25/50/75% (norm_temp vs norm) using `kl_to_final_bits_norm_temp` to attribute gains to calibration vs rotation. Define ΔKL_rot = ΔKL_tuned − ΔKL_temp and interpret positive ΔKL_rot as translation (rotation) gains.
-- Honor `measurement_guidance.preferred_lens_for_reporting` when deciding which lens to quote in depth milestones.
-- Use `skip_layers_sanity` (if present) to comment on faithfulness of the translator (ppl deltas at m ∈ {2,4,8}).
-Keep claims within-model; avoid absolute probability comparisons across families.
-
-Check that you've covered the following:
-* copy-reflex prevalence and outliers
-* Δ and Δ̂ trends vs size
-* entropy-drop shape (sharp/taper)
-* relation to d_model / n_heads
-* Per‑model `cos_to_final` alignment (within‑model only; no cross‑family comparison)
-* link collapse depth to MMLU/ARC
-* lens sanity across models (risk tiers; any norm‑only semantics)
-* Tuned‑Lens vs norm vs norm_temp attribution (ΔKL_rot at ~25/50/75%; gains due to rotation vs temperature)
-* Preferred lens used in reporting (from measurement_guidance.preferred_lens_for_reporting)
-* Confirmed semantics (if present) and corroborating source (raw/tuned)
-* Full dual‑lens artefact metrics (pct_layers_kl_ge_1.0, n_norm_only_semantics_layers) when available
-
-2. Misinterpretations in existing EVALS
+13. Misinterpretations in existing EVALS
 Bullet each over‑statement or error you found; cite the exact EVAL line.
 
-3. Limitations
+OUTPUT
+- Write to: 001_layers_baseline/run-latest/evaluation-cross-models.md
+- Include short quotes with CSV line numbers (use milestones.csv and evaluation_pack.citations when present).
+
+At the end of the markdown file, add the fellowing line, separated by "---" lines:
+**Produced by OpenAI GPT-5**
+
+
+KNOWN LIMITATIONS
 These limitations are known and accepted:
 * RMS-lens can distort absolute probabilities; comparisons should stay within-model, not across differing normalisation schemes.
 * Single-prompt probing may over-fit tokenizer quirks; copy-collapse depth can change if wording or punctuation shifts.
@@ -205,54 +115,9 @@ These limitations are known and accepted:
 * Current results are correlation-only; causal evidence (patching) awaits a later run.
 So focus on concrete reasons - these limitations aside - the present data can mislead.
 
-
 STYLE GUIDELINES
-- Be concise but thorough; no tables; prefer paragraphs over lists.  
 - Quote lines with L-numbers; keep quotes short.  
 - Entropy in CSVs is already in bits; no conversion required.  
 - Cite external papers only with DOI/arXiv; skip if unsure.  
 - Avoid normative language; focus on actionable analysis.
- - Ground every numeric milestone (layers, KL, cosine, probabilities) with a quoted CSV/JSON line from the model being discussed, and include the layer index. Do not reuse numbers across models.
-
- Tuned‑Lens guidance (multi‑model)
-- Present both baseline (norm) and tuned summaries for each model when tuned artifacts exist.
-- For each model, report ΔKL medians at depth percentiles (e.g., L≈{25,50,75}%) and last‑layer agreement (JSON `diagnostics.last_layer_consistency.kl_after_temp_bits`). When available, include norm temperature snapshots `kl_to_final_bits_norm_temp@{25,50,75}%` to separate calibration vs rotation.
-- Entropy drift: for each model, summarize `(entropy − teacher_entropy_bits)` at one mid‑depth layer.
-- Rank earliness (suite‑level intent): do not assert “earlier” across models based on a single probe; instead, note whether tuned rank milestones appear earlier/equal/later. Prefer per‑model notes over aggregate claims unless you have a prompt suite.
-
- Surface/Geometry/Coverage (multi‑model)
-- Report `L_surface_to_meaning_{norm,tuned}` with the masses at L (answer_mass_at_L, echo_mass_at_L) and note `answer_minus_echo_mass` sign/magnitude.
-- Report `L_geom_{norm,tuned}` and the cosines at L if present. Treat as within‑model; avoid cross‑family thresholds.
-- Report `L_topk_decay_{norm,tuned}` (K=50, τ=0.33); note if prompt coverage is near‑zero early.
-
- Copy robustness (multi‑model)
- - For each model, note `summary.copy_thresholds.stability` (stable/mixed/fragile/none) and the earliest strict-copy layers at τ ∈ {0.70, 0.95}. Flag models with any `norm_only_flags[τ] = true` as potential lens‑induced copy at that τ.
-
-When available, use `summary.depth_fractions` and `summary.cos_milestones` instead of recomputing from CSVs; still cite layer indices when quoting milestones.
-
- Skip‑layers sanity (advisory)
-- If present, quote `diagnostics.skip_layers_sanity` and note the m=2 delta. Treat this as advisory: large deltas do not necessarily contradict the TL design.
-
-Briefly relate a model's collapse-depth (Δ) to its public factual-reasoning scores (e.g. MMLU, ARC-C) or to whether it is base vs. instruction-tuned; see the following table for scores:
-
-| Model                       | Params | Release | MMLU-5shot |    ARC-C | Licence  |
-| --------------------------- | -----: | ------- | ---------: | -------: | -------- |
-| Meta-Llama-3-8B             |    8 B | 2025-04 | **62.1 %** |   71.9 % | Apache-2 |
-| Mistral-7B-v0.1             |    7 B | 2023-09 |     60.1 % |   66.6 % | Apache-2 |
-| Gemma-2-9B                  |    9 B | 2024-02 |       57 % |     63 % | Apache-2 |
-| Qwen-3-8B                   |    8 B | 2025-05 | **64 %**\* |     72 % | Apache-2 |
-| Gemma-2-27B                 |   27 B | 2024-02 |       63 % |     69 % | Apache-2 |
-| Yi-34B                      |   34 B | 2023-11 | **76.3 %** | **80 %** | Apache-2 |
-| Qwen-3-14B                  |   14 B | 2025-05 |   **66 %** | **74 %** | Apache-2 |
-| Meta-Llama-3-70B            |   70 B | 2024-04 |     79.5 % |   93.0 % | Llama 3  |
-| Mistral-Small-24B-Base-2501 |   24 B | 2025-01 |     80.7 % |   91.3 % | Apache-2 |
-| Qwen2.5-72B                 |   72 B | 2024-09 |     86.1 % |   72.4 % | Qwen     |
-
-(The score table is provided for reference; do not add new tables.)
-
- Does a steeper ΔH (defined as: ΔH = entropy(L_copy) − entropy(L_semantic)) predict the higher MMLU score in the table above? Do softer detectors (ΔHₖ using L_copy_soft[k]) change the ranking? Additionally, does an earlier `L_surface_to_meaning` or `L_geom` correlate with higher scores within the same family? (Do not over‑interpret across families.)
-
-At the end of the markdown file, add the following:
-
----
-Produced by OpenAI GPT-5
+- Ground every numeric milestone (layers, KL, cosine, probabilities) with a quoted CSV/JSON line from the model being discussed, and include the layer index. Do not reuse numbers across models.

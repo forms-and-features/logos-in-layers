@@ -48,7 +48,7 @@ def detect_model_architecture(model):
 def get_correct_norm_module(model, layer_idx, probe_after_block=True):
     """Select the correct normalization module based on probe timing and architecture.
 
-    Rules (PROJECT_NOTES.md 1.1):
+    Rules (001_LAYERS_BASELINE_PLAN.md 1.1):
     - Pre-norm: after block → NEXT block ln1 (or ln_final for last layer); before block → current ln1
     - Post-norm: after block → current block ln2; before block → current ln1
     """

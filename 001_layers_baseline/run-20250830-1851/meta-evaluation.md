@@ -116,7 +116,7 @@ Until at least some of the above succeed, the realist reading is **under‑deter
 
 ## 5) Review of the project plan & concrete adjustments
 
-The plan in `PROJECT_NOTES.md` already sketches most of the right upgrades. The following adjustments would add **non‑negligible** value quickly:
+The plan in `001_LAYERS_BASELINE_PLAN.md` already sketches most of the right upgrades. The following adjustments would add **non‑negligible** value quickly:
 
 1. **Add a Logit‑Prism sidecar decode now (before tuned lens).**
    A single shared whitening+rotation decoder gives a stronger, lower‑variance baseline than raw norm‑lens for early layers and sharpens “rotation vs amplification” narratives—at trivial runtime cost (one extra matmul per layer). Keep norm‑lens as the primary; write Prism sidecar CSVs to compare **KL(P\_prism || P\_final)** at 25/50/75% depths. ([Neural Blogs][7])
@@ -208,7 +208,7 @@ The current sweep is a **solid first iteration** that already contains multiple 
 
 [1]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-cross-models.md "raw.githubusercontent.com"
 [2]: https://arxiv.org/abs/2303.08112?utm_source=chatgpt.com "Eliciting Latent Predictions from Transformers with the Tuned Lens"
-[3]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/PROJECT_NOTES.md "raw.githubusercontent.com"
+[3]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_LAYERS_BASELINE_PLAN.md "raw.githubusercontent.com"
 [4]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/NOTES.md "raw.githubusercontent.com"
 [5]: https://arxiv.org/abs/1910.07467?utm_source=chatgpt.com "Root Mean Square Layer Normalization"
 [6]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-Yi-34B.md "raw.githubusercontent.com"

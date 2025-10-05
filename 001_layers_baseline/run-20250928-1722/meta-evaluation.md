@@ -117,7 +117,7 @@ This section summarizes only *within‑model* facts supported by the run artifac
 
 ---
 
-## Appraisal of the current plan (PROJECT_NOTES.md)
+## Appraisal of the current plan (001_LAYERS_BASELINE_PLAN.md)
 
 The plan is unusually thoughtful and already aims at exactly the evidence the philosophical project needs:
 
@@ -167,7 +167,7 @@ With these additions, the project will move from **suggestive depth curves** to 
 
 [1]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-cross-models.md "raw.githubusercontent.com"
 [2]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-Qwen2.5-72B.md "raw.githubusercontent.com"
-[3]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/PROJECT_NOTES.md "raw.githubusercontent.com"
+[3]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_LAYERS_BASELINE_PLAN.md "raw.githubusercontent.com"
 [4]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run.py "raw.githubusercontent.com"
 [5]: https://arxiv.org/abs/2303.08112?utm_source=chatgpt.com "Eliciting Latent Predictions from Transformers with the Tuned Lens"
 [6]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-gemma-2-9b.md "raw.githubusercontent.com"

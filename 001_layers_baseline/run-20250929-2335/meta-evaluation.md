@@ -126,7 +126,7 @@ The present evidence is consistent with **metalinguistic nominalism**—that the
 
 ---
 
-## 6) Concrete, high‑value next steps (edits to `PROJECT_NOTES.md` that would materially improve the evidence)
+## 6) Concrete, high‑value next steps (edits to `001_LAYERS_BASELINE_PLAN.md` that would materially improve the evidence)
 
 The items below are *non‑bikesheddy* and directly increase the philosophical informativeness while staying within the project’s current toolset.
 
@@ -209,7 +209,7 @@ This iteration **does** provide evidence **against austere nominalism**: even ve
 
 **Verdict:** As a first iteration, the engineering and the reporting discipline are unusually strong for a hobby‑scale study. With a modest set of measurement upgrades and a shift toward **feature‑level** and **multi‑prompt causal** evidence, the next round can produce materially stronger, philosophy‑relevant claims while staying squarely within mainstream interpretability practice.
 
-[1]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/PROJECT_NOTES.md "raw.githubusercontent.com"
+[1]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_LAYERS_BASELINE_PLAN.md "raw.githubusercontent.com"
 [2]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-Meta-Llama-3-8B.md "raw.githubusercontent.com"
 [3]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-gemma-2-9b.md "raw.githubusercontent.com"
 [4]: https://arxiv.org/abs/1910.07467?utm_source=chatgpt.com "Root Mean Square Layer Normalization"

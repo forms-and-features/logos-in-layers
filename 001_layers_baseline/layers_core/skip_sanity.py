@@ -1,4 +1,4 @@
-"""Skip-layer sanity diagnostics for tuned lens (PROJECT_NOTES §1.17)."""
+"""Skip-layer sanity diagnostics for tuned lens (001_LAYERS_BASELINE_PLAN §1.17)."""
 
 from __future__ import annotations
 

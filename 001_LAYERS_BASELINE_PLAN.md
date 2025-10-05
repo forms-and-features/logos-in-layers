@@ -1136,6 +1136,272 @@ Emit a compact map from `layer` indices to **model block names** and decoded str
 
 ---
 
+### 1.37. Symmetric divergences & entropy gap in Raw‑vs‑Norm
+
+**Why.** `KL(P_norm ∥ P_raw)` can explode when `P_raw` has near‑zeros, obscuring whether disagreement is local or global. Symmetric and entropy‑based views reduce this ambiguity and make the lens‑artefact score more diagnostic.
+**What.**
+
+* Per‑layer metrics alongside the existing raw‑vs‑norm fields:
+  `js_divergence`, `kl_raw_to_norm_bits` (reverse KL), `entropy_bits_raw`, `entropy_bits_norm`, `entropy_gap_bits = entropy_bits_norm − teacher_entropy_bits` (already logged) and `l1_prob_diff = ∑|P_norm − P_raw|`.
+* A compact summary in JSON: percentiles for `js_divergence` and `l1_prob_diff`, plus `first_js_le_0.1` and `first_l1_le_0.5`.
+* Extend `diagnostics.raw_lens_full.score` with an optional, **non‑breaking** additive sub‑score (e.g., `+0.1·min(1, js_p50/0.1)`).
+  **How.**
+* Compute per‑layer with the existing prob vectors; reuse fp32 softmax.
+* Write columns to the `*-rawlens.csv` sidecar; record summary percentiles in `diagnostics.raw_lens_full`.
+* Keep the old score stable; surface a second `lens_artifact_score_v2` alongside (do not replace).
+
+---
+
+### 1.38. Top‑K overlap to qualify raw‑vs‑norm drift
+
+**Why.** A large KL can be driven by tail mass. A **set‑level** overlap makes visible whether disagreement affects the high‑probability region.
+**What.**
+
+* Per‑layer `topk_jaccard_raw_norm@K` (default `K=50`) and `topk_jaccard_consecutive@K` (overlap between successive layers under the **same** lens).
+* JSON summary: `jaccard_raw_norm_p50`, `first_jaccard_raw_norm_ge_0.5`.
+  **How.**
+* Reuse the existing Top‑K machinery (already used for `topk_prompt_mass@50`).
+* Emit two columns in both the raw‑lens and primary CSVs; add a small summary block under `diagnostics.topk_overlap`.
+
+---
+
+### 1.39. Repeatability micro‑check (same prompt, same run)
+
+**Why.** Non‑deterministic kernels can shift borderline ranks. A cheap intra‑run repeatability gauge prevents over‑interpreting one‑off flips.
+**What.**
+
+* Run the **decode path only** twice for the same cached residuals at all layers/lenses; compute:
+  `max_rank_dev`, `p95_rank_dev`, and `top1_flip_rate`.
+* JSON: `diagnostics.repeatability = {max_rank_dev, p95_rank_dev, top1_flip_rate}` and gate `measurement_guidance.reasons += ["repeatability_variance_high"]` if `max_rank_dev > 5` or `top1_flip_rate > 0.02`.
+  **How.**
+* After the forward pass (residuals cached), re‑decode logits with a no‑grad path twice; compare per‑layer ranks.
+* No CLI; auto‑skip if `provenance.env.deterministic_algorithms == true`.
+
+---
+
+### 1.40. Gold‑token alignment summary (battery‑ready)
+
+**Why.** Alignment failures or variant fallbacks (leading‑space, multi‑piece) must be auditable before scaling to batteries/multilingual probes.
+**What.**
+
+* JSON: `diagnostics.gold_alignment = { ok: bool, variant: "with_space|no_space|fallback", first_id, answer_ids, pieces }` (already present) **plus** `gold_alignment_rate` (fraction over all prompts in the run; `1.0` for single‑prompt sweeps).
+  **How.**
+* Accumulate across prompts in the runner; for single‑prompt runs, write `1.0` and keep the richer fields verbatim.
+
+---
+
+### 1.41. Residual‑norm trajectory classifier
+
+**Why.** Monotone vs non‑monotone norm growth hints at “iterative refinement” vs “modular subcomputations.” A coarse classifier helps interpret depth curves.
+**What.**
+
+* CSV already has `resid_norm_ratio`; add JSON:
+  `diagnostics.norm_trajectory = { shape: "monotonic|plateau|non_monotonic|spike", slope, r2, n_spikes }`.
+  **How.**
+* Fit a per‑run linear model on log‑norms; set `shape` by slope sign and residual variance (spike = any early layer with `ratio > 3×` or `delta_resid_cos < 0.8`).
+* No CLI; attach to existing normalization provenance.
+
+---
+
+### 1.42. Entropy columns for each lens (layer‑local)
+
+**Why.** The “entropy − teacher” drift is informative only if both sides are logged per layer/lens, not inferred from a single side.
+**What.**
+
+* Add `entropy_bits` per layer in **primary** CSV and in tuned sidecars; JSON summaries: `entropy_gap_bits@{25,50,75}%`.
+  **How.**
+* Compute `−∑ p log₂ p` at decode time; reuse teacher entropy already persisted; add three percentile summaries into `summary.entropy`.
+
+---
+
+### 1.43. Tuned‑Lens Provenance & Generalization Audit (no refit)
+
+**Why.** The tuned lens is already fitted and saved with sufficient provenance. Measurement integrity can be improved—without any re‑fitting—by (i) surfacing that provenance in run outputs, (ii) decomposing the loaded translator’s effect into **rotation‑only** vs **temperature‑only** at decode time, (iii) checking **positional generalization** (end‑of‑sequence OOD), and (iv) quantifying **final‑head mismatch calibration**. This makes tuned‑lens‑based milestones auditable and robust for later phases.
+
+**What.**
+Add a **read‑only audit** that runs on the loaded tuned lens and emits:
+
+1. **Provenance snapshot (JSON, read‑only)**
+   Mirror key metadata from the saved tuned‑lens bundle in the run JSON under `tuned_lens.provenance_snapshot`:
+
+   * `dataset_id`, `dataset_revision`, `content_hash`
+   * `train_pos_window = [pos_min, pos_max]` (e.g., `[0.60, 0.95]`)
+   * `sampled_layers_count`, `sampled_positions_count`, `rank`, `preconditioner` (e.g., `{"whiten": bool, "orthogonal_rotation": bool}`)
+   * `temperatures_stats = {p25, p50, p75, min, max}`, `final_layer_identity: true`
+   * `fit_total_tokens_est`, `optimizer`, `schedule`
+
+2. **Rotation‑only & Temperature‑only component ablations (no weight changes)**
+   Decode each layer in four variants: **baseline norm lens**, **full tuned**, **rotation‑only** (set τ=1 at decode), **temperature‑only** (bypass affine map, keep τ). For each variant, compute:
+
+   * `kl_to_final_bits`, `answer_rank`, `p_answer` (within‑model, for reference), `entropy_bits`
+   * Deltas vs baseline: `delta_kl_bits_* = kl_baseline − kl_variant`, `rank_shift_* = answer_rank_baseline − answer_rank_variant`
+     Emit a per‑layer **sidecar**:
+   * **CSV:** `output-<MODEL>-pure-next-token-tuned-variants.csv`
+     **Columns:**
+     `layer, kl_bits_baseline, kl_bits_tuned, kl_bits_rot_only, kl_bits_temp_only, delta_kl_bits_tuned, delta_kl_bits_rot_only, delta_kl_bits_temp_only, delta_kl_bits_interaction, answer_rank_baseline, answer_rank_tuned, answer_rank_rot_only, answer_rank_temp_only, rank_shift_tuned, rank_shift_rot_only, rank_shift_temp_only, entropy_bits_baseline, entropy_bits_tuned`
+     *Notes:* `delta_kl_bits_interaction = (kl_baseline − kl_tuned) − [(kl_baseline − kl_rot_only) + (kl_baseline − kl_temp_only)]`.
+
+3. **Positional OOD check (end‑of‑sequence generalization)**
+   Evaluate ΔKL improvements across a fixed grid of next‑token positions (fractions of sequence length):
+   `pos_grid = {0.20, 0.40, 0.60, 0.80, 0.92, 0.96, 0.98, 1.00}` (clamp to valid decode sites).
+   For each `pos` and `layer`, compute the same metrics as in (2) for **baseline** and **full tuned**; summarize:
+
+   * `pos_ood_ge_0.96 = median(delta_kl_bits_tuned) over pos ∈ {0.96, 0.98, 1.00}`
+   * `pos_in_dist_le_0.92 = median(delta_kl_bits_tuned) over pos ∈ {≤0.92}`
+   * `pos_ood_gap = pos_ood_ge_0.96 − pos_in_dist_le_0.92`
+     Emit:
+   * **CSV:** `output-<MODEL>-positions-tuned-audit.csv`
+     **Columns:**
+     `pos_frac, pos_index, layer, kl_bits_baseline, kl_bits_tuned, delta_kl_bits_tuned, answer_rank_baseline, answer_rank_tuned, rank_shift_tuned, entropy_bits_baseline, entropy_bits_tuned`
+   * **JSON (summary):** under `tuned_lens.audit_summary.positional`: `{grid, pos_ood_ge_0.96, pos_in_dist_le_0.92, pos_ood_gap}`
+
+4. **Final‑head mismatch calibration sanity (model‑level)**
+   At the **final layer**, compute a scalar `τ*_modelcal` that minimizes `KL(tuned_logits/τ ∥ P_final)`; report:
+
+   * `kl_bits_tuned_final`, `kl_bits_tuned_final_after_tau_star`, `tau_star_modelcal`
+   * If `kl_bits_tuned_final_after_tau_star` ≪ `kl_bits_tuned_final`, treat remaining mismatch as **global calibration** rather than representation.
+     Emit:
+   * **JSON:** `tuned_lens.audit_summary.head_mismatch = { kl_bits_tuned_final, kl_bits_tuned_final_after_tau_star, tau_star_modelcal }`
+
+5. **Reporting gate (tuned‑is‑calibration‑only)**
+   Derive a model‑level flag from component ablations:
+
+   * If `delta_kl_bits_rot_only@p50 < 0.2` **and** `delta_kl_bits_temp_only@p50 ≥ 0.8 · delta_kl_bits_tuned@p50`, set
+     `tuned_lens.audit_summary.tuned_is_calibration_only = true`.
+   * Otherwise `false`.
+     Add a hint to `measurement_guidance.reasons` when `true`.
+
+6. **JSON roll‑up (single place to read)**
+   Under `tuned_lens.audit_summary`, include:
+
+   * `rotation_vs_temperature = { delta_kl_rot_p25, p50, p75, delta_kl_temp_p25, p50, p75, delta_kl_interaction_p50 }`
+   * `positional` (as above)
+   * `head_mismatch` (as above)
+   * `preferred_semantics_lens_hint = "tuned" | "norm" | "tuned_for_calibration_only"` (non‑binding suggestion for Parts 2–5)
+
+**How.**
+
+* **Provenance snapshot:** when loading the tuned lens, copy metadata into the run JSON (`tuned_lens.provenance_snapshot`), including temperatures summary and translator rank.
+* **Component ablations:** add decode‑time toggles (no weight edits): (a) set `τ=1` to obtain rotation‑only; (b) bypass the affine map to obtain temperature‑only. Reuse the same cached normalized residuals and unembed.
+* **Positional OOD:** run decode at `pos_grid` by selecting earlier next‑token positions; reuse the same prompt and cached forward pass(es). Aggregate deltas and emit the positions sidecar plus JSON summary.
+* **Head mismatch:** compute `τ*_modelcal` by a 1‑D line search on the final‑layer tuned logits; store values in JSON.
+* **Plumbing:** write the new CSV sidecars alongside existing `*-tuned.csv` files; append the new JSON blocks under `tuned_lens.audit_summary` and `measurement_guidance.reasons` if the gate triggers.
+
+---
+
+### 1.44. LLM‑Eval Pack (derived metrics & citations)
+
+**Why.** The evaluation prompts are executed by LLMs. Providing a compact, derived “eval view” of each run minimizes on‑the‑fly calculations, enforces consistency across models, and reduces errors. The pack aggregates key metrics introduced in §§1.37–1.43, adds normalized/derived summaries, and includes row‑level **citations** back to CSVs so LLMs can quote line numbers without scanning full files.
+
+**What.**
+Emit a per‑model **JSON** block `evaluation_pack` (embedded in the main run JSON) and two light **CSV** sidecars that standardize commonly referenced rows.
+
+1. **JSON: `evaluation_pack` (embedded)**
+
+   ```json
+   {
+     "model": "<name>",
+     "n_layers": N,
+     "preferred_lens_for_reporting": "norm|tuned",
+     "use_confirmed_semantics": true|false,
+     "milestones": {
+       "L_copy_strict": L_or_null,
+       "L_copy_soft": {"k": 1|2|3, "layer": L_or_null},
+       "L_semantic_norm": L_or_null,
+       "L_semantic_confirmed": {"layer": L_or_null, "source": "raw|tuned|both|none"},
+       "depth_fractions": {
+         "copy_strict_frac": f_or_null,
+         "semantic_frac": f_or_null,
+         "delta_hat": "(L_sem - L_copy)/n_layers"   // uses strict if present, else earliest soft {k}
+       }
+     },
+     "artifact": {
+       "lens_artifact_score": x,                      // legacy
+       "lens_artifact_score_v2": x2,                  // §1.37
+       "js_divergence_p50": x,
+       "l1_prob_diff_p50": x,
+       "first_js_le_0.1": L_or_null,
+       "first_l1_le_0.5": L_or_null,
+       "jaccard_raw_norm_p50": x,                     // §1.38
+       "first_jaccard_raw_norm_ge_0.5": L_or_null,
+       "pct_layers_kl_ge_1.0": p_or_null,
+       "n_norm_only_semantics_layers": n_or_null,
+       "earliest_norm_only_semantic": L_or_null,
+       "risk_tier": "low|medium|high"
+     },
+     "repeatability": {
+       "max_rank_dev": mrd, "p95_rank_dev": p95, "top1_flip_rate": r, "flag": "ok|high_variance"
+     },
+     "alignment": {
+       "gold_alignment_rate": r,                      // §1.40
+       "variant": "with_space|no_space|fallback"
+     },
+     "norm_trajectory": {                             // §1.41
+       "shape": "monotonic|plateau|non_monotonic|spike",
+       "slope": s, "r2": r2, "n_spikes": k
+     },
+     "entropy": {                                     // §1.42
+       "entropy_gap_bits_p25": e25,
+       "entropy_gap_bits_p50": e50,
+       "entropy_gap_bits_p75": e75
+     },
+     "tuned_audit": {                                 // §1.43
+       "rotation_vs_temperature": {
+         "delta_kl_rot_p25": r25, "p50": r50, "p75": r75,
+         "delta_kl_temp_p25": t25, "p50": t50, "p75": t75,
+         "delta_kl_interaction_p50": i50
+       },
+       "positional": {
+         "pos_grid": [ ... ],
+         "pos_ood_ge_0.96": ood,
+         "pos_in_dist_le_0.92": ind,
+         "pos_ood_gap": gap
+       },
+       "head_mismatch": {
+         "kl_bits_tuned_final": k0,
+         "kl_bits_tuned_final_after_tau_star": k1,
+         "tau_star_modelcal": tau_star
+       },
+       "tuned_is_calibration_only": true|false,
+       "preferred_semantics_lens_hint": "tuned|norm|tuned_for_calibration_only"
+     },
+     "citations": {
+       "layers": {
+         "L_copy_strict_row": row_or_null,
+         "L_copy_soft_row": row_or_null,
+         "L_semantic_norm_row": row_or_null,
+         "L_semantic_confirmed_row": row_or_null
+       },
+       "files": {
+         "pure_csv": "output-<MODEL>-pure-next-token.csv",
+         "tuned_pure_csv": "output-<MODEL>-pure-next-token-tuned.csv",
+         "rawlens_full_csv": "output-<MODEL>-pure-next-token-rawlens.csv",
+         "tuned_variants_csv": "output-<MODEL>-pure-next-token-tuned-variants.csv",
+         "positions_audit_csv": "output-<MODEL>-positions-tuned-audit.csv"
+       }
+     }
+   }
+   ```
+
+2. **CSV: `output-<MODEL>-milestones.csv`**
+   **Columns:**
+   `layer, is_copy_strict, is_copy_soft_k, is_semantic_norm, is_semantic_confirmed, answer_rank, p_answer, kl_to_final_bits, entropy_bits, lens`
+   *Content:* exactly **four** rows for quick quoting: `L_copy_strict` (if present), earliest `L_copy_soft[k]` (if strict null), `L_semantic_norm`, `L_semantic_confirmed` (if present), each with the **row index** from the pure CSV.
+
+3. **CSV: `output-<MODEL>-artifact-audit.csv`**
+   **Columns:**
+   `layer, js_divergence, kl_raw_to_norm_bits, l1_prob_diff, topk_jaccard_raw_norm@50, lens_artifact_score_v2, risk_tier`
+   *Content:* per‑layer values for quick scan, plus a header row with p25/p50/p75 rolled‑up values (annotated in comments or as a `_summary` row).
+
+**How.**
+
+* Populate `evaluation_pack` after all §1.37–1.43 computations, pulling directly from existing diagnostics and sidecars (no recomputation).
+* For `citations.layers`, record **0‑based row indices** from the pure CSV where each milestone occurs. If a milestone is null, set the row to null.
+* Generate the two CSVs from existing arrays; write them alongside the other sidecars.
+* Keep all additions **read‑only**; no model refits or translator edits.
+
+---
+
 #### Wrap‑up
 
 Executing the items in **Group 1** upgrades the measurement pipeline from an informative prototype to a rigour‑grade toolchain. Only after this foundation is secure should we move on to the broader prompt battery and causal‑intervention work.
@@ -1143,610 +1409,6 @@ Executing the items in **Group 1** upgrades the measurement pipeline from an inf
 [1]: https://arxiv.org/abs/1910.07467 "Root Mean Square Layer Normalization"
 [2]: https://arxiv.org/abs/2303.08112 "Eliciting Latent Predictions from Transformers with the Tuned Lens"
 [3]: https://neuralblog.github.io/logit-prisms/ "Logit Prisms: Decomposing Transformer Outputs for Mechanistic ..."
-
----
-
-## 2. Straight‑forward experimental variations on the current design
-
-We run a first wave of low‑overhead variations that reuse the logit‑lens baseline while **adding causal or representational sanity checks wherever those tools are already available**. The purpose is two‑fold:
-
-1. **Finish dismantling austere nominalism.** If a small change in wording or language leaves the same causal layer and vector structure intact, the model’s behaviour cannot be captured by listing concrete token‑tokens alone.
-2. **Collect scaffolding for the harder metalinguistic‑nominalism vs realism tests.** Stability (or fragility) across these variations will tell us which relations and properties deserve a deeper causal follow‑up in Group 4.
-
-#### Philosophical background
-
-* **Austere nominalism** says all facts reduce to concrete token occurrences. If our probes keep finding *shared* internal drivers across token changes, that claim weakens.
-* **Metalinguistic nominalism** treats any such shared driver as a sophisticated fact *about linguistic predicates themselves*. The experiments below do **not** decide between MN and realism; they only build a reliability map. ([plato.stanford.edu][5])
-* **Realism** expects some level of cross‑prompt, cross‑language, or cross‑style invariance once token noise is factored out; large deviations would instead push explanation toward MN. ([plato.stanford.edu][4])
-
----
-
-### 2.1. Multilingual prompt – preliminary pass
-
-**Why.** Language‑independent behaviour is compatible with realism but not mandated by it; language‑dependent depths are prima facie evidence for predicate‑tied behaviour. A **per‑language gold‑token alignment** prevents tokenizer artefacts from polluting comparisons.
-
-**What.** Translate the prompt into five major languages (matched subject–predicate order). Record normalised `L_sem / n_layers`, **`first_rank_le_{1,5,10}`**, and tuned‑lens KL thresholds; visualise variance. Use **ID‑level** gold tokens from `gold_answer_by_lang` (§1.7).
-
-**How.**
-
-1. Maintain a YAML of prompts keyed by ISO codes (`prompt_lang`); include `translation_ok: true/false`.
-2. For each language, compute `first_id` and `pieces` and store under `gold_answer_by_lang` (§1.7).
-3. Run sweeps; bar‑plot layer‑fraction variance and **rank thresholds**; highlight deviations `> 0.05` (fraction) or delays `> 2` layers in `first_rank_le_5`.
-4. Prefer rank/KL‑threshold metrics over raw probabilities for cross‑language comparisons.
-
----
-
-### 2.2. Predicate‑Permutation Control (Quine guard)
-
-**Why.** Quine‑style “inscrutability of reference” argues that empirical evidence can be preserved under a systematic **re‑labelling** of terms. A global **permutation** of country (and optionally capital) names is a lightweight guard: if our heads/vectors merely track arbitrary labels, many of our metrics should look similar under the permutation; if they track **the original relation**, they should **fail** under the permutation in diagnostic ways.
-
-**What.** *Create a permuted control set by applying a fixed bijection `π` to the set of country tokens (optionally also to capital tokens) across the **entire** prompt battery. Evaluate whether the same heads/vectors that succeed on clean prompts also succeed under `π` when “truth” is still computed in the **original** (unpermuted) mapping.*
-
-* Add a per‑run block to JSON meta:
-
-  ```json
-  "permutation_control": {
-    "enabled": true,
-    "permute_countries": true,
-    "permute_capitals": false,
-    "perm_seed": 316,
-    "perm_coverage": 100
-  }
-  ```
-* Add per‑row fields to the CSV when permutation is active:
-
-  * `is_permuted ∈ {0,1}`
-  * `subject_id_permuted` (the ID of `π(country)`)
-  * `answer_id_permuted` (the ID of `π(capital)`, if capitals are permuted)
-
-**How.**
-
-1. **Construct `π`.** Build a random bijection over the set of countries used in the run; record `perm_seed` and the mapping in a sidecar `perm_map.json`. (Optional: a second run with capitals also permuted.)
-2. **Run the three diagnostics below** on the **same** models/prompts as the baseline:
-
-   * **(A) Control margin under permutation.** On permuted prompts, log per‑layer
-     `margin_perm = p(original_capital) − p(capital_of(π(country)))`.
-     *Summary:* `first_margin_perm_pos` (first layer with `margin_perm > 0`), `max_margin_perm`. Expect **late or absent** positive margins if structure truly keys to the original relation.
-   * **(B) Vector‑portability gap.** Extract the **CapitalDirection** (§3.3) on clean prompts. On permuted prompts, inject the **same** vector and log
-     `Δ_true = Δ log p(original_capital)`, `Δ_perm = Δ log p(π(capital))`, and
-     `portability_ratio = Δ_true / (Δ_true on clean)`.
-     *Summary:* median `portability_ratio` and median `Δ_perm`. Expect **low** `Δ_perm` and **low** `portability_ratio` if the vector does not just track labels.
-   * **(C) Head‑consistency drop.** Take `relation_heads.json` (§3.2) from the clean run. On permuted prompts, measure the share of those heads that still meet both criteria (high attention + ≥0.5‑bit effect on the *original* capital).
-     *Summary:* `head_consistency_ratio`. Expect a **drop** under permutation.
-3. **Report.** Add a one‑page Markdown summary per model with the four scalars: `first_margin_perm_pos`, `max_margin_perm`, `portability_ratio (median)`, `head_consistency_ratio`. Flag models where any scalar indicates **permutation‑robust success**, which would warrant a deeper check.
-
----
-
-### 2.3. Rank‑centric prompt battery (100–1,000 country→capital items)
-
-**Why.** Single‑prompt results can overfit tokenizer/stylistic quirks. A larger, rank‑centric battery provides robust distributions of semantic‑collapse depths without relying on lens‑calibrated probabilities, and is cheap to run on the existing pipeline.
-
-**What.** Expand to a 100–1,000 item country→capital set using the same brevity instruction. Reuse ID‑level gold alignment (§1.7). For each model, report distributions of:
-
-* Normalised collapse depth `L_sem / n_layers`
-* `first_rank_le_{10,5,1}` (layer indices)
-
-Prefer rank/KL thresholds for summary; avoid absolute probability comparisons across models.
-
-**How.**
-
-1. Maintain a simple CSV/YAML prompt list (`prompts/country_capital.csv`) with columns: `country`, `capital`, `prompt_text` (optional override). Ensure single‑token answers where feasible; record exceptions.
-2. For each prompt, compute `gold_answer.first_id` via the model’s tokenizer (§1.7) and run the standard sweep (positive + control; ablation optional).
-3. Aggregate per‑model summaries: histograms of `L_sem / n_layers` and counts of `first_rank_le_{10,5,1}`. Persist a `battery_summary.json` per model with `run_id`, `code_commit_sha`, and sample sizes.
-4. In cross‑model write‑ups, compare distributions qualitatively (within‑family when in doubt) and emphasise rank milestones.
-
----
-
-### Closing note on epistemic modesty
-
-These variations are diagnostic, not decisive. Their job is to show which internal patterns ride above surface token variation and which do not. If the patterns hold, austere nominalism loses more credibility and we have a cleaner target set for the higher‑lift causal, multimodal, and synthetic‑language probes that might separate metalinguistic nominalism from realism in later stages.
-
-### Caution on metrics
-
-Raw “semantic‑collapse depth” (the layer where the gold token first becomes top‑1) is a correlational signal. Before drawing philosophical conclusions, validate any depth‑based claim with at least one causal or representational check (activation patching, tuned‑lens KL, concept‑vector alignment). See Group 3 & 4 tasks.
-**Cross‑model caveat.** Absolute probabilities/entropies under a norm‑based lens are **not** comparable across models using different normalisers; use Tuned Lens (§1.12) or Logit Prism (§1.10) for cross‑model comparisons, or prefer rank/KL‑threshold metrics.
-
-[4]: https://plato.stanford.edu/entries/properties/ "Properties — Stanford Encyclopedia of Philosophy"
-[5]: https://plato.stanford.edu/entries/nominalism-metaphysics/ "Nominalism in Metaphysics — Stanford Encyclopedia of Philosophy"
-[6]: https://plato.stanford.edu/entries/tropes/ "Tropes — Stanford Encyclopedia of Philosophy"
-
----
-
-## 3. Advanced interpretability interventions
-
-These tools move us beyond descriptive logit‑lens curves. They intervene directly in the computation graph so we can ask which internal components are necessary or sufficient for a factual prediction. That causal angle already strains austere nominalism (which would have to re‑paraphrase the interventions themselves) and lays the groundwork for later stages that try to tease apart metalinguistic nominalism from realism.
-
-### 3.1. Layer‑wise activation patching (“causal tracing”)
-
-**Why.** Causal flips show when enough information to force the answer is present. Splitting by **sublayer** (Attention vs MLP) around `L_sem` distinguishes **retrieval** from **construction** (cf. Geva et al., arXiv:2012.14913).
-
-**What.** *Given a prompt pair (clean, corrupted), produce a CSV of “causal Δ log‑prob” per layer for **three modes** — `full` (standard residual patch), `attn_only`, `mlp_only` — and record:*
-
-* `causal_L_sem` (full), **`causal_L_sem_attn`**, **`causal_L_sem_mlp`**
-* **`delta_causal = causal_L_sem − L_semantic`**, plus **`delta_causal_attn`**, **`delta_causal_mlp`**
-
-**How.**
-
-1. Implement:
-
-   ```python
-   def patch_layer_full(h_clean, h_corr, ℓ): ...
-   def patch_layer_attn_only(h_clean, h_corr, ℓ): ...
-   def patch_layer_mlp_only(h_clean, h_corr, ℓ): ...
-   ```
-
-   Each returns patched hidden states at layer ℓ.
-2. For each ℓ and **mode ∈ {full, attn_only, mlp_only}**:
-
-   * Run forward with the patched stream,
-   * **Decode with the same lens** as the baseline (Tuned Lens or Prism),
-   * Log Δ log‑prob of the gold token (ID from §1.7).
-3. Define `causal_L_sem*` as the earliest ℓ where the top‑1 flips to the gold token under that mode.
-4. Write `causal_L_sem*` and **delta fields** into JSON meta; include all three per‑layer Δ values in the CSV (columns `dlogp_full`, `dlogp_attn`, `dlogp_mlp`).
-5. CLI:
-
-   * `--patching`
-   * `--patching-mode {full,attn,mlp,all}` (default `all`)
-   * `--corrupted-answer "Paris"`
-
-**Pilot.** Start with a cleanly calibrated base model (e.g., Mistral‑Small‑24B or Llama‑3‑70B, where final‑row KL≈0). Report `causal_L_sem`, `causal_L_sem_attn`, and `causal_L_sem_mlp` heat‑maps around `L_sem`, and include per‑layer Δ log‑prob traces (full/attn/MLP) to separate retrieval vs construction dynamics.
-
----
-
-### 3.2. Attention‑head fingerprinting near L\_sem
-
-**Why.** A head that systematically links “Germany” to “Berlin” across prompts and languages suggests a dedicated mechanism. That concreteness challenges the idea that all structure is just diffuse word‑statistics, yet MN can still say the head embodies a predicate rule. Isolating the head is therefore a prerequisite for the stronger MN‑vs‑realism tests in Group 4 ([arxiv.org][9], [neelnanda.io][10]).
-
-**What.** *Catalogue all heads in layers `L_sem − 2 … L_sem` for which:*
-
-* `attn_weight ≥ top‑k(0.8 quantile)` across heads for that layer, and
-* Zero‑ablation of the head drops answer log‑prob by ≥ 0.5 bits.
-  Store a JSON manifest `relation_heads.json` listing `(layer, head)` tuples for every model.
-
-**How.**
-
-1. Hook attention weights in the forward pass; identify subject and candidate answer positions.
-2. Compute head‑specific importance by zeroing its output vector and re‑running the remainder of the model.
-3. Save heads meeting both criteria; visualise with a simple heat map.
-4. Optional: run CHG (Causal Head Gating) to refine head attribution ([arxiv.org][9]).
-5. **Fix random seeds** for zero‑ablation order and batch selection; emit `relation_heads.json` with the seed and `model_sha`.
-
----
-
-### 3.3. Concept‑vector extraction via Causal Basis (CBE)
-
-**Why.** Belrose et al. show a low‑rank subspace can *causally* steer the model’s logits ([arxiv.org][11]). If a low‑rank vector learned in one context reliably boosts the correct capital in unseen prompts, that shows the model stores a portable shard of “capital‑of” information — already more structure than austere nominalism predicts. Whether this portability counts against metalinguistic nominalism, or is fully compatible with it, cannot be settled here; the result simply gives us a concrete target for the follow‑up tests in Group 4 that are designed to probe that distinction (see also Elhage et al., “Toy Models of Superposition,” arXiv:2209.10652).
-
-**What.** *Deliver a PyTorch module `CapitalDirection` with weights `{U, Σ}` such that adding `α · U Σ v` (for a learned v) to the residual stream at layer `L_sem` reliably increases the log‑prob of the correct capital across ≥ 80% of country prompts, while minimally disrupting unrelated outputs.*
-
-**How.**
-
-1. Sample 1,000 (country, capital) prompts.
-2. Use the tuned lens to get layer‑ℓ logits; fit CBE on those activations to identify vectors that maximise Δ p(answer).
-3. Freeze the top‑k singular directions; test generalisation on held‑out prompts.
-4. Implement `apply_patch(resid, strength)` to inject the vector in new contexts.
-
----
-
-### 3.4. Attribution patching for scalable causal maps
-
-**Why.** Full activation‑patch grids scale O(L²) runs; attribution patching (gradient‑based approximation) gets the entire layer×token causal heat‑map from *three* passes ([neelnanda.io][12]). This enables causal tracing over the entire WikiData battery without prohibitive compute. Scaling causal maps to thousands of prompts lets us check whether causal responsibility clusters in a few modules or is smeared everywhere. Tight clustering adds tension for nominalist readings that lean heavily on token‑level variance.
-
-**What.** *A script `attribution_patch.py` that, for a batch of prompts, outputs an HDF5 tensor `attr[L, T]` of estimated causal contributions for every layer L and token position T, plus a notebook that plots token‑level heat‑maps.*
-
-**How.**
-
-1. Implement the three‑pass protocol: clean forward, corrupted forward, backward pass on KL divergence.
-2. Cache residuals and gradients; compute attribution scores per layer/token.
-3. Validate against explicit patching on a 10‑prompt subset (correlation > 0.9).
-4. Integrate into CI to run nightly on a 100‑prompt sample.
-
----
-
-### 3.5. Cross‑model concept alignment (CCA / Procrustes)
-
-**Why.** Convergent geometry across checkpoints trained on different seeds suggests architecture‑level constraints. That is hard to square with austere nominalism’s token‑listing strategy, though MN can still treat it as convergence on shared predicate statistics. Either way, the alignment gives us a common space to compare later multimodal tests ([arxiv.org][13]).
-
-**What.** *Produce an analysis notebook `concept_alignment.ipynb` that:*
-
-1. Collects layer‑`L_sem` activations for the token “Berlin” in the same prompt across all ten models.
-2. Performs CCA or orthogonal Procrustes alignment to a shared 128‑D space.
-3. Reports average inter‑model cosine similarity before vs after alignment and visualises clusters.
-
-**How.**
-
-1. Dump 10k activation vectors per model to disk.
-2. Use `sklearn.cross_decomposition.CCA` (or `emalign` for Procrustes) to learn mappings.
-3. Evaluate: if mean pairwise cosine ≥ 0.6 pre‑alignment, geometry is already convergent; if it jumps only post‑alignment, differences are mostly rotational. Interpret results in the accompanying markdown narrative.
-
----
-
-### 3.6. (Optional) Causal scrubbing of candidate circuits
-
-**Why.** Causal scrubbing replaces multiple intermediate signals at once to test entire hypothesised *circuits* for necessity and sufficiency. If a minimal circuit passes, the burden shifts to MN to reinterpret that circuit linguistically; failure would instead counsel caution against premature realist readings.
-
-**What.** Encode a circuit hypothesis (subject‑head → MLP → answer) in a Python spec and automatically test all 2ᴺ subsets of components, outputting a table of accuracy drops.
-
-**How.**
-
-1. Adopt the open‑source `causal-scrubbing` library.
-2. Write a spec file mapping nodes to model components.
-3. Run exhaustive subset ablations on a 100‑prompt subset; visualise results as a lattice diagram.
-
----
-
-### 3.7. Targeted Sparse Autoencoders on decisive layers — **ambitious, feature‑level causal tests** *(replaces current §3.7; no scaffolding changes to `run.py`)*
-
-**Objective.** Move beyond depth curves to **feature‑level** evidence. Identify sparse features at the decisive layers that **predict** and **causally control** capital answers across **prompts and languages**, with **reliability gates** to avoid seed/capacity artefacts.
-
-**Scope & placement.** One base model to start (use a model already in `run-latest/`). Layers: `L_sem − 1`, `L_sem`, `L_sem + 1` from that model’s JSON summary.
-
-**Data.** \~50k country→capital prompts including paraphrases and ≥3 languages (small fixed list). Use the same gold‑token IDs procedure as §1.7 for each language.
-
-**Method (single, focused script or notebook: `sae_pass.py` — edit defaults inline; no new CLI knobs):**
-
-1. **Collect residuals.** Forward the base model once per prompt, hook the **post‑block residual** at each target layer (the same tap point used in `run.py`), and store activations to a local `.npz`.
-   *Normalization and unembed follow whatever `run.py` used; do not change lensing here.*
-
-2. **Train SAEs (reliability via replication).** Train **three** SAEs with the **same architecture** (Top‑K or L1; 8–16× overcomplete) but **different seeds** on the concatenated residuals from the 3 layers. Save encoders/decoders.
-
-3. **Screen features (per seed).** For each latent:
-
-   * **Predictive link.** Compute Pearson correlation between latent activation and `p_answer` at `L_sem` across the dataset. Keep latents with corr ≥ **0.2** (weak but consistent).
-   * **Causal link (held‑out).** On a held‑out set, run **latent ablation** (zero its coeff) and **latent activation** (+α·decoder with α∈{0.25,0.5,1.0}) at the layer where correlation peaked. Log **Δ log‑prob** for the correct capital and for the top distractor, per language.
-
-4. **Cross‑seed consensus (stability gate).** Match latents across seeds by **decoder‑cosine ≥ 0.8** and **Jaccard ≥ 0.5** overlap of top‑activating examples. Define `consensus_score = matched_seeds / 3`. Retain only latents with `consensus_score ≥ 2/3`.
-
-5. **Decomposition check (non‑canonicity gate).** For each retained latent, fit a **small meta‑SAE** on its **top‑activating residual snippets**. If ≥30% of its variance is explained by ≥2 sub‑latents with **distinct** activation profiles, mark it as a **bundle**; otherwise **unitary**.
-
-6. **Negative & permutation controls.**
-
-   * **Predicate‑permutation:** Repeat causal tests under the §2.2 permutation prompts; expect **loss** of effect on the *original* correct capital.
-   * **France‑control:** Ensure steering does **not** increase `p(Berlin)` in “France → ?” prompts.
-
-7. **Success criteria (advance only if all hold).**
-
-   * Median **Δ log‑prob ≥ 0.5 bits** for the correct capital at some α, **and** ≤0 for unrelated token set (months/colors) on the same prompts.
-   * **Portability:** effect remains positive across **≥3 languages** with median Δ ≥ 0.25 bits each.
-   * **Stability:** `consensus_score ≥ 2/3`.
-   * **Controls:** effect **drops** under permutation control.
-
-8. **Outputs (written alongside `run-latest/…`):**
-
-   * `sae_config.json` (arch, sparsity, seeds, layers used),
-   * `sae_features.npz` (enc/dec),
-   * `feature_manifest.json` entries:
-     `{feature_id, layer, consensus_score, unitary_or_bundle, Δ_logp_median, Δ_logp_by_lang, α_star, control_drop}`,
-   * `sae_reliability.json` (cross‑seed matches, decomposition flags, validation snippets).
-
-> *Implementation note:* Keep this pass isolated (separate script/notebook). Defaults live in the file; edit them directly for each iteration. No CI, no profiles, no extra flags.
-
----
-
-### 3.8. SAE reliability & consensus scoring *(implementation detail; pairs with §3.7)*
-
-**Goal.** Standardize how stability and non‑canonicity are reported, without adding harness.
-
-**Procedure.**
-
-* **Consensus across seeds.** Build bipartite matches between latents from seed‑A and seed‑B by **decoder‑cosine**; extend to seed‑C transitively. Compute `consensus_score` per latent (0–1).
-* **Decomposition flag.** From the meta‑SAE (§3.7‑5), record `unitary` vs `bundle`.
-* **Run‑level summary.** Print to console and save `sae_reliability.json` with: median `consensus_score`, `% bundle`, and a short list of advanced features with their scores.
-
-**Why it matters.** Prevents over‑claiming from one‑off latents; makes later philosophical claims depend on **replicable** causal features.
-
----
-
-### 3.9. Cross‑model SAE universality probe *(exploratory; ambitious but compact)*
-
-**Objective.** Test for **model‑independent** real patterns by checking whether **analogous** sparse features exist—and are **causally efficacious**—in **two different base models**.
-
-**Setup.** Choose two models already run in `run-latest/`. Train/obtain SAEs at `L_sem` for each (repeat §3.7 on both, but you can skip the meta‑SAE on the second model if compute is tight).
-
-**Method (single notebook/script `universality_probe.py`):**
-
-1. **Activation signatures.** For each model, compute per‑feature **activation signatures** over a **shared 500‑prompt set** (mean activation per prompt).
-2. **Alignment & matching.** Align the two feature collections using **SVCCA** (or RSA on signatures). Select top‑k **matched pairs** (highest similarity with one‑to‑one matching).
-3. **Causal concordance.** For each pair, **steer** each model with its own feature (+α at the same relative layer) and compute standardized effect sizes (Δ log‑prob / σ across prompts).
-4. **Universality metrics (report 3 scalars + plots):**
-
-   * `feature_match_ratio = matched_pairs / min(nA, nB)`,
-   * `effect_size_corr` (Pearson over prompts between the two models’ effect size vectors),
-   * `universality_pass = share of pairs with positive effect in both models`.
-5. **Interpretation guardrails.** Treat positive results as **real‑pattern** evidence; negative results are informative—record and move on. No weight‑sharing or latent transfer attempted.
-
-**Outputs.** `universality_summary.json` (the three metrics), plus a small PDF/PNG plot showing matched pairs and effect‑size scatter.
-
-
-
----
-
-## Philosophical pay‑off
-
-* **Against austere nominalism.** Portable vectors, decisive heads, and convergent circuits all show regularities that outstrip any list of concrete token occurrences.
-* **Setting the stage for metalinguistic nominalism vs realism.** By localising the drivers (vectors, heads, circuits) we create objects that MN can still call “sophisticated predicate routines” and realism can call “instantiated universals.” The follow‑up experiments in Group 4 are designed to stress‑test which story explains them more economically.
-* **Methodological upgrade.** Manipulative evidence—patching, ablation, scrubbing—moves us from observational claims (“the logit went up”) to counterfactual ones (“if this head were silent, the answer would change”). Those counterfactuals are what philosophical theories must now accommodate.
-
-[8]: https://arxiv.org/abs/2202.05262 "Locating and Editing Factual Associations in GPT"
-[9]: https://www.arxiv.org/pdf/2505.13737 "[PDF] A Framework for Interpreting Roles of Attention Heads in Transformers"
-[10]: https://www.neelnanda.io/mechanistic-interpretability/glossary "A Comprehensive Mechanistic Interpretability Explainer & Glossary"
-[11]: https://arxiv.org/abs/2303.08112 "Eliciting Latent Predictions from Transformers with the Tuned Lens"
-[12]: https://www.neelnanda.io/mechanistic-interpretability/attribution-patching "Attribution Patching: Activation Patching At Industrial Scale"
-[13]: https://arxiv.org/html/2310.12794v2 "Are Structural Concepts Universal in Transformer Language Models …"
-
----
-
-## 4. Consolidating the Case Against Austere Nominalism
-
-Austere (extreme) nominalism says *every apparent regularity reduces to a list of concrete token‑tokens* — no predicates, no properties, no relations 〖SEP‑Nominalism〗〖Loux‑2023〗. The Group 3 tools (tuned lens, activation patching, head fingerprinting, concept vectors) are designed to test whether LLMs in fact contain reusable, portable structures that would resist such a paraphrase. If the experiments below confirm that hunch, austere nominalism loses its footing; if they do not, the debate stays open.
-
----
-
-**Operational notes (for all four sections):**
-
-* Do **not** modify `run.py`. Each pass is a **single, focused script or notebook** with **defaults defined inside**; edit once per iteration.
-* Reuse artifacts from `run-latest/` (gold IDs, `L_sem`, prompts) to stay consistent with the main sweep.
----
-
-
-
-### 4.1. Instruction Words vs Capital‑Relation (Causal Check)
-
-**Why.** If deleting “please” or “simply” leaves the causal layer and KL inflection unchanged, the capital‑relation circuit is insensitive to those extra tokens, contradicting austere nominalism’s token‑paraphrase strategy.
-
-**What.** Run the original prompt and a “plain” prompt; record
-
-* (a) the tuned‑lens KL‑curve inflection,
-* (b) **causal `L_sem`** obtained by single‑layer activation patching, and
-* (c) Δ log‑prob when the top two “style heads” (found via head fingerprinting) are zeroed.
-
-**How.**
-
-1. Generate both prompts; tag `variant=instruct/plain`.
-2. For each, sweep layers; patch the corrupted prompt at ℓ until the answer flips; store causal `L_sem`.
-3. During the clean run, zero candidate style heads and measure answer log‑prob drop.
-4. Summarise: `Gemma‑9B — causal L_sem unchanged (45→45); style‑head ablation −0.1 bits ⇒ semantics robust to pragmatics.`
-
----
-
-### 4.2. Paraphrase Robustness
-
-**Why.** Ten English rewrites that keep predicate content but change wording. Stable causal `L_sem` and aligned concept vectors across them show a structure deeper than any one token string.
-
-**What.** Ten English paraphrases. For each:
-
-* (a) causal `L_sem`,
-* (b) cosine similarity of the answer‑logit direction to the canonical Berlin vector after whitening,
-* (c) tuned‑lens KL divergence at `L_sem`.
-  Visualise variance; compute coefficient of variation (CV) of causal `L_sem`.
-
-**How.**
-
-1. Store paraphrases in YAML.
-2. Batch‑run; cache residuals for concept‑vector whitening.
-3. Use the concept‑vector module to obtain Berlin direction per paraphrase; compute cosines.
-4. Plot violin of causal `L_sem`; print `CV = 0.06` (low) or `CV = 0.32` (high).
-
----
-
-### 4.3. Multilingual Consistency (Text‑only Pass)
-
-**Why.** If the same causal layer appears in German, Spanish, Arabic, etc., the relation transcends a single token inventory. That strains austere nominalism yet remains interpretable by metalinguistic nominalism (MN).
-
-**What.** Five language versions of the prompt. Measure:
-
-* (a) tuned‑lens KL inflection layer,
-* (b) cosine between each language’s Berlin vector and the English one *after the language‑specific whitening transforms*,
-* (c) causal `L_sem`.
-
-**How.**
-
-1. Verify translations keep subject–predicate order.
-2. Extract concept vectors; apply whitening per language.
-3. Compute pairwise cosines; output a short Markdown table of `⟨cos⟩ = 0.71 ± 0.05` or similar.
-4. Flag languages whose causal `L_sem` deviates > 10% of depth.
-
----
-
-### 4.4. Large WikiData Battery with Causal L\_sem
-
-**Why.** A relation that generalises across 1,000 country–capital pairs is hard to restate as token‑lists. If token length and frequency fail to predict causal depth, austere nominalism loses more ground.
-
-**What.** 1,000–5,000 (country, capital) prompts. For each: causal `L_sem`, answer token length, frequency. Output:
-
-* Histogram of causal `L_sem`,
-* OLS regression `L_sem ∼ len + log_freq`.
-
-**How.**
-
-1. Use activation patching in batched mode (two passes per prompt: clean & patch grid).
-2. Compute causal `L_sem` for each.
-3. Fit regression; print `R²`.
-4. Store results in `battery_capital.csv`.
-
----
-
-### 4.5. Lexical Ambiguity Stress Test
-
-**Why.** Ambiguous names multiply particulars sharing one string. If entropy stays high and relation heads fire later only for ambiguous cases, that shows the model is doing sense‑resolution, which a bare token list cannot capture.
-
-**What.** 50 ambiguous vs 50 control prompts. Metrics:
-
-* (a) entropy plateau height (mean entropy over layers before causal `L_sem`),
-* (b) first‑firing layer of the dominant relation head (from fingerprinting).
-  Statistical test: Wilcoxon on each metric.
-
-**How.**
-
-1. Curate ambiguous list (“Georgia”, “Jordan”).
-2. Run sweeps with attention recording.
-3. Detect dominant head per prompt (`attn_weight > 0.2`).
-4. Compute layer index; perform paired non‑parametric test; print p‑values.
-
----
-
-### 4.6. Instruction‑Style Grid with Causal Metrics
-
-**Why.** Checks if speech‑act markers shift causal semantics. Minimal shifts push further against token‑dependence.
-
-**What.** 12 prompt styles (4 modifiers × 3 moods) run over the WikiData battery. For each cell:
-
-* mean causal `L_sem`,
-* mean log‑prob drop when style heads are ablated,
-* mean tuned‑lens KL at `L_sem`.
-  Heat‑map the three statistics.
-
-**How.**
-
-1. Auto‑generate prompt grid.
-2. Batch activation patching; reuse style‑head list.
-3. Aggregate per cell; render three matplotlib heat‑maps.
-
----
-
-### 4.7. Zero‑Shot Flag‑Grounding Check (Minimal)
-
-**Why.** To pressure **purely metalinguistic** explanations, add a small, low‑lift probe that routes **non‑linguistic** evidence (country flags) into the text‑only pipeline without fine‑tuning the LLM. A positive result (even if modest) strengthens the case that the “capital‑of” machinery is not *only* about word‑tokens.
-
-**What.** *Two quick tests using frozen components:*
-
-* **(A) VLM zero‑shot baseline (sanity).** With an off‑the‑shelf VLM (e.g., Qwen‑VL or LLaVA) **without fine‑tuning**, prompt each flag image with “Which country’s flag is this?”; take the top country string and feed it into the **standard text‑only** capital prompt. Log whether the overall pipeline returns the correct capital. *(This is a control that confirms the image→text hand‑off works; it is not itself an interpretability result.)*
-* **(B) Minimal vision→LM bridge (no LM training).** Use a frozen **OpenCLIP** image encoder to get a flag embedding `z_img`. Learn a **linear projector** `P` from CLIP **text** embeddings of country names to the LLM’s **residual space at the subject position** using **≈100** (country name) pairs (least‑squares; no LM gradients). At inference, project `z_img` via `P` and **inject** at `L_sem−1` in the sentence “The capital of ⟨IMG⟩ is …”. Measure Δ log‑prob for the correct capital vs the top distractor.
-
-**How.**
-
-1. **Data.** 50 countries with high‑quality flag images (SVG or PNG). Hold out 10 for evaluation of the bridge.
-2. **Bridge fit (text‑only supervision).** Compute CLIP **text** embeddings for the 40 training country names; compute the LLM **residual vectors** at the subject token for the same names; solve `min_P ‖P·clip_text − resid‖²`. Record `n_pairs`, `seed`, and norms in JSON meta under `vision_bridge.*`.
-3. **Injection.** For each held‑out flag, compute `z_img`, project `r̂ = P·z_img`, and add `α·r̂` at `L_sem−1` (scan `α ∈ {0.25, 0.5, 1.0}`) before decoding with the **same** lens used in Group 1. Log Δ log‑prob for the correct capital and for a frequency‑matched distractor.
-4. **Success criteria.** Report median Δ log‑prob ≥ **0.25 bits** at some `α` across the 10 held‑out flags, with ≤ **0** median gain for distractors. Include a per‑model summary block:
-
-   ```json
-   "vision_bridge": {
-     "clip_model": "openclip_ViT-B/32",
-     "n_pairs": 40,
-     "alpha_grid": [0.25, 0.5, 1.0],
-     "median_delta_logp_bits": 0.31,
-     "median_delta_logp_distractor_bits": -0.02
-   }
-   ```
-5. **Scope guard.** This is a **one‑day spike**: no VLM fine‑tuning, no LM weight updates, only a linear map and a single‑layer injection. If it fails noisily, defer multimodal work to §5.1.
-
-
----
-
-### 4.8. Feature‑steering side‑effects & risk profile *(minimal instrumentation, strong safeguards)*
-
-**Purpose.** Show that steering a “capital‑of” feature **does what is intended** with **limited collateral effects**—critical for credible philosophical claims.
-
-**Method (small script/notebook `steering_profile.py`; uses features advanced in §3.7):**
-
-* **Neutral set.** 200 simple sentences unrelated to geography (in‑repo text file).
-* **For each advanced feature and α ∈ {0.25, 0.5, 1.0}:**
-
-  1. **Target efficacy.** Re‑measure Δ log‑prob for the correct capital on the capital prompts; record the minimal α that meets the §3.7 threshold (call it `α*`).
-  2. **Collateral metrics on neutral set:**
-
-     * `KL_drift_bits`: mean KL(logits\_steered ∥ logits\_base),
-     * `PPL_delta`: relative perplexity change,
-     * `unrelated_token_shift`: mean Δ log‑prob on a frequency‑matched distractor list,
-     * `target_vs_distractor_ratio`: (Δ on correct capital) / (max Δ over top‑5 distractors) on the capital prompts.
-* **Report.** Emit `steering_profile.json` per feature with metrics at each α and highlight `α*` with the **lowest** KL\_drift that still satisfies target efficacy.
-
-**Success criterion.** At `α*`, `KL_drift_bits` small (target: ≤0.05 bits), `PPL_delta` near 0, `unrelated_token_shift ≤ 0`, and `target_vs_distractor_ratio ≥ 2`.
-
-**Why this matters.** Prevents over‑interpreting features that “work” only by globally perturbing the model; strengthens the case that a **specific mechanism** underlies the observed competence.
-
----
-
-### Tally of Austere‑Nominalism Pressure
-
-After the above, we will have: *portable concept vectors*, *head‑level causal circuits*, and *cross‑prompt and cross‑language invariance*, all of which resist reduction to token enumeration. This effectively **clears the ground** so later work can focus on MN vs realism.
-
----
-
-## 5. First Probes at Metalinguistic Nominalism vs Realism (and a Trope Check)
-
-*Metalinguistic nominalism (MN)* treats any internal regularity as a fact about the model’s predicate vocabulary rather than a mind‑independent universal 〖SEP‑Nominalism〗〖Brandom‑2000〗. *Trope theory* replaces universals with many particularised property‑instances (tropes) that resemble one another 〖SEP‑Tropes 2023〗. The experiments below look for patterns that strain an MN paraphrase or favour a trope interpretation, and where a realist story might do better. They remain speculative; negative or ambiguous results will still be philosophically useful.
-
-### 5.1. Vector Portability Across Modalities
-
-**Why.** If a capital‑of vector learned from text alone also raises the right city name in a vision‑language model when shown a map, the underlying pattern is not tied to any specific word‑token. That stretches MN, whose story centres on language, more than a realist reading. (If the vector fails to port, the result remains compatible with both MN and trope theory.)
-
-**What.** Fine‑tune Llava‑1.6 on the same prompt; patch the text‑only vector at `L_sem` during multimodal inference; measure Δ log‑prob of the correct answer.
-
-**How.** Extract vector from text checkpoint, inject into Llava’s language head, record success rate.
-
----
-
-### 5.2. Synthetic Mini‑Language Swap
-
-**Why.** MN predicts that changing every occurrence of the predicate token (“capital”) to a nonsense token (“blork”) should license the model to build a new, potentially different circuit, because the linguistic anchor has changed. A realist would expect the model to reconstruct a similar geometry for the underlying concept, merely keyed to a new embedding. Trope theory is agnostic: it allows many similar—but non‑identical—instantiated circuits. Measuring geometric overlap therefore places the explanatory burden on whichever view ends up with the more complex paraphrase.
-
-**What.** Create a synthetic corpus with systematic token swap; fine‑tune Qwen‑3‑8B; rerun head fingerprinting and concept extraction.
-
-**How.** Corpus generation script, LoRA fine‑tune, repeat fingerprints, compare vectors via Procrustes.
-
----
-
-### 5.3. Statistical Scrambling Test
-
-**Why.** Counter‑factually shuffle surface co‑occurrence while keeping underlying relations intact (Levinstein 2024). If capital‑vectors survive, they are not mere word‑statistics.
-
-**What.** Generate a scrambled dataset where country and capital tokens never co‑occur in the same sentence; probe whether the original vector still pushes “Berlin” when patched in.
-
-**How.** Data augmentation, re‑train small model, perform activation patch with original vector, log Δ.
-
----
-
-### 5.4. Zero‑Shot Novel Syntax
-
-**Why.** Hold out a rare syntactic frame (“Of Germany the capital is \_\_\_”) during training. If relation heads fire correctly on first exposure, they encode more than learned predicate strings.
-
-**What.** Create held‑out eval prompts; record causal `L_sem` and answer accuracy.
-
-**How.** Fine‑tune model with frame removed, evaluate, compare depths.
-
----
-
-### 5.5. Cross‑Model Convergence After Token Swap
-
-**Why.** If two models trained on disjoint corpora converge to similar relation heads, that hints at architecture‑level universals beyond shared predicates.
-
-**What.** Train Mistral‑7B on Wikipedia vs Common Crawl subsets; run head fingerprinting; measure overlap of head coordinates after alignment.
-
-**How.** Training scripts, CCA alignment, cosine similarity histogram.
-
----
-
-### 5.6. Trope‑Sensitivity Probe
-
-**Why.** Trope theory expects each context to instantiate its *own* “blackness” or “capital‑of” trope. If concept vectors extracted in different sentences diverge significantly and fail to transfer causally, that supports a trope interpretation; tight clustering and high transferability favour realism or MN.
-
-**What.** Fifty noun‑adjective pairs (“black pawn”, “black asphalt”, …). For each context:
-
-* extract a blackness vector with CBE;
-* measure cosine dispersion across contexts;
-* patch each vector into every other context and log Δ log‑prob for the adjective “black”.
-
-**How.**
-
-1. Run CBE per sentence at `L_sem`.
-2. Compute pairwise cosines; report mean and standard deviation.
-3. Patch vectors cross‑context; if median Δ log‑prob > 0.5 bits in ≥ 70% of cases, portability is high (anti‑trope); otherwise low portability supports a trope reading.
-
----
-
-*Fictionalism*, which treats all universal talk as useful but literally false, can in principle accommodate any of the outcomes; strong results will therefore be framed in terms of **explanatory indispensability** rather than outright refutation 〖SEP‑Fictionalism 2021〗.
-
----
-
-### Implementation Dependencies for Sections 4 & 5
-
-* Tuned or Prism lens for logits and KL curves
-* Validated activation patching (unit: causal `L_sem` within ±1 layer of probe for 95% of prompts)
-* Head fingerprinting and concept‑vector modules
-* Multimodal patching wrappers (Section 5.1)
-* Data‑generation utilities for synthetic corpora and scrambling
 
 ---
 

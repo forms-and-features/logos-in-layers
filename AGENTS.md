@@ -14,7 +14,7 @@ This is an LLM interpretability research project investigating the philosophical
   - `run-latest/` - Latest experimental results and evaluation reports
   - `NOTES.md` - Technical implementation notes
 - `models/` - Local model storage (GGUF format)
-- `PROJECT_NOTES.md` - Comprehensive philosophical context and development roadmap
+- `001_LAYERS_BASELINE_PLAN.md` and `00xPROJECT_PLAN` - Comprehensive philosophical context and development roadmap
 
 ## Development Environment
 
@@ -112,7 +112,7 @@ This project targets the centuries-old dispute between nominalism (only particul
 2. **Stage 2**: Add causal interventions and cross-modal probes
 3. **Stage 3**: Discriminate between metalinguistic nominalism and realism
 
-See `PROJECT_NOTES.md` for detailed philosophical framework and planned experimental variations.
+See `001_LAYERS_BASELINE_PLAN.md` and `00x_PROJECT_PLAN` for detailed philosophical framework and planned experimental variations.
 
 ## Model Integration
 

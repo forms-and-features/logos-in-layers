@@ -56,7 +56,7 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
         header = ["prompt_id", "prompt_variant", "layer", "pos", "token", "entropy"]
         for i in range(1, top_k_verbose + 1):
             header.extend([f"top{i}", f"prob{i}"])
-        # Extended schema per PROJECT_NOTES §1.3
+        # Extended schema per 001_LAYERS_BASELINE_PLAN §1.3
         header.extend([
             "rest_mass",
             "copy_collapse",
@@ -72,25 +72,25 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
             "kl_to_final_bits",
             "kl_to_final_bits_norm_temp",
             "answer_rank",
-            # Representation-drift cosine (PROJECT_NOTES §1.5)
+            # Representation-drift cosine (001_LAYERS_BASELINE_PLAN §1.5)
             "cos_to_final",
-            # Geometric surface crossover (PROJECT_NOTES §1.14)
+            # Geometric surface crossover (001_LAYERS_BASELINE_PLAN §1.14)
             "cos_to_answer",
             "cos_to_prompt_max",
             "geom_crossover",
-            # Surface mass (PROJECT_NOTES §1.13)
+            # Surface mass (001_LAYERS_BASELINE_PLAN §1.13)
             "echo_mass_prompt",
             "answer_mass",
             "answer_minus_echo_mass",
             "mass_ratio_ans_over_prompt",
-            # Top-K prompt coverage (PROJECT_NOTES §1.15)
+            # Top-K prompt coverage (001_LAYERS_BASELINE_PLAN §1.15)
             "topk_prompt_mass@50",
-            # Negative control margin (PROJECT_NOTES §1.8)
+            # Negative control margin (001_LAYERS_BASELINE_PLAN §1.8)
             "control_margin",
-            # Normalization diagnostics (PROJECT_NOTES §1.30)
+            # Normalization diagnostics (001_LAYERS_BASELINE_PLAN §1.30)
             "resid_norm_ratio",
             "delta_resid_cos",
-            # Answer-confidence margins (PROJECT_NOTES §1.35)
+            # Answer-confidence margins (001_LAYERS_BASELINE_PLAN §1.35)
             "answer_logit_gap",
             "answer_vs_top1_gap",
         ])

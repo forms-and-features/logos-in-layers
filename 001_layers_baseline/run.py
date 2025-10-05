@@ -253,9 +253,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
 
         context_prompt = "Give the city name only, plain text. The capital of Germany is called simply"
         ground_truth = "Berlin"  # For display/comparison
-        # Stylistic filler ablation (PROJECT_NOTES §1.9): drop the adverb
+        # Stylistic filler ablation (001_LAYERS_BASELINE_PLAN §1.9): drop the adverb
         context_prompt_nf = "Give the city name only, plain text. The capital of Germany is called"
-        # Negative control (PROJECT_NOTES §1.8)
+        # Negative control (001_LAYERS_BASELINE_PLAN §1.8)
         context_prompt_ctl = "Give the city name only, plain text. The capital of France is called simply"
         control_ground_truth = "Paris"
         
@@ -356,7 +356,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             "diagnostics": None,
             "final_prediction": None,
             "model_stats": None,
-            # Raw-vs-Norm sanity block (PROJECT_NOTES §1.4)
+            # Raw-vs-Norm sanity block (001_LAYERS_BASELINE_PLAN §1.4)
             "raw_lens_check": init_raw_lens_check(RAW_LENS_MODE),
         }
         try:
@@ -406,7 +406,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             th for th in copy_soft_thresholds_extra if abs(th - copy_soft_threshold) >= 1e-9
         )
         copy_strict_label = format_copy_strict_label(config.copy_threshold)
-        # Threshold sweep for strict copy (PROJECT_NOTES §1.23)
+        # Threshold sweep for strict copy (001_LAYERS_BASELINE_PLAN §1.23)
         copy_strict_tau_list = (0.70, 0.80, 0.90, 0.95)
         copy_strict_labels_extra = [
             format_copy_strict_label(tau) for tau in copy_strict_tau_list
@@ -529,7 +529,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         # Tokenize the context prompt (without "Answer:" to avoid teacher-forcing)
         tokens = model.to_tokens(context_prompt)      # let Accelerate move it
 
-        # Gold-token alignment (PROJECT_NOTES §1.7): prefer tokenizer path
+        # Gold-token alignment (001_LAYERS_BASELINE_PLAN §1.7): prefer tokenizer path
         gold_info = compute_gold_answer_info(getattr(model, 'tokenizer', None), context_prompt, ground_truth, pieces_k=4)
 
         if gold_info.get("status") != "ok":
@@ -631,7 +631,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 # Cache final head reference distribution once (for KL-to-final)
                 final_logits = logits[0, -1, :].float()
                 final_probs = torch.softmax(final_logits, dim=0)
-                # Representation-drift baseline direction (PROJECT_NOTES §1.5)
+                # Representation-drift baseline direction (001_LAYERS_BASELINE_PLAN §1.5)
                 _final_norm = torch.norm(final_logits) + 1e-12
                 # Robust argmax with finite check
                 if not torch.isfinite(final_probs).all():
@@ -811,7 +811,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         
         _vprint("=== END OF INSPECTING ==============\n")
 
-        # ---------------- Ablation pass: no-filler (PROJECT_NOTES §1.9) --------
+        # ---------------- Ablation pass: no-filler (001_LAYERS_BASELINE_PLAN §1.9) --------
         # Run a separate forward pass on the positive prompt without the stylistic filler
         current_prompt_id = "pos"
         current_prompt_variant = "no_filler"
@@ -897,7 +897,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             "delta_L_sem": (None if (L_sem_orig is None or L_sem_nf is None) else (L_sem_nf - L_sem_orig)),
         }
 
-        # ---------------- Control pass (PROJECT_NOTES §1.8) --------------------
+        # ---------------- Control pass (001_LAYERS_BASELINE_PLAN §1.8) --------------------
         prism_ctx = PrismContext(stats=prism_stats, Q=prism_Q, active=prism_active)
         _pass_summary_ctl, _, _, prism_diag_ctl = run_prompt_pass(
             model=model,
@@ -972,7 +972,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             "max_control_margin": max_margin,
         }
 
-        # ---------------- Unified sidecar summaries (PROJECT_NOTES §1.21) -----
+        # ---------------- Unified sidecar summaries (001_LAYERS_BASELINE_PLAN §1.21) -----
         tuned_metrics = None
         try:
             total_layers = int(model.cfg.n_layers)
@@ -1029,7 +1029,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             }
             if tuned_metrics is not None:
                 tuned_block["summary"] = {"metrics": tuned_metrics}
-            # Attribution and prefer_tuned gate (PROJECT_NOTES §1.26)
+            # Attribution and prefer_tuned gate (001_LAYERS_BASELINE_PLAN §1.26)
             try:
                 attr = tuned_rotation_vs_temp_attribution(
                     baseline_records=[r for r in json_data.get("pure_next_token_records", []) if r.get("prompt_id") == "pos" and r.get("prompt_variant") == "orig"],
@@ -1174,7 +1174,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         if not diag.get("layer_map"):
             diag_flags.setdefault("layer_map_missing", True)
 
-        # ---------------- Measurement guidance (PROJECT_NOTES §1.22 & §1.28) ---
+        # ---------------- Measurement guidance (001_LAYERS_BASELINE_PLAN §1.22 & §1.28) ---
         try:
             warn_high_last_layer_kl = False
             try:
@@ -1286,7 +1286,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         }
         json_data["model_stats"] = stats_record
 
-        # Persist gold-answer transparency (PROJECT_NOTES §1.7)
+        # Persist gold-answer transparency (001_LAYERS_BASELINE_PLAN §1.7)
         json_data["gold_answer"] = {
             "string": gold_info.get("string"),
             "pieces": gold_info.get("pieces", []),
@@ -1532,7 +1532,7 @@ if __name__ == "__main__":
         print("Flags are parsed by the launcher. Common flags:")
         print("  --device {auto|cuda|mps|cpu}")
         print("  --fp32-unembed  --keep-residuals  --copy-threshold  --copy-margin  --self-test")
-        print("\nSelf-test: validates normalization scaling (PROJECT_NOTES §1.1).\n"
+        print("\nSelf-test: validates normalization scaling (001_LAYERS_BASELINE_PLAN §1.1).\n"
               "Can also run standalone: python kl_sanity_test.py MODEL_ID")
         sys.exit(0)
     import launcher as _launcher

@@ -27,9 +27,9 @@ Within the scope defined by the project’s guardrails (single prompt family, RM
 
 ### What needs correction or clarification
 
-1. **Tuned‑Lens citation.** Notes attribute Tuned‑Lens to “Cai et al., 2023, arXiv:2303.17564” which is not the Tuned‑Lens paper; the correct reference is **Belrose et al. 2023**, arXiv:2303.08112 (with FAR AI page as secondary). Please fix the citation in `NOTES.md` / `PROJECT_NOTES.md` and any generated prompts. ([GitHub][2])
+1. **Tuned‑Lens citation.** Notes attribute Tuned‑Lens to “Cai et al., 2023, arXiv:2303.17564” which is not the Tuned‑Lens paper; the correct reference is **Belrose et al. 2023**, arXiv:2303.08112 (with FAR AI page as secondary). Please fix the citation in `NOTES.md` / `001_LAYERS_BASELINE_PLAN.md` and any generated prompts. ([GitHub][2])
 
-2. **KL orientation in the notes.** `PROJECT_NOTES.md §1.3` shows a snippet using:
+2. **KL orientation in the notes.** `001_LAYERS_BASELINE_PLAN.md §1.3` shows a snippet using:
 
 ```python
 torch.kl_div(probs.log(), final_probs, reduction="sum")
@@ -164,7 +164,7 @@ The measurement choices (rank‑first, KL‑to‑final, cosine to final directio
 * LayerNorm placement and roles (Xiong et al., 2020; Brody et al., 2023). ([Proceedings of Machine Learning Research][8])
 * Transformer‑Circuits program. ([Transformer Circuits][14])
 
-[1]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/PROJECT_NOTES.md "raw.githubusercontent.com"
+[1]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_LAYERS_BASELINE_PLAN.md "raw.githubusercontent.com"
 [2]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/NOTES.md "raw.githubusercontent.com"
 [3]: https://raw.githubusercontent.com/forms-and-features/logos-in-layers/refs/heads/main/001_layers_baseline/run-latest/evaluation-Mistral-Small-24B-Base-2501.md "raw.githubusercontent.com"
 [4]: https://arxiv.org/pdf/1910.07467?utm_source=chatgpt.com "Root Mean Square Layer Normalization"
