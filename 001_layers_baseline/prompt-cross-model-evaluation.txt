@@ -12,6 +12,8 @@ INPUTS
   * measurement_guidance { prefer_ranks, suppress_abs_probs, reasons[], preferred_lens_for_reporting?, use_confirmed_semantics? }
   * tuned_lens.audit_summary (if present): rotation_vs_temperature, positional, head_mismatch, tuned_is_calibration_only, preferred_semantics_lens_hint
   * evaluation_pack (if present): milestones, artifact (…v2), repeatability, alignment, norm_trajectory, entropy, tuned_audit, citations
+  * summary.semantic_margin { delta_abs, p_uniform, L_semantic_margin_ok_norm, margin_ok_at_L_semantic_norm, p_answer_at_L_semantic_norm, L_semantic_confirmed_margin_ok_norm? }
+  * evaluation_pack.micro_suite (if present): per‑fact milestones, aggregates (medians/IQR), and citations to CSV rows
 - CSV – layer‑level results (one per model):
   * output-<MODEL>-records.csv
   * output-<MODEL>-pure-next-token.csv
@@ -47,7 +49,11 @@ Final-row caveat (head calibration): When comparing final rows across models, pr
 
 Normalization gate: If norm strategies differ across models (e.g., post_ln2 vs next_ln1), restrict absolute timing claims; prefer normalized depth comparisons (e.g., fraction of total layers) and within‑family statements. Annotate mixed strategies explicitly.
 
-Also honor `measurement_guidance`: if `prefer_ranks = true` or `suppress_abs_probs = true`, lead with rank thresholds and avoid absolute probability claims except as within‑model qualitative trends.
+Also honor `measurement_guidance`:
+- If `prefer_ranks = true` or `suppress_abs_probs = true`, lead with rank thresholds and avoid absolute probability claims except as within‑model qualitative trends.
+- Uniform‑margin gate: treat any `L_semantic_norm` with `margin_ok_at_L_semantic_norm=false` as **weak rank‑1 (near‑uniform)**. Prefer `L_semantic_confirmed_margin_ok_norm` when present. If neither exists, report the layer as tentative and avoid strong claims.
+- When `evaluation_pack.micro_suite` exists, use **medians** (and IQR when helpful) across facts for timing metrics (copy depth, semantic onset, Δ̂). Still cite at least one concrete row per model via the provided citations.
+- If `suppress_abs_probs=true` or artefact tier = high, do **not** quote numeric probabilities anywhere (including `p_answer`, `p_top1`). Use ranks/KL and qualitative phrasing (“higher/lower”) only.
 
 Gold‑token alignment caveat: Verify `gold_alignment` across models. For any model with `unresolved`, flag reduced comparability, rely on rank thresholds (`first_rank_le_{1,5,10}`), and avoid absolute probability claims. Stylistic ablation caveat: Filter depth summaries to `prompt_id = pos`, `prompt_variant = orig`. Compare `ΔL_sem`, `ΔL_copy`, and `ΔL_copy_soft[k]` (optionally normalized by `n_layers`); treat large positive shifts as stronger stylistic‑cue sensitivity and keep comparisons within-family when in doubt. When “top‑1” does not refer to the answer, label it as generic top‑1 (not `p_answer`), and include layer indices when citing any milestones (KL, cosine, rank, probabilities).
 
@@ -60,10 +66,10 @@ Write concise but thorough paragraphs that correlate quantitative patterns acros
 
 1. Result synthesis
    Correlate quantitative patterns across models. Use:
-   - `first_rank_le_{10,5,1}` and `L_semantic_confirmed` (if present) for timing.
-   - Δ̂ = (L_sem − L_copy_variant)/n_layers (from evaluation_pack if present).
-   - Tuned audit: report `delta_kl_rot_{p25,p50,p75}` and `pos_ood_gap`; note `tuned_is_calibration_only`.
-   - Head mismatch: quote `tau_star_modelcal` and the before/after final‑KL.
+   - `first_rank_le_{10,5,1}` and `L_semantic_confirmed` (if present) for timing, **gated by** `summary.semantic_margin` (prefer the *_margin_ok_* variants when present).
+   - Δ̂ = (L_sem − L_copy_variant)/n_layers; if `evaluation_pack.micro_suite` exists, report **median Δ̂** across facts.
+   - Tuned audit: `delta_kl_rot_{p25,p50,p75}` and `pos_ood_gap`; note `tuned_is_calibration_only`.
+   - Head mismatch: `tau_star_modelcal` and before/after final‑KL.
 
 2. Copy reflex (early layers 0–3)
    Use pure‑CSV flags: `copy_collapse` OR `copy_soft_k1@τ_soft`=True in layers 0–3 → mark “copy‑reflex”. Call out outliers. Normalize timing by depth.
@@ -74,7 +80,10 @@ Write concise but thorough paragraphs that correlate quantitative patterns acros
    - Risk tier (low/medium/high). For high tier, restrict to rank/KL milestones and confirmed semantics.
 
 4. Confirmed semantics
-   If `summary.L_semantic_confirmed` exists, report its layer and `confirmed_source` (raw/tuned/both). Otherwise, cite `L_semantic_norm` and annotate any norm‑only early semantics.
+   If `summary.L_semantic_confirmed` exists, report its layer and `confirmed_source` (raw/tuned/both).
+   If `summary.semantic_margin` exists, prefer `L_semantic_confirmed_margin_ok_norm` (or annotate `L_semantic_confirmed` as weak if the margin gate fails).
+   If confirmed is absent, cite `L_semantic_norm`, explicitly noting when `margin_ok_at_L_semantic_norm=false`.
+   When `evaluation_pack.micro_suite` exists, summarize medians across facts and cite at least one fact row per model.
 
 5. Entropy & confidence
    Compare entropy drift `(entropy_bits − teacher_entropy_bits)` at representative depths (use summary percentiles or evaluation_pack.entropy). Summarize whether drift shrinks as rank improves and KL falls.

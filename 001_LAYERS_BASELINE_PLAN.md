@@ -1414,7 +1414,151 @@ Emit a per‑model **JSON** block `evaluation_pack` (embedded in the main run JS
 * Generate the two CSVs from existing arrays; write them alongside the other sidecars.
 * Keep all additions **read‑only**; no model refits or translator edits.
 
-✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)y
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
+
+### [ ] 1.45. Above‑uniform **semantics margin** gate
+
+**Why.**
+Rank‑1 alone can occur at near‑uniform probabilities (especially with large vocabularies), which risks over‑interpreting noise as “semantic onset.” A small, uniform‑referenced margin disambiguates genuine signal from flat distributions without changing the rest of the pipeline.
+
+**What.**
+Augment rank‑based milestones with a **uniform‑baseline margin**:
+
+* Let (p_\mathrm{uni} = 1/|\mathcal{V}|) (the softmax vocabulary size at decode time).
+* Define the **uniform margin** (m^{(\ell)} = p_\mathrm{answer}^{(\ell)} - p_\mathrm{uni}).
+* A layer qualifies as **rank‑1 with margin** when `answer_rank == 1` **and** (m^{(\ell)} \ge \delta_\mathrm{abs}). Default (\delta_\mathrm{abs} = 0.002).
+
+Report **first** layer satisfying this gate and surface a warning when `L_semantic_norm` is rank‑only with **insufficient** margin.
+
+**How.**
+
+1. **Decode‑loop additions (pure next‑token; norm & tuned where applicable).**
+
+   * Compute once per model: `p_uniform = 1.0 / vocab_size`.
+   * Per layer, compute:
+     `answer_minus_uniform = p_answer - p_uniform` (float; write even if `answer_rank>1`).
+   * Add per‑layer boolean (norm lens only):
+     `semantic_margin_ok = (answer_rank == 1) and (answer_minus_uniform >= δ_abs)`.
+
+2. **CSV changes (pure next‑token).**
+
+   * New columns: `answer_minus_uniform`, `semantic_margin_ok` (norm lens).
+     *(Keep tuned/prism in their sidecars; no schema change there.)*
+
+3. **Run JSON (summary).**
+
+   ```json
+   "summary": {
+     "semantic_margin": {
+       "delta_abs": 0.002,
+       "p_uniform": 0.0000,
+       "L_semantic_margin_ok_norm": <int|null>,
+       "margin_ok_at_L_semantic_norm": true|false,
+       "p_answer_at_L_semantic_norm": <float|null>
+     }
+   }
+   ```
+
+   * If `L_semantic_confirmed` exists, also add:
+     `"L_semantic_confirmed_margin_ok_norm": <int|null>` (the **confirmed** layer that also passes the margin gate at the **norm** lens, if any).
+
+4. **Measurement guidance (evaluation hints).**
+
+   * When `L_semantic_norm` exists but `margin_ok_at_L_semantic_norm == false`, set:
+
+     ```json
+     "measurement_guidance": {
+       "reasons": ["rank_only_near_uniform", ...],
+       "prefer_ranks": true,
+       "suppress_abs_probs": true
+     }
+     ```
+   * *Advisory:* Evaluators **prefer** `L_semantic_confirmed_margin_ok_norm` when present; otherwise annotate the semantic onset as **weak (near‑uniform)**.
+
+5. **CLI / config.**
+
+   * Optional flag: `--semantic-margin-abs 0.002` (float).
+     Also read environment override: `LOGOS_SEMANTIC_MARGIN_ABS`.
+
+**Defaults & cost.**
+Negligible runtime (one subtraction per layer). No extra forwards.
+
+**✅ Provenance fields.**
+Embed constants under `diagnostics.surface_diagnostics_config.semantic_margin = { "delta_abs": 0.002 }` for reproducibility.
+
+---
+
+### [ ] 1.46. Minimal **micro‑suite of isomorphic facts** (N=5) for robustness
+
+**Why.**
+Single‑fact probing is brittle w.r.t. tokenization quirks and idiosyncratic memorization. A **tiny** suite of equally trivial facts yields variance/median estimates of collapse and semantics depths **within** a model, improving reliability without expanding conceptual scope.
+
+**What.**
+Run the same measurement pass over **five** positive prompts (same template), keeping the existing France control:
+
+* **Positives (default list):**
+  `Germany→Berlin` *(baseline)*, `France→Paris`, `Italy→Rome`, `Japan→Tokyo`, `Canada→Ottawa`.
+* **Control:** keep the existing **France** control margin (`p(Paris) − p(Berlin)`), unchanged.
+
+**How.**
+
+1. **Prompts.**
+   Extend the runner to iterate over the `facts_micro_suite` list and emit rows for each *positive* fact using the same `prompt_variant` handling (`orig` / `no_filler`). Controls remain as today (a single France control per run).
+
+2. **CSV additions.**
+   Add leading identifiers:
+
+   * `fact_key` (string; e.g., `"Germany→Berlin"`, `"France→Paris"`, ...),
+   * `fact_index` (0..N−1).
+     `prompt_id` remains `pos` for positives and `ctl` for the France control.
+
+3. **Run JSON (summary).**
+
+   ```json
+   "prompts": {
+     "facts_micro_suite": ["Germany→Berlin","France→Paris","Italy→Rome","Japan→Tokyo","Canada→Ottawa"]
+   },
+   "summary": {
+     "micro_suite": {
+       "n": 5,
+       "L_copy_strict_median": <int|null>,
+       "L_copy_soft_k1_median": <int|null>,
+       "L_semantic_norm_median": <int|null>,
+       "L_semantic_confirmed_median": <int|null>,
+       "L_semantic_margin_ok_norm_median": <int|null>,
+       "delta_hat_median": <float|null>,   // (L_sem - L_copy)/n_layers using strict else earliest soft
+       "L_semantic_norm_iqr": [p25, p75],  // optional dispersion
+       "notes": "control is France→Paris; other positives do not add new controls"
+     }
+   }
+   ```
+
+4. **Evaluation‑pack (derived view).**
+
+   ```json
+   "evaluation_pack": {
+     "micro_suite": {
+       "facts": [
+         {"fact_key":"Germany→Berlin","L_copy_strict":...,"L_semantic_norm":...,"L_semantic_confirmed":...,"L_semantic_margin_ok_norm":...},
+         {"fact_key":"France→Paris", ...}
+       ],
+       "aggregates": {
+         "L_semantic_confirmed_median": ...,
+         "delta_hat_median": ...,
+         "n_missing": <count_of_facts_missing_milestones>
+       },
+       "citations": {
+         "fact_rows": { "Germany→Berlin": <row_index>, ... }
+       }
+     }
+   }
+   ```
+
+5. **Defaults & cost.**
+   Enabled by default (`--facts-micro-suite on`). To disable (e.g., for very large models), use `--facts-micro-suite off` or `LOGOS_FACTS_MICRO_SUITE=off`. No schema breakage for existing columns; added identifiers are leading columns.
+
+**Scope discipline.**
+No new concepts, prompts remain capital‑facts; the micro‑suite only multiplies the **same** measurement to obtain robust medians/variances.
 
 ---
 
