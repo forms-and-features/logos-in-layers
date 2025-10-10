@@ -1416,7 +1416,7 @@ Emit a per‑model **JSON** block `evaluation_pack` (embedded in the main run JS
 
 ✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
-### [ ] 1.45. Above‑uniform **semantics margin** gate
+### [x] 1.45. Above‑uniform **semantics margin** gate
 
 **Why.**
 Rank‑1 alone can occur at near‑uniform probabilities (especially with large vocabularies), which risks over‑interpreting noise as “semantic onset.” A small, uniform‑referenced margin disambiguates genuine signal from flat distributions without changing the rest of the pipeline.
@@ -1485,6 +1485,8 @@ Negligible runtime (one subtraction per layer). No extra forwards.
 
 **✅ Provenance fields.**
 Embed constants under `diagnostics.surface_diagnostics_config.semantic_margin = { "delta_abs": 0.002 }` for reproducibility.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

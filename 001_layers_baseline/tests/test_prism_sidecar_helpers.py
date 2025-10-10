@@ -70,6 +70,7 @@ def test_append_prism_pure_next_token_builds_pure_record():
         top_k_record=5,
         prompt_id="pos",
         prompt_variant="orig",
+        p_uniform=1.0 / vocab,
     )
     assert len(buf["pure_next_token_records"]) == 1, f"no pure record appended; buf={buf}"
     rec = buf["pure_next_token_records"][0]
@@ -77,7 +78,7 @@ def test_append_prism_pure_next_token_builds_pure_record():
     assert rec["layer"] == 2 and rec["pos"] == seq_len - 1
     assert rec["prompt_id"] == "pos" and rec["prompt_variant"] == "orig"
     # has expected extra metrics
-    for k in ("copy_collapse", "entropy_collapse", "p_top1", "kl_to_final_bits"):
+    for k in ("copy_collapse", "entropy_collapse", "p_top1", "kl_to_final_bits", "answer_minus_uniform"):
         assert k in rec, f"missing key {k} in rec={rec}"
 
 

@@ -16,6 +16,8 @@ def summarize_pure_records(
     topk_prompt_tau: float = 0.33,
     n_layers: Optional[int] = None,
     cos_thresholds: Sequence[float] = (0.2, 0.4, 0.6),
+    semantic_margin_delta: float = 0.002,
+    p_uniform: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Summarize collapse and threshold indices from per-layer pure next-token records.
 
@@ -67,14 +69,32 @@ def summarize_pure_records(
 
     entropy_gaps: List[float] = []
 
+    def _truthy(val: Any) -> bool:
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, (int, float)):
+            return float(val) != 0.0
+        if isinstance(val, str):
+            return val.strip().lower() in {"true", "1", "yes"}
+        return False
+
+    records_by_layer: Dict[int, Dict[str, Any]] = {}
+    L_sem_margin_ok: Optional[int] = None
+
     for rec in pure_records:
         layer = rec.get("layer")
+        if isinstance(layer, int):
+            records_by_layer[layer] = rec
         if L_copy is None and rec.get("copy_collapse"):
             L_copy = layer
         if L_copy_H is None and rec.get("entropy_collapse"):
             L_copy_H = layer
         if L_sem is None and rec.get("is_answer"):
             L_sem = layer
+        if L_sem_margin_ok is None and layer is not None:
+            margin_flag = rec.get("semantic_margin_ok")
+            if margin_flag is not None and _truthy(margin_flag):
+                L_sem_margin_ok = layer
 
         if isinstance(rec.get("copy_soft_hits"), dict):
             for k in soft_window_set:
@@ -349,6 +369,47 @@ def summarize_pure_records(
             depth_fractions[f"L_copy_soft_k{k}_frac"] = _frac(soft_layers_map.get(key))
 
         summary["depth_fractions"] = depth_fractions
+
+    sem_rec = records_by_layer.get(L_sem) if isinstance(L_sem, int) else None
+    answer_minus_uniform_at_sem = None
+    margin_ok_at_sem: Optional[bool] = None
+    p_answer_at_sem: Optional[float] = None
+    answer_rank_at_sem: Optional[int] = None
+    if sem_rec is not None:
+        if sem_rec.get("p_answer") is not None:
+            try:
+                p_answer_at_sem = float(sem_rec.get("p_answer"))
+            except (TypeError, ValueError):
+                p_answer_at_sem = None
+        if sem_rec.get("answer_minus_uniform") is not None:
+            try:
+                answer_minus_uniform_at_sem = float(sem_rec.get("answer_minus_uniform"))
+            except (TypeError, ValueError):
+                answer_minus_uniform_at_sem = None
+        if sem_rec.get("answer_rank") is not None:
+            try:
+                answer_rank_at_sem = int(sem_rec.get("answer_rank"))
+            except (TypeError, ValueError):
+                answer_rank_at_sem = None
+        margin_flag = sem_rec.get("semantic_margin_ok")
+        if margin_flag is None:
+            margin_ok_at_sem = None
+        else:
+            margin_ok_at_sem = bool(_truthy(margin_flag))
+    if margin_ok_at_sem is None and answer_minus_uniform_at_sem is not None and answer_rank_at_sem is not None:
+        try:
+            margin_ok_at_sem = bool(int(answer_rank_at_sem) == 1 and float(answer_minus_uniform_at_sem) >= float(semantic_margin_delta))
+        except Exception:
+            margin_ok_at_sem = None
+
+    summary["L_semantic_margin_ok"] = L_sem_margin_ok
+    summary["semantic_margin"] = {
+        "delta_abs": float(semantic_margin_delta),
+        "p_uniform": None if p_uniform is None else float(p_uniform),
+        "L_semantic_margin_ok_norm": L_sem_margin_ok,
+        "margin_ok_at_L_semantic_norm": margin_ok_at_sem,
+        "p_answer_at_L_semantic_norm": p_answer_at_sem,
+    }
 
     return summary
 

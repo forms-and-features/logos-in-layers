@@ -348,6 +348,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 "gamma": 0.02,
                 "K": 50,
                 "tau": 0.33,
+                "semantic_margin": {
+                    "delta_abs": 0.002,
+                },
             },
             "answer_margin_unit": "logit",
         }
@@ -745,6 +748,11 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     copy_strict_thresholds=copy_strict_tau_list,
                 )
                 diag.update(pass_summary)
+                semantic_margin_info = pass_summary.get("semantic_margin") or {}
+                if diag.get("L_semantic") is not None:
+                    margin_flag = semantic_margin_info.get("margin_ok_at_L_semantic_norm")
+                    if margin_flag is False:
+                        diag_flags.setdefault("rank_only_near_uniform", True)
                 diag["gold_alignment"] = {
                     "ok": primary_alignment_entry["ok"],
                     "status": primary_alignment_entry["status"],
@@ -1184,7 +1192,17 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             )
             diag["confirmed_semantics"] = conf
             if conf.get("L_semantic_confirmed") is not None:
-                diag["L_semantic_confirmed"] = conf.get("L_semantic_confirmed")
+                confirmed_layer = conf.get("L_semantic_confirmed")
+                diag["L_semantic_confirmed"] = confirmed_layer
+                try:
+                    margin_block = diag.setdefault("semantic_margin", {})
+                    margin_ok_layer = margin_block.get("L_semantic_margin_ok_norm")
+                    if confirmed_layer is not None and margin_ok_layer is not None and int(confirmed_layer) == int(margin_ok_layer):
+                        margin_block["L_semantic_confirmed_margin_ok_norm"] = confirmed_layer
+                    else:
+                        margin_block.setdefault("L_semantic_confirmed_margin_ok_norm", None)
+                except Exception:
+                    pass
         except Exception as e:
             try:
                 diag["confirmed_semantics_error"] = str(e)
@@ -1328,6 +1346,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 reasons.append("copy_mask_error")
             if diag_flags.get("layer_map_missing"):
                 reasons.append("layer_map_missing")
+            if diag_flags.get("rank_only_near_uniform"):
+                reasons.append("rank_only_near_uniform")
             if tuned_is_calibration_only:
                 reasons.append("tuned_is_calibration_only")
 

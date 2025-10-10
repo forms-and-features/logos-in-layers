@@ -60,6 +60,8 @@ def compute_pure_next_token_info(
     bias_tensor: Optional[torch.Tensor] = None,
     raw_resid_vec: Optional[torch.Tensor] = None,
     norm_resid_vec: Optional[torch.Tensor] = None,
+    p_uniform: Optional[float] = None,
+    semantic_margin_delta: float = 0.002,
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
     """Compute pure next-token metrics and summary structures.
 
@@ -146,6 +148,35 @@ def compute_pure_next_token_info(
             )
         except Exception:
             control_margin = None
+
+    # Uniform semantics margin
+    vocab_size = int(last_logits.shape[-1])
+    inferred_uniform = None
+    if vocab_size > 0:
+        inferred_uniform = 1.0 / float(vocab_size)
+    uniform_baseline = p_uniform if p_uniform is not None else inferred_uniform
+    answer_minus_uniform = None
+    if uniform_baseline is not None and metrics.get("p_answer") is not None:
+        try:
+            answer_minus_uniform = float(metrics["p_answer"]) - float(uniform_baseline)
+        except Exception:
+            answer_minus_uniform = None
+    if answer_minus_uniform is None and metrics.get("p_answer") is not None:
+        try:
+            answer_minus_uniform = float(metrics["p_answer"])
+        except Exception:
+            answer_minus_uniform = None
+
+    semantic_margin_ok: Optional[bool] = None
+    if lens_type == "norm":
+        rank_val = metrics.get("answer_rank")
+        if rank_val is None or answer_minus_uniform is None:
+            semantic_margin_ok = None
+        else:
+            try:
+                semantic_margin_ok = bool(int(rank_val) == 1 and float(answer_minus_uniform) >= float(semantic_margin_delta))
+            except Exception:
+                semantic_margin_ok = None
 
     # Soft copy detections (base + extra thresholds)
     soft_hits: Dict[int, bool] = {}
@@ -310,8 +341,11 @@ def compute_pure_next_token_info(
         "delta_resid_cos": delta_resid_cos,
         "answer_logit_gap": answer_logit_gap,
         "answer_vs_top1_gap": answer_vs_top1_gap,
+        "answer_minus_uniform": answer_minus_uniform,
     }
     record_extra["entropy_bits"] = float(last_entropy_bits)
+    if lens_type == "norm":
+        record_extra["semantic_margin_ok"] = semantic_margin_ok
     # Add strict-sweep flags to the flat record, if any
     for k_label, hit in strict_hits.items():
         # Avoid duplicating the base strict label if identical formatting
@@ -358,6 +392,10 @@ def compute_pure_next_token_info(
             collected["entropy_gap_bits"] = None
     if strict_hits:
         collected["copy_strict_hits"] = strict_hits
+    collected["answer_minus_uniform"] = answer_minus_uniform
+    collected["p_answer"] = metrics.get("p_answer")
+    if lens_type == "norm":
+        collected["semantic_margin_ok"] = semantic_margin_ok
 
     dual_ctx = {
         "layer": layer_out_idx,

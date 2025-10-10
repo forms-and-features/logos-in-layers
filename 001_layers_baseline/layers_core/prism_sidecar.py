@@ -65,6 +65,8 @@ def append_prism_pure_next_token(
     prompt_id: str,
     prompt_variant: str,
     control_ids: Optional[Tuple[Optional[int], Optional[int]]] = None,
+    p_uniform: Optional[float] = None,
+    semantic_margin_delta: float = 0.002,
 ) -> None:
     flag_labels = [copy_strict_label] + [copy_soft_labels.get(int(k)) for k in copy_soft_window_ks if copy_soft_labels.get(int(k))]
     flag_labels.extend(copy_soft_extra_labels.values())
@@ -98,6 +100,8 @@ def append_prism_pure_next_token(
         prompt_variant=prompt_variant,
         control_ids=control_ids,
         copy_strict_thresholds=(),
+        p_uniform=p_uniform,
+        semantic_margin_delta=semantic_margin_delta,
     )
     rec = make_pure_record(
         prompt_id=prompt_id,

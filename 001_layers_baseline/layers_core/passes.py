@@ -30,6 +30,7 @@ SURFACE_DELTA = 0.05
 GEOM_GAMMA = 0.02
 TOPK_PROMPT_MASS_K = 50
 TOPK_DECAY_TAU = 0.33
+SEMANTIC_MARGIN_DELTA = 0.002
 POS_GRID_FRACTIONS: Tuple[float, ...] = (0.20, 0.40, 0.60, 0.80, 0.92, 0.96, 0.98, 1.00)
 
 
@@ -333,6 +334,8 @@ def run_prompt_pass(
             "top1_flip_rate": float(flip_rate),
         }
 
+    p_uniform: Optional[float] = None
+
     with torch.no_grad():
         residual_cache: Dict[str, Any] = {}
         cache_hook = build_cache_hook(residual_cache)
@@ -356,6 +359,10 @@ def run_prompt_pass(
                 final_logits_bias_free = final_logits
             _final_norm = torch.norm(final_logits_bias_free) + 1e-12
             final_dir = (final_logits_bias_free / _final_norm)
+            vocab_size = int(final_logits.shape[-1])
+            p_uniform = None
+            if vocab_size > 0:
+                p_uniform = 1.0 / float(vocab_size)
 
             final_logits_all = logits[0].detach().to(dtype=torch.float32)
             final_probs_by_pos: Dict[int, torch.Tensor] = {}
@@ -571,6 +578,8 @@ def run_prompt_pass(
                 bias_tensor=unembed_ctx.b,
                 raw_resid_vec=raw_vec_L0,
                 norm_resid_vec=geom_vec_norm_pre,
+                p_uniform=p_uniform,
+                semantic_margin_delta=SEMANTIC_MARGIN_DELTA,
             )
             json_data["pure_next_token_records"].append(
                 make_pure_record(
@@ -682,6 +691,8 @@ def run_prompt_pass(
                     prompt_id=prompt_id,
                     prompt_variant=prompt_variant,
                     control_ids=control_ids,
+                    p_uniform=p_uniform,
+                    semantic_margin_delta=SEMANTIC_MARGIN_DELTA,
                 )
 
             # Save residual if requested. Behavior-preserving policy:
@@ -975,6 +986,8 @@ def run_prompt_pass(
                     bias_tensor=unembed_ctx.b,
                     raw_resid_vec=raw_vec_layer,
                     norm_resid_vec=geom_vec_norm_post,
+                    p_uniform=p_uniform,
+                    semantic_margin_delta=SEMANTIC_MARGIN_DELTA,
                 )
                 json_data["pure_next_token_records"].append(
                     make_pure_record(
@@ -1023,12 +1036,14 @@ def run_prompt_pass(
                         control_ids=control_ids,
                         prompt_vocab_ids=prompt_vocab_ids,
                         decoder_weight=decoder_weight,
-                    geom_vec=geom_vec_tuned_post,
-                    topk_prompt_mass_k=TOPK_PROMPT_MASS_K,
-                    geom_gamma=GEOM_GAMMA,
-                    norm_temp_tau=None,
-                    bias_tensor=unembed_ctx.b,
-                )
+                        geom_vec=geom_vec_tuned_post,
+                        topk_prompt_mass_k=TOPK_PROMPT_MASS_K,
+                        geom_gamma=GEOM_GAMMA,
+                        norm_temp_tau=None,
+                        bias_tensor=unembed_ctx.b,
+                        p_uniform=p_uniform,
+                        semantic_margin_delta=SEMANTIC_MARGIN_DELTA,
+                    )
                     tuned_json_data["pure_next_token_records"].append(
                         make_pure_record(
                             prompt_id=prompt_id,
@@ -1156,6 +1171,8 @@ def run_prompt_pass(
                         prompt_id=prompt_id,
                         prompt_variant=prompt_variant,
                         control_ids=control_ids,
+                        p_uniform=p_uniform,
+                        semantic_margin_delta=SEMANTIC_MARGIN_DELTA,
                     )
 
                 # Optional raw-vs-norm sample
@@ -1235,6 +1252,8 @@ def run_prompt_pass(
                 geom_gamma=GEOM_GAMMA,
                 topk_prompt_tau=TOPK_DECAY_TAU,
                 n_layers=int(model.cfg.n_layers),
+                semantic_margin_delta=SEMANTIC_MARGIN_DELTA,
+                p_uniform=p_uniform,
             )
             summary_diag.setdefault("answer_margin_unit", "logit")
 
@@ -1398,6 +1417,8 @@ def run_prompt_pass(
                     geom_gamma=GEOM_GAMMA,
                     topk_prompt_tau=TOPK_DECAY_TAU,
                     n_layers=int(model.cfg.n_layers),
+                    semantic_margin_delta=SEMANTIC_MARGIN_DELTA,
+                    p_uniform=p_uniform,
                 )
                 tuned_summaries.append(summary_tuned)
             return summary_diag, last_layer_consistency, detected_architecture, diag_delta

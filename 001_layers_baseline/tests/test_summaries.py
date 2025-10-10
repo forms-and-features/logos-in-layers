@@ -19,6 +19,8 @@ def test_summarize_pure_records():
             "cos_to_final": 0.1,
             "entropy_bits": 3.2,
             "teacher_entropy_bits": 3.0,
+            "answer_minus_uniform": -0.001,
+            "semantic_margin_ok": False,
         },
         {
             "layer": 1,
@@ -31,6 +33,8 @@ def test_summarize_pure_records():
             "cos_to_final": 0.25,
             "entropy_bits": 2.9,
             "teacher_entropy_bits": 2.8,
+            "answer_minus_uniform": -0.0005,
+            "semantic_margin_ok": False,
         },
         {
             "layer": 2,
@@ -43,6 +47,8 @@ def test_summarize_pure_records():
             "cos_to_final": 0.45,
             "entropy_bits": 2.4,
             "teacher_entropy_bits": 2.7,
+            "answer_minus_uniform": 0.0001,
+            "semantic_margin_ok": False,
         },
         {
             "layer": 3,
@@ -55,6 +61,9 @@ def test_summarize_pure_records():
             "cos_to_final": 0.65,
             "entropy_bits": 2.1,
             "teacher_entropy_bits": 2.5,
+            "answer_minus_uniform": 0.01,
+            "semantic_margin_ok": True,
+            "p_answer": 0.012,
         },
     ]
 
@@ -66,6 +75,7 @@ def test_summarize_pure_records():
         copy_soft_window_ks=(1, 2),
         copy_match_level="id_subsequence",
         n_layers=4,
+        p_uniform=0.001,
     )
 
     assert diag["L_copy"] == 1
@@ -107,3 +117,11 @@ def test_summarize_pure_records():
     entropy_summary = diag.get("entropy_gap_bits_percentiles")
     assert isinstance(entropy_summary, dict)
     assert set(entropy_summary.keys()) == {"p25", "p50", "p75"}
+
+    assert diag["L_semantic_margin_ok"] == 3
+    sem_margin = diag["semantic_margin"]
+    assert abs(sem_margin["delta_abs"] - 0.002) < 1e-9
+    assert sem_margin["p_uniform"] == 0.001
+    assert sem_margin["L_semantic_margin_ok_norm"] == 3
+    assert sem_margin["margin_ok_at_L_semantic_norm"] is True
+    assert abs(sem_margin["p_answer_at_L_semantic_norm"] - 0.012) < 1e-9

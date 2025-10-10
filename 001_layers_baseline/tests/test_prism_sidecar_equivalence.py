@@ -194,6 +194,12 @@ def test_prism_pure_next_token_helper_fields_match_manual_logic():
     for k_soft, label in COPY_SOFT_LABELS.items():
         manual[label] = soft_hits.get(k_soft, False)
 
+    p_uniform = 1.0 / float(final_probs.shape[0])
+    if p_metrics.get("p_answer") is not None:
+        manual["answer_minus_uniform"] = float(p_metrics.get("p_answer")) - p_uniform
+    else:
+        manual["answer_minus_uniform"] = None
+
     # Helper call should append an identical dict
     append_prism_pure_next_token(
         buf,
@@ -218,6 +224,7 @@ def test_prism_pure_next_token_helper_fields_match_manual_logic():
         top_k_record=k,
         prompt_id="pos",
         prompt_variant="orig",
+        p_uniform=p_uniform,
     )
 
     assert buf["pure_next_token_records"], "helper did not append a pure next token record"

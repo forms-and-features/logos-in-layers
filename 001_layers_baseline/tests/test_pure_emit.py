@@ -65,10 +65,14 @@ def test_compute_pure_next_token_info_basic():
     assert "delta_resid_cos" in view["record_extra"]
     assert "answer_logit_gap" in view["record_extra"]
     assert "answer_vs_top1_gap" in view["record_extra"]
+    assert "answer_minus_uniform" in view["record_extra"]
+    assert "semantic_margin_ok" in view["record_extra"]
     # Strict-sweep hits are included in collected or record extra
     assert "copy_strict_hits" in collected
     assert "entropy_bits" in collected
     assert "teacher_entropy_bits" in collected
+    assert "answer_minus_uniform" in collected
+    assert "semantic_margin_ok" in collected
     for lab in ("copy_strict@0.7", "copy_strict@0.8", "copy_strict@0.9", "copy_strict@0.95"):
         assert lab in collected["copy_strict_hits"]
 
