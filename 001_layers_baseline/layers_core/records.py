@@ -25,8 +25,9 @@ def make_record(
     entropy: float,
     top_tokens: Iterable[str],
     top_probs: Iterable[Any],
+    extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    return {
+    rec = {
         "type": "record",
         "prompt_id": prompt_id,
         "prompt_variant": prompt_variant,
@@ -37,6 +38,9 @@ def make_record(
         "entropy_bits": entropy,
         "topk": _pack_topk(top_tokens, top_probs),
     }
+    if extra:
+        rec.update(extra)
+    return rec
 
 
 def make_pure_record(

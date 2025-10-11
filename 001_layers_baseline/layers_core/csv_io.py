@@ -12,6 +12,9 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
     pure_next_token_records: List[Dict[str, Any]] = json_data["pure_next_token_records"]
     copy_flag_columns: List[str] = list(dict.fromkeys(json_data.get("copy_flag_columns", [])))
 
+    def _nz(val):
+        return "" if val is None else val
+
     # Save records to CSV
     with open(csv_filepath, 'w', newline='', encoding='utf-8') as f_csv:
         writer = csv.writer(
@@ -22,7 +25,7 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
             escapechar="\\",
             lineterminator="\n",
         )
-        header = ["prompt_id", "prompt_variant", "layer", "pos", "token", "entropy", "entropy_bits"]
+        header = ["fact_key", "fact_index", "prompt_id", "prompt_variant", "layer", "pos", "token", "entropy", "entropy_bits"]
         for i in range(1, top_k_verbose + 1):
             header.extend([f"top{i}", f"prob{i}"])
         header.append("rest_mass")
@@ -32,6 +35,8 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
             entropy_val = rec.get("entropy")
             entropy_bits_val = rec.get("entropy_bits", entropy_val)
             row = [
+                _nz(rec.get("fact_key")),
+                _nz(rec.get("fact_index")),
                 rec.get("prompt_id", ""),
                 rec.get("prompt_variant", ""),
                 rec.get("layer"),
@@ -63,7 +68,7 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
             escapechar="\\",
             lineterminator="\n",
         )
-        header = ["prompt_id", "prompt_variant", "layer", "pos", "token", "entropy", "entropy_bits"]
+        header = ["fact_key", "fact_index", "prompt_id", "prompt_variant", "layer", "pos", "token", "entropy", "entropy_bits"]
         for i in range(1, top_k_verbose + 1):
             header.extend([f"top{i}", f"prob{i}"])
         # Extended schema per 001_LAYERS_BASELINE_PLAN §1.3
@@ -114,6 +119,8 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
             entropy_val = rec.get("entropy")
             entropy_bits_val = rec.get("entropy_bits", entropy_val)
             row = [
+                _nz(rec.get("fact_key")),
+                _nz(rec.get("fact_index")),
                 rec.get("prompt_id", ""),
                 rec.get("prompt_variant", ""),
                 rec.get("layer"),
@@ -132,9 +139,6 @@ def write_csv_files(json_data: Dict[str, Any], csv_filepath: str, pure_csv_filep
                     tok, prob = "", ""
                 row.extend([tok, prob])
             rest_mass = max(0.0, 1.0 - topk_prob_sum)
-            def _nz(val):
-                # Normalize None to empty string for CSV cleanliness
-                return "" if val is None else val
             row.extend([
                 rest_mass,
                 rec.get("copy_collapse", ""),
@@ -188,6 +192,8 @@ def write_raw_lens_window_csv(records: List[Dict[str, Any]], csv_filepath: str) 
             lineterminator="\n",
         )
         header = [
+            "fact_key",
+            "fact_index",
             "prompt_id",
             "prompt_variant",
             "layer",
@@ -206,6 +212,8 @@ def write_raw_lens_window_csv(records: List[Dict[str, Any]], csv_filepath: str) 
 
         for rec in records:
             row = [
+                _nz(rec.get("fact_key")),
+                _nz(rec.get("fact_index")),
                 _nz(rec.get("prompt_id")),
                 _nz(rec.get("prompt_variant")),
                 rec.get("layer"),
@@ -427,6 +435,8 @@ def write_raw_lens_full_csv(records: List[Dict[str, Any]], csv_filepath: str) ->
             lineterminator="\n",
         )
         header = [
+            "fact_key",
+            "fact_index",
             "prompt_id",
             "prompt_variant",
             "layer",
@@ -461,6 +471,8 @@ def write_raw_lens_full_csv(records: List[Dict[str, Any]], csv_filepath: str) ->
 
         for rec in records:
             row = [
+                _nz(rec.get("fact_key")),
+                _nz(rec.get("fact_index")),
                 rec.get("prompt_id", ""),
                 rec.get("prompt_variant", ""),
                 rec.get("layer"),

@@ -47,15 +47,14 @@ def test_csv_writers_headers_and_rows():
         with open(records_path, newline='', encoding='utf-8') as f:
             rows = list(csv.reader(f))
         header = rows[0]
-        expected_len = 2 + 5 + 2 * top_k + 1  # prompt_id + prompt_variant + (layer,pos,token,entropy,entropy_bits) + topk + rest
+        expected_len = 4 + 5 + 2 * top_k + 1  # fact_key,fact_index + prompt_id,prompt_variant + (layer,pos,token,entropy,entropy_bits) + topk + rest
         assert len(header) == expected_len
-        assert header[0] == "prompt_id"
-        assert header[1] == "prompt_variant"
-        assert header[2:7] == ["layer", "pos", "token", "entropy", "entropy_bits"]
+        assert header[0:4] == ["fact_key", "fact_index", "prompt_id", "prompt_variant"]
+        assert header[4:9] == ["layer", "pos", "token", "entropy", "entropy_bits"]
         assert header[-1] == "rest_mass"
         for r in rows[1:]:
             assert len(r) == expected_len
-            float(r[6])
+            float(r[8])
             rest = float(r[-1])
             assert 0.0 <= rest <= 1.0
 
@@ -63,10 +62,13 @@ def test_csv_writers_headers_and_rows():
             rows = list(csv.reader(f))
         header = rows[0]
         copy_cols = json_data["copy_flag_columns"]
-        expected_len = 7 + 2*top_k + 2 + len(copy_cols) + 27
+        expected_len = 9 + 2*top_k + 2 + len(copy_cols) + 27
         assert len(header) == expected_len
-        assert header[5] == "entropy"
-        assert header[6] == "entropy_bits"
+        assert header[:5] == ["fact_key", "fact_index", "prompt_id", "prompt_variant", "layer"]
+        assert header[5] == "pos"
+        assert header[6] == "token"
+        assert header[7] == "entropy"
+        assert header[8] == "entropy_bits"
         rest_idx = header.index("rest_mass")
         assert header[rest_idx:rest_idx + 2 + len(copy_cols)] == ["rest_mass", "copy_collapse", *copy_cols]
         tail = header[-27:]
@@ -104,7 +106,7 @@ def test_csv_writers_headers_and_rows():
             assert len(r) == expected_len
             rest = float(r[rest_idx])
             assert 0.0 <= rest <= 1.0
-            float(r[6])  # entropy_bits should be numeric
+            float(r[8])  # entropy_bits should be numeric
 
 
 def test_write_tuned_variants_csv_headers(tmp_path):

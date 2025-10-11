@@ -2,6 +2,7 @@ from transformer_lens import HookedTransformer
 import torch
 import torch.nn as nn
 from datetime import datetime
+import math
 import os
 import sys
 import json
@@ -35,6 +36,17 @@ TOP_K_VERBOSE = 20  # number of tokens to record for verbose slots and answer po
 
 # Layer-by-layer prediction analysis with LayerNorm lens correction
 # Toggle USE_NORM_LENS for raw vs normalized residual stream analysis
+
+PROMPT_TEMPLATE_ORIG = "Give the city name only, plain text. The capital of {country} is called simply"
+PROMPT_TEMPLATE_NO_FILLER = "Give the city name only, plain text. The capital of {country} is called"
+
+FACTS_MICRO_SUITE = [
+    {"fact_key": "Germany→Berlin", "country": "Germany", "capital": "Berlin"},
+    {"fact_key": "France→Paris", "country": "France", "capital": "Paris"},
+    {"fact_key": "Italy→Rome", "country": "Italy", "capital": "Rome"},
+    {"fact_key": "Japan→Tokyo", "country": "Japan", "capital": "Tokyo"},
+    {"fact_key": "Canada→Ottawa", "country": "Canada", "capital": "Ottawa"},
+]
 
 from models import CANDIDATE_MODELS
 
@@ -379,9 +391,28 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             prism_error = str(e)
             if prism_mode == "on":
                 raise RuntimeError(f"Prism mode=on but artifacts unavailable/incompatible: {e}")
+        facts_micro_suite = FACTS_MICRO_SUITE
+        micro_suite_results: List[Dict[str, Any]] = []
+
+        baseline_fact = facts_micro_suite[0]
+        baseline_fact_key = baseline_fact["fact_key"]
+        baseline_country = baseline_fact["country"]
+        baseline_capital = baseline_fact["capital"]
+        context_prompt = PROMPT_TEMPLATE_ORIG.format(country=baseline_country)
+        ground_truth = baseline_capital
+        context_prompt_nf = PROMPT_TEMPLATE_NO_FILLER.format(country=baseline_country)
+        context_prompt_ctl = "Give the city name only, plain text. The capital of France is called simply"
+        control_ground_truth = "Paris"
+
         # Collect data for JSON output
         json_data = {
-            "prompt": {"type": "prompt", "context_prompt": context_prompt, "ground_truth": ground_truth},
+            "prompt": {
+                "type": "prompt",
+                "context_prompt": context_prompt,
+                "ground_truth": ground_truth,
+                "fact_key": baseline_fact_key,
+                "fact_index": 0,
+            },
             "records": [],
             "pure_next_token_records": [],
             "test_prompts": [],
@@ -392,6 +423,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             # Raw-vs-Norm sanity block (001_LAYERS_BASELINE_PLAN §1.4)
             "raw_lens_check": init_raw_lens_check(RAW_LENS_MODE),
         }
+        json_data.setdefault("prompts", {})["facts_micro_suite"] = [fact["fact_key"] for fact in facts_micro_suite]
         try:
             cudnn_version = torch.backends.cudnn.version() if torch.backends.cudnn.is_available() else None
         except Exception:
@@ -557,60 +589,68 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             diag["copy_mask"] = copy_mask_info
 
         # Residual accessor now shared in layers_core.hooks.get_residual_safely
+        def resolve_gold(prompt: str, answer: str) -> Dict[str, Any]:
+            info = compute_gold_answer_info(getattr(model, 'tokenizer', None), prompt, answer, pieces_k=4)
+            if info.get("status") == "ok":
+                return info
+            tokenizer = getattr(model, 'tokenizer', None)
+            if tokenizer is not None:
+                try:
+                    ctx_ids_try = tokenizer(prompt, add_special_tokens=False)["input_ids"]
+                    ctx_ans_ws_try = tokenizer(prompt + " " + answer, add_special_tokens=False)["input_ids"]
+                    ctx_ans_ns_try = tokenizer(prompt + answer, add_special_tokens=False)["input_ids"]
+                    info = compute_gold_answer_info_from_sequences(
+                        ctx_ids_try,
+                        ctx_ans_ws_try,
+                        ctx_ans_ns_try,
+                        pieces_k=4,
+                        convert_ids_to_tokens=getattr(tokenizer, 'convert_ids_to_tokens', None),
+                        decode_id=decode_id,
+                        answer_str=answer,
+                    )
+                    if info.get("status") == "ok":
+                        return info
+                except (KeyError, AttributeError, ValueError, TypeError) as exc:
+                    print(f"Warning: tokenizer-based gold alignment failed for prompt '{prompt}': {exc}")
+            try:
+                ctx_ids_try = model.to_tokens(prompt)[0].tolist()
+                ctx_ans_ws_try = model.to_tokens(prompt + " " + answer)[0].tolist()
+                ctx_ans_ns_try = model.to_tokens(prompt + answer)[0].tolist()
+                info = compute_gold_answer_info_from_sequences(
+                    ctx_ids_try,
+                    ctx_ans_ws_try,
+                    ctx_ans_ns_try,
+                    pieces_k=4,
+                    convert_ids_to_tokens=getattr(getattr(model, 'tokenizer', None), 'convert_ids_to_tokens', None),
+                    decode_id=decode_id if hasattr(model, 'tokenizer') else None,
+                    answer_str=answer,
+                )
+                if info.get("status") == "ok":
+                    return info
+            except (KeyError, AttributeError, ValueError, TypeError) as exc:
+                print(f"Warning: TL tokens fallback for gold alignment failed for prompt '{prompt}': {exc}")
+            return {
+                "string": answer,
+                "status": "unresolved",
+                "variant": "unknown",
+                "first_id": None,
+                "pieces": [],
+                "answer_ids": [],
+                "ctx_ids": [],
+                "ctx_len": 0,
+            }
 
         
         # Tokenize the context prompt (without "Answer:" to avoid teacher-forcing)
         tokens = model.to_tokens(context_prompt)      # let Accelerate move it
 
         # Gold-token alignment (001_LAYERS_BASELINE_PLAN §1.7): prefer tokenizer path
-        gold_info = compute_gold_answer_info(getattr(model, 'tokenizer', None), context_prompt, ground_truth, pieces_k=4)
-
-        if gold_info.get("status") != "ok":
-            # Fallback: construct sequences explicitly
-            try:
-                ctx_ids_try = model.tokenizer(context_prompt, add_special_tokens=False)["input_ids"]
-                ctx_ans_ws_try = model.tokenizer(context_prompt + " " + ground_truth, add_special_tokens=False)["input_ids"]
-                ctx_ans_ns_try = model.tokenizer(context_prompt + ground_truth, add_special_tokens=False)["input_ids"]
-                convert = getattr(model.tokenizer, 'convert_ids_to_tokens', None)
-                gold_info = compute_gold_answer_info_from_sequences(
-                    ctx_ids_try, ctx_ans_ws_try, ctx_ans_ns_try,
-                    pieces_k=4,
-                    convert_ids_to_tokens=convert,
-                    decode_id=decode_id,
-                    answer_str=ground_truth,
-                )
-            except (KeyError, AttributeError, ValueError, TypeError) as e:
-                print(f"Warning: tokenizer-based gold alignment failed; trying TL tokens fallback: {e}")
-                try:
-                    ctx_ids_try = model.to_tokens(context_prompt)[0].tolist()
-                    ctx_ans_ws_try = model.to_tokens(context_prompt + " " + ground_truth)[0].tolist()
-                    ctx_ans_ns_try = model.to_tokens(context_prompt + ground_truth)[0].tolist()
-                    dec = decode_id if hasattr(model, 'tokenizer') else None
-                    gold_info = compute_gold_answer_info_from_sequences(
-                        ctx_ids_try, ctx_ans_ws_try, ctx_ans_ns_try,
-                        pieces_k=4,
-                        convert_ids_to_tokens=getattr(getattr(model, 'tokenizer', None), 'convert_ids_to_tokens', None),
-                        decode_id=dec,
-                        answer_str=ground_truth,
-                    )
-                except (KeyError, AttributeError, ValueError, TypeError) as e2:
-                    print(f"Warning: TL tokens fallback for gold alignment failed: {e2}")
-                    gold_info = {
-                        "string": ground_truth,
-                        "status": "unresolved",
-                        "variant": "unknown",
-                        "first_id": None,
-                        "pieces": [],
-                        "answer_ids": [],
-                        "ctx_ids": [],
-                        "ctx_len": 0,
-                    }
-                except Exception as e2:
-                    print(f"Unexpected error during gold alignment fallbacks: {e2}")
-                    raise
+        gold_info = resolve_gold(context_prompt, ground_truth)
 
         # Provide ctx ids for copy detector and first answer id for metrics
         primary_alignment_entry = build_gold_alignment_entry("pos", "orig", gold_info)
+        primary_alignment_entry["fact_key"] = baseline_fact_key
+        primary_alignment_entry["fact_index"] = 0
         gold_alignment_entries.append(primary_alignment_entry)
         ctx_ids = gold_info.get("ctx_ids", [])
         first_ans_id = gold_info.get("first_id", None)
@@ -645,6 +685,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 print(f"Unexpected error during control gold alignment: {e}")
                 raise
         control_alignment_entry = build_gold_alignment_entry("ctl", "orig", gold_info_ctl)
+        control_alignment_entry["fact_key"] = None
+        control_alignment_entry["fact_index"] = None
         gold_alignment_entries.append(control_alignment_entry)
         ctx_ids_ctl = gold_info_ctl.get("ctx_ids", [])
         first_ans_id_ctl = gold_info_ctl.get("first_id", None)
@@ -746,8 +788,15 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     tuned_spec=tuned_spec,
                     norm_temp_taus=norm_temp_taus,
                     copy_strict_thresholds=copy_strict_tau_list,
+                    fact_key=baseline_fact_key,
+                    fact_index=0,
                 )
                 diag.update(pass_summary)
+                micro_suite_results.append({
+                    "fact_key": baseline_fact_key,
+                    "fact_index": 0,
+                    "pass_summary": pass_summary,
+                })
                 semantic_margin_info = pass_summary.get("semantic_margin") or {}
                 if diag.get("L_semantic") is not None:
                     margin_flag = semantic_margin_info.get("margin_ok_at_L_semantic_norm")
@@ -904,6 +953,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     "ctx_len": 0,
                 }
         nf_alignment_entry = build_gold_alignment_entry("pos", "no_filler", gold_info_nf)
+        nf_alignment_entry["fact_key"] = baseline_fact_key
+        nf_alignment_entry["fact_index"] = 0
         gold_alignment_entries.append(nf_alignment_entry)
         ctx_ids_nf = gold_info_nf.get("ctx_ids", [])
         first_ans_id_nf = gold_info_nf.get("first_id", None)
@@ -944,6 +995,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     tuned_spec=tuned_spec,
                     norm_temp_taus=norm_temp_taus,
                     copy_strict_thresholds=copy_strict_tau_list,
+                    fact_key=baseline_fact_key,
+                    fact_index=0,
                 )
         try:
             if isinstance(diag.get("prism_summary"), dict) and isinstance(prism_diag_nf, dict) and prism_diag_nf.get("placement_error"):
@@ -960,6 +1013,122 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             "delta_L_copy": (None if (L_copy_orig is None or L_copy_nf is None) else (L_copy_nf - L_copy_orig)),
             "delta_L_sem": (None if (L_sem_orig is None or L_sem_nf is None) else (L_sem_nf - L_sem_orig)),
         }
+
+        # ---------------- Additional micro-suite facts (orig + no-filler) ---------------
+        for fact_index, fact in enumerate(facts_micro_suite[1:], start=1):
+            fact_key = fact["fact_key"]
+            fact_country = fact["country"]
+            fact_capital = fact["capital"]
+
+            fact_prompt = PROMPT_TEMPLATE_ORIG.format(country=fact_country)
+            fact_prompt_nf = PROMPT_TEMPLATE_NO_FILLER.format(country=fact_country)
+
+            gold_info_fact = resolve_gold(fact_prompt, fact_capital)
+            fact_alignment_entry = build_gold_alignment_entry("pos", "orig", gold_info_fact)
+            fact_alignment_entry["fact_key"] = fact_key
+            fact_alignment_entry["fact_index"] = fact_index
+            gold_alignment_entries.append(fact_alignment_entry)
+            ctx_ids_fact = gold_info_fact.get("ctx_ids", [])
+            first_ans_id_fact = gold_info_fact.get("first_id")
+
+            prism_ctx = PrismContext(stats=prism_stats, Q=prism_Q, active=prism_active)
+            pass_summary_fact, _, _, prism_diag_fact = run_prompt_pass(
+                model=model,
+                context_prompt=fact_prompt,
+                ground_truth=fact_capital,
+                prompt_id="pos",
+                prompt_variant="orig",
+                window_manager=window_mgr,
+                norm_lens=norm_lens,
+                unembed_ctx=unembed_ctx,
+                copy_threshold=config.copy_threshold,
+                copy_margin=config.copy_margin,
+                entropy_collapse_threshold=getattr(config, 'entropy_collapse_threshold', 1.0),
+                top_k_record=TOP_K_RECORD,
+                top_k_verbose=TOP_K_VERBOSE,
+                keep_residuals=config.keep_residuals,
+                out_dir=config.out_dir,
+                copy_soft_threshold=copy_soft_threshold,
+                copy_soft_window_ks=copy_soft_window_ks,
+                copy_strict_label=copy_strict_label,
+                copy_soft_labels=copy_soft_labels,
+                copy_soft_extra_labels=copy_soft_extra_labels,
+                RAW_LENS_MODE=RAW_LENS_MODE,
+                json_data=json_data,
+                json_data_prism=json_data_prism,
+                prism_ctx=prism_ctx,
+                decode_id_fn=decode_id,
+                ctx_ids_list=ctx_ids_fact,
+                first_ans_token_id=first_ans_id_fact,
+                important_words=IMPORTANT_WORDS,
+                head_scale_cfg=head_scale_cfg,
+                head_softcap_cfg=head_softcap_cfg,
+                clean_model_name=clean_model_name(model_id),
+                enable_raw_lens_sampling=True,
+                tuned_spec=tuned_spec,
+                norm_temp_taus=norm_temp_taus,
+                copy_strict_thresholds=copy_strict_tau_list,
+                fact_key=fact_key,
+                fact_index=fact_index,
+            )
+            micro_suite_results.append({
+                "fact_key": fact_key,
+                "fact_index": fact_index,
+                "pass_summary": pass_summary_fact,
+            })
+            if isinstance(diag.get("prism_summary"), dict) and isinstance(prism_diag_fact, dict) and prism_diag_fact.get("placement_error"):
+                diag.setdefault("prism_summary", {}).setdefault("placement_error_micro", {})[fact_key] = prism_diag_fact["placement_error"]
+
+            gold_info_fact_nf = resolve_gold(fact_prompt_nf, fact_capital)
+            fact_nf_entry = build_gold_alignment_entry("pos", "no_filler", gold_info_fact_nf)
+            fact_nf_entry["fact_key"] = fact_key
+            fact_nf_entry["fact_index"] = fact_index
+            gold_alignment_entries.append(fact_nf_entry)
+            ctx_ids_fact_nf = gold_info_fact_nf.get("ctx_ids", [])
+            first_ans_id_fact_nf = gold_info_fact_nf.get("first_id")
+
+            prism_ctx_nf = PrismContext(stats=prism_stats, Q=prism_Q, active=prism_active)
+            _pass_summary_fact_nf, _, _, prism_diag_fact_nf = run_prompt_pass(
+                model=model,
+                context_prompt=fact_prompt_nf,
+                ground_truth=fact_capital,
+                prompt_id="pos",
+                prompt_variant="no_filler",
+                window_manager=window_mgr,
+                norm_lens=norm_lens,
+                unembed_ctx=unembed_ctx,
+                copy_threshold=config.copy_threshold,
+                copy_margin=config.copy_margin,
+                entropy_collapse_threshold=getattr(config, 'entropy_collapse_threshold', 1.0),
+                top_k_record=TOP_K_RECORD,
+                top_k_verbose=TOP_K_VERBOSE,
+                keep_residuals=False,
+                out_dir=config.out_dir,
+                copy_soft_threshold=copy_soft_threshold,
+                copy_soft_window_ks=copy_soft_window_ks,
+                copy_strict_label=copy_strict_label,
+                copy_soft_labels=copy_soft_labels,
+                copy_soft_extra_labels=copy_soft_extra_labels,
+                RAW_LENS_MODE=RAW_LENS_MODE,
+                json_data=json_data,
+                json_data_prism=json_data_prism,
+                prism_ctx=prism_ctx_nf,
+                decode_id_fn=decode_id,
+                ctx_ids_list=ctx_ids_fact_nf,
+                first_ans_token_id=first_ans_id_fact_nf,
+                important_words=IMPORTANT_WORDS,
+                head_scale_cfg=head_scale_cfg,
+                head_softcap_cfg=head_softcap_cfg,
+                clean_model_name=clean_model_name(model_id),
+                enable_raw_lens_sampling=False,
+                tuned_spec=tuned_spec,
+                norm_temp_taus=norm_temp_taus,
+                copy_strict_thresholds=copy_strict_tau_list,
+                fact_key=fact_key,
+                fact_index=fact_index,
+            )
+            if isinstance(diag.get("prism_summary"), dict) and isinstance(prism_diag_fact_nf, dict) and prism_diag_fact_nf.get("placement_error"):
+                diag.setdefault("prism_summary", {}).setdefault("placement_error_micro", {})[f"{fact_key}:no_filler"] = prism_diag_fact_nf["placement_error"]
 
         # ---------------- Control pass (001_LAYERS_BASELINE_PLAN §1.8) --------------------
         prism_ctx = PrismContext(stats=prism_stats, Q=prism_Q, active=prism_active)
@@ -1000,6 +1169,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     tuned_spec=tuned_spec,
                     norm_temp_taus=norm_temp_taus,
                     copy_strict_thresholds=copy_strict_tau_list,
+                    fact_key=None,
+                    fact_index=None,
                 )
         try:
             if isinstance(diag.get("prism_summary"), dict) and isinstance(prism_diag_ctl, dict) and prism_diag_ctl.get("placement_error"):
@@ -1077,6 +1248,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     alt_label="prism",
                     prompt_id="pos",
                     prompt_variant="orig",
+                    fact_index=0,
                 )
                 try:
                     diag.setdefault("prism_summary", {})["metrics"] = metrics_prism
@@ -1100,6 +1272,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     alt_label="tuned",
                     prompt_id="pos",
                     prompt_variant="orig",
+                    fact_index=0,
                 )
         except Exception:
             tuned_metrics = None
@@ -1137,8 +1310,20 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             # Attribution and prefer_tuned gate (001_LAYERS_BASELINE_PLAN §1.26)
             try:
                 attr = tuned_rotation_vs_temp_attribution(
-                    baseline_records=[r for r in json_data.get("pure_next_token_records", []) if r.get("prompt_id") == "pos" and r.get("prompt_variant") == "orig"],
-                    tuned_records=[r for r in tuned_records if r.get("prompt_id") == "pos" and r.get("prompt_variant") == "orig"],
+                    baseline_records=[
+                        r
+                        for r in json_data.get("pure_next_token_records", [])
+                        if r.get("prompt_id") == "pos"
+                        and r.get("prompt_variant") == "orig"
+                        and (r.get("fact_index") in (None, 0))
+                    ],
+                    tuned_records=[
+                        r
+                        for r in tuned_records
+                        if r.get("prompt_id") == "pos"
+                        and r.get("prompt_variant") == "orig"
+                        and (r.get("fact_index") in (None, 0))
+                    ],
                     n_layers=int(model.cfg.n_layers),
                 )
                 tuned_block["attribution"] = attr
@@ -1184,9 +1369,27 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         try:
             L_norm = diag.get("L_semantic")
             conf = compute_confirmed_semantics(
-                baseline_records=[r for r in json_data.get("pure_next_token_records", []) if r.get("prompt_id") == "pos" and r.get("prompt_variant") == "orig"],
-                raw_full_rows=[r for r in json_data.get("raw_lens_full_records", []) if r.get("prompt_id") == "pos" and r.get("prompt_variant") == "orig"],
-                tuned_records=[r for r in ((json_data_tuned or {}).get("pure_next_token_records", [])) if r.get("prompt_id") == "pos" and r.get("prompt_variant") == "orig"],
+                baseline_records=[
+                    r
+                    for r in json_data.get("pure_next_token_records", [])
+                    if r.get("prompt_id") == "pos"
+                    and r.get("prompt_variant") == "orig"
+                    and (r.get("fact_index") in (None, 0))
+                ],
+                raw_full_rows=[
+                    r
+                    for r in json_data.get("raw_lens_full_records", [])
+                    if r.get("prompt_id") == "pos"
+                    and r.get("prompt_variant") == "orig"
+                    and (r.get("fact_index") in (None, 0))
+                ],
+                tuned_records=[
+                    r
+                    for r in ((json_data_tuned or {}).get("pure_next_token_records", []))
+                    if r.get("prompt_id") == "pos"
+                    and r.get("prompt_variant") == "orig"
+                    and (r.get("fact_index") in (None, 0))
+                ],
                 L_semantic_norm=L_norm,
                 delta_window=2,
             )
@@ -1234,6 +1437,206 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 diag.setdefault("raw_lens_full", {})["score_error"] = str(e)
             except Exception:
                 pass
+
+        # ---------------- Micro-suite aggregation (001_LAYERS_BASELINE_PLAN §1.46) ---
+        pure_records_all = json_data.get("pure_next_token_records", [])
+
+        def _as_int(val: Any) -> Optional[int]:
+            try:
+                if val is None:
+                    return None
+                return int(val)
+            except (TypeError, ValueError):
+                return None
+
+        def _median(values: List[float]) -> Optional[float]:
+            if not values:
+                return None
+            vals = sorted(values)
+            n = len(vals)
+            mid = n // 2
+            if n % 2 == 1:
+                return vals[mid]
+            return (vals[mid - 1] + vals[mid]) / 2.0
+
+        def _percentile(values: List[float], pct: float) -> Optional[float]:
+            if not values:
+                return None
+            if len(values) == 1:
+                return values[0]
+            pct = max(0.0, min(1.0, pct))
+            rank = pct * (len(values) - 1)
+            low = int(math.floor(rank))
+            high = int(math.ceil(rank))
+            if low == high:
+                return values[low]
+            frac = rank - low
+            return values[low] * (1.0 - frac) + values[high] * frac
+
+        def _matches_fact(rec: Dict[str, Any], fact_idx: int, fact_key: str) -> bool:
+            rec_idx = _as_int(rec.get("fact_index"))
+            rec_key = rec.get("fact_key")
+            if rec_idx is None:
+                if fact_idx == 0:
+                    return rec_key in (None, fact_key)
+                return False
+            return rec_idx == fact_idx
+
+        def _row_index_for(fact_idx: int, fact_key: str, layer_val: Optional[int]) -> Optional[int]:
+            if layer_val is None:
+                return None
+            for idx, rec in enumerate(pure_records_all):
+                if rec.get("prompt_id") != "pos" or rec.get("prompt_variant") != "orig":
+                    continue
+                try:
+                    rec_layer = int(rec.get("layer"))
+                except (TypeError, ValueError):
+                    continue
+                if rec_layer != layer_val:
+                    continue
+                if _matches_fact(rec, fact_idx, fact_key):
+                    return idx
+            return None
+
+        results_by_index = {entry.get("fact_index"): entry for entry in micro_suite_results}
+        micro_suite_facts_payload: List[Dict[str, Any]] = []
+        copy_strict_samples: List[int] = []
+        copy_soft_k1_samples: List[int] = []
+        sem_norm_samples: List[int] = []
+        sem_confirmed_samples: List[int] = []
+        sem_margin_ok_samples: List[int] = []
+        delta_hat_samples: List[float] = []
+        missing_semantics = 0
+
+        for idx, fact in enumerate(facts_micro_suite):
+            entry = results_by_index.get(idx)
+            if not entry:
+                missing_semantics += 1
+                micro_suite_facts_payload.append({
+                    "fact_key": fact["fact_key"],
+                    "fact_index": idx,
+                    "L_copy_strict": None,
+                    "L_copy_soft_k1": None,
+                    "L_semantic_norm": None,
+                    "L_semantic_confirmed": None,
+                    "L_semantic_margin_ok_norm": None,
+                    "delta_hat": None,
+                    "row_index": None,
+                })
+                continue
+
+            summary = entry.get("pass_summary") or {}
+            fact_key = entry.get("fact_key", fact["fact_key"])
+            fact_index = entry.get("fact_index", idx)
+
+            L_copy_strict = _as_int(summary.get("L_copy"))
+            copy_soft_block = ((summary.get("copy_detector") or {}).get("soft") or {}).get("L_copy_soft", {}) or {}
+            L_copy_soft_k1 = _as_int(copy_soft_block.get("k1"))
+            L_semantic_norm = _as_int(summary.get("L_semantic"))
+            margin_block = summary.get("semantic_margin") or {}
+            L_semantic_margin_ok = _as_int(margin_block.get("L_semantic_margin_ok_norm"))
+
+            if fact_index == 0:
+                confirmed_block = diag.get("confirmed_semantics") or {}
+                L_semantic_confirmed = _as_int(confirmed_block.get("L_semantic_confirmed"))
+            else:
+                L_semantic_confirmed = None
+
+            earliest_soft = None
+            for val in copy_soft_block.values():
+                candidate = _as_int(val)
+                if candidate is None:
+                    continue
+                if earliest_soft is None or candidate < earliest_soft:
+                    earliest_soft = candidate
+
+            base_copy_layer = L_copy_strict if L_copy_strict is not None else earliest_soft
+            delta_hat = None
+            if (
+                L_semantic_norm is not None
+                and base_copy_layer is not None
+                and isinstance(total_layers, int)
+                and total_layers > 0
+            ):
+                delta_hat = float(L_semantic_norm - base_copy_layer) / float(total_layers)
+
+            row_index = _row_index_for(fact_index, fact_key, L_semantic_norm)
+
+            micro_suite_facts_payload.append({
+                "fact_key": fact_key,
+                "fact_index": fact_index,
+                "L_copy_strict": L_copy_strict,
+                "L_copy_soft_k1": L_copy_soft_k1,
+                "L_semantic_norm": L_semantic_norm,
+                "L_semantic_confirmed": L_semantic_confirmed,
+                "L_semantic_margin_ok_norm": L_semantic_margin_ok,
+                "delta_hat": delta_hat,
+                "row_index": row_index,
+            })
+
+            if L_copy_strict is not None:
+                copy_strict_samples.append(L_copy_strict)
+            if L_copy_soft_k1 is not None:
+                copy_soft_k1_samples.append(L_copy_soft_k1)
+            if L_semantic_norm is not None:
+                sem_norm_samples.append(L_semantic_norm)
+            else:
+                missing_semantics += 1
+            if L_semantic_confirmed is not None:
+                sem_confirmed_samples.append(L_semantic_confirmed)
+            if L_semantic_margin_ok is not None:
+                sem_margin_ok_samples.append(L_semantic_margin_ok)
+            if delta_hat is not None:
+                delta_hat_samples.append(delta_hat)
+
+        sem_norm_sorted = sorted(sem_norm_samples)
+        L_semantic_norm_iqr = [
+            _percentile(sem_norm_sorted, 0.25),
+            _percentile(sem_norm_sorted, 0.75),
+        ] if sem_norm_sorted else [None, None]
+
+        def _to_int(value: Optional[float]) -> Optional[int]:
+            if value is None:
+                return None
+            try:
+                return int(round(value))
+            except (TypeError, ValueError):
+                return None
+
+        micro_suite_summary = {
+            "n": len(facts_micro_suite),
+            "L_copy_strict_median": _to_int(_median(copy_strict_samples)),
+            "L_copy_soft_k1_median": _to_int(_median(copy_soft_k1_samples)),
+            "L_semantic_norm_median": _to_int(_median(sem_norm_samples)),
+            "L_semantic_confirmed_median": _to_int(_median(sem_confirmed_samples)),
+            "L_semantic_margin_ok_norm_median": _to_int(_median(sem_margin_ok_samples)),
+            "delta_hat_median": None if not delta_hat_samples else round(_median(delta_hat_samples), 4),
+            "L_semantic_norm_iqr": [
+                _to_int(L_semantic_norm_iqr[0]),
+                _to_int(L_semantic_norm_iqr[1]),
+            ],
+            "n_missing": missing_semantics,
+            "notes": "control is France→Paris; other positives do not add new controls",
+        }
+
+        micro_suite_citations = {
+            "fact_rows": {
+                fact_entry["fact_key"]: fact_entry.get("row_index")
+                for fact_entry in micro_suite_facts_payload
+                if fact_entry.get("fact_key")
+            }
+        }
+
+        diag["micro_suite"] = {
+            "facts": micro_suite_facts_payload,
+            "aggregates": micro_suite_summary,
+            "citations": micro_suite_citations,
+        }
+        json_data.setdefault("summary", {})["micro_suite"] = micro_suite_summary
+        json_data["micro_suite"] = {
+            "facts": micro_suite_facts_payload,
+            "aggregates": micro_suite_summary,
+        }
 
         if not env_info.get("deterministic_algorithms", True):
             diag_flags["nondeterministic"] = True

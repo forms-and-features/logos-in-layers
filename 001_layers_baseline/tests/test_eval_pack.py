@@ -88,3 +88,60 @@ def test_build_evaluation_pack_minimal():
     assert milestones_rows[0]["layer"] == 0
     assert milestones_rows[1]["is_copy_soft_k"] in ("", 1)
     assert artifact_rows[0]["layer"] == "_summary"
+
+
+def test_build_evaluation_pack_micro_suite():
+    json_data = {
+        "pure_next_token_records": [
+            _pure_record(0, 20, 0.01, 4.0, 3.0),
+            _pure_record(1, 5, 0.10, 2.0, 2.5),
+            _pure_record(2, 1, 0.50, 0.8, 2.0),
+        ],
+        "raw_lens_full_records": [],
+    }
+    diag = {
+        "L_copy": 0,
+        "copy_detector": {"soft": {"L_copy_soft": {"k1": 1}}},
+        "L_semantic": 2,
+        "micro_suite": {
+            "facts": [
+                {
+                    "fact_key": "Germany→Berlin",
+                    "fact_index": 0,
+                    "L_copy_strict": 10,
+                    "L_copy_soft_k1": 10,
+                    "L_semantic_norm": 25,
+                    "L_semantic_confirmed": 25,
+                    "L_semantic_margin_ok_norm": 25,
+                    "delta_hat": 0.2,
+                    "row_index": 1,
+                }
+            ],
+            "aggregates": {
+                "L_semantic_confirmed_median": 25,
+                "delta_hat_median": 0.2,
+                "n_missing": 0,
+                "n": 1,
+            },
+            "citations": {"fact_rows": {"Germany→Berlin": 1}},
+        },
+        "raw_lens_full": {},
+        "repeatability": {},
+    }
+    pack, _, _ = build_evaluation_pack(
+        model_name="MicroTest",
+        n_layers=4,
+        json_data=json_data,
+        json_data_tuned=None,
+        diag=diag,
+        measurement_guidance={},
+        tuned_audit_summary={},
+        tuned_audit_data=None,
+        clean_name="MicroTest",
+    )
+    assert "micro_suite" in pack
+    ms = pack["micro_suite"]
+    assert ms["facts"][0]["fact_key"] == "Germany→Berlin"
+    assert ms["aggregates"]["L_semantic_confirmed_median"] == 25
+    assert ms["aggregates"]["delta_hat_median"] == 0.2
+    assert ms["citations"]["fact_rows"]["Germany→Berlin"] == 1

@@ -419,13 +419,26 @@ def summarize_pure_records(
 from typing import Tuple
 
 
-def _filter_pure_records(records: List[Dict[str, Any]], *, prompt_id: str, prompt_variant: str) -> List[Dict[str, Any]]:
+def _filter_pure_records(
+    records: List[Dict[str, Any]], *, prompt_id: str, prompt_variant: str, fact_index: Optional[int] = None
+) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for rec in records or []:
         if rec.get("prompt_id") != prompt_id:
             continue
         if rec.get("prompt_variant") != prompt_variant:
             continue
+        if fact_index is not None:
+            rec_idx = rec.get("fact_index")
+            if rec_idx is None:
+                if fact_index != 0:
+                    continue
+            else:
+                try:
+                    if int(rec_idx) != fact_index:
+                        continue
+                except Exception:
+                    continue
         if not isinstance(rec.get("layer"), int):
             continue
         out.append(rec)
@@ -500,6 +513,7 @@ def build_unified_lens_metrics(
     alt_label: str,
     prompt_id: str = "pos",
     prompt_variant: str = "orig",
+    fact_index: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Compute unified sidecar metrics for a lens vs baseline (001_LAYERS_BASELINE_PLAN §1.21).
 
@@ -508,8 +522,18 @@ def build_unified_lens_metrics(
     `alt_label` (e.g., "prism" or "tuned").
     """
     # Filter to the primary prompt/variant
-    base = _filter_pure_records(baseline_records, prompt_id=prompt_id, prompt_variant=prompt_variant)
-    alt = _filter_pure_records(alt_records or [], prompt_id=prompt_id, prompt_variant=prompt_variant)
+    base = _filter_pure_records(
+        baseline_records,
+        prompt_id=prompt_id,
+        prompt_variant=prompt_variant,
+        fact_index=fact_index,
+    )
+    alt = _filter_pure_records(
+        alt_records or [],
+        prompt_id=prompt_id,
+        prompt_variant=prompt_variant,
+        fact_index=fact_index,
+    )
 
     # Rank milestones
     rm_b = _rank_milestones(base)

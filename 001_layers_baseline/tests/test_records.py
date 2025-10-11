@@ -14,6 +14,7 @@ def test_make_record_schema_and_topk():
         entropy=2.0,
         top_tokens=toks,
         top_probs=probs,
+        extra={"fact_key": "Germany→Berlin", "fact_index": 0},
     )
     assert rec["type"] == "record"
     assert rec["prompt_id"] == "pos"
@@ -21,6 +22,8 @@ def test_make_record_schema_and_topk():
     assert rec["layer"] == 1 and rec["pos"] == 0
     assert rec["token"] == "Hello" and rec["entropy"] == 2.0
     assert rec["topk"] == [["A", 0.5], ["B", 0.3], ["C", 0.2]]
+    assert rec["fact_key"] == "Germany→Berlin"
+    assert rec["fact_index"] == 0
 
 
 def test_make_pure_record_includes_extra():
@@ -29,7 +32,7 @@ def test_make_pure_record_includes_extra():
         def __init__(self, v): self.v=v
         def item(self): return self.v
     probs = [P(0.8), P(0.1)]
-    extra = {"copy_collapse": True, "answer_rank": 3}
+    extra = {"copy_collapse": True, "answer_rank": 3, "fact_key": "Germany→Berlin", "fact_index": 0}
     rec = make_pure_record(
         prompt_id="pos",
         prompt_variant="orig",
@@ -44,4 +47,5 @@ def test_make_pure_record_includes_extra():
     assert rec["type"] == "pure_next_token_record"
     assert rec["topk"] == [["X", 0.8], ["Y", 0.1]]
     assert rec["copy_collapse"] is True and rec["answer_rank"] == 3
-
+    assert rec["fact_key"] == "Germany→Berlin"
+    assert rec["fact_index"] == 0

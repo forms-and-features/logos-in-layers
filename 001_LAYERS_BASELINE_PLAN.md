@@ -1490,7 +1490,7 @@ Embed constants under `diagnostics.surface_diagnostics_config.semantic_margin = 
 
 ---
 
-### [ ] 1.46. Minimal **micro‑suite of isomorphic facts** (N=5) for robustness
+### [x] 1.46. Minimal **micro‑suite of isomorphic facts** (N=5) for robustness
 
 **Why.**
 Single‑fact probing is brittle w.r.t. tokenization quirks and idiosyncratic memorization. A **tiny** suite of equally trivial facts yields variance/median estimates of collapse and semantics depths **within** a model, improving reliability without expanding conceptual scope.
@@ -1556,11 +1556,10 @@ Run the same measurement pass over **five** positive prompts (same template), ke
    }
    ```
 
-5. **Defaults & cost.**
-   Enabled by default (`--facts-micro-suite on`). To disable (e.g., for very large models), use `--facts-micro-suite off` or `LOGOS_FACTS_MICRO_SUITE=off`. No schema breakage for existing columns; added identifiers are leading columns.
-
 **Scope discipline.**
 No new concepts, prompts remain capital‑facts; the micro‑suite only multiplies the **same** measurement to obtain robust medians/variances.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

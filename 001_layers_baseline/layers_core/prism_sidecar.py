@@ -20,6 +20,7 @@ def append_prism_record(
     logits_pos: torch.Tensor,
     decode_id_fn,
     top_k: int,
+    extra: Optional[Dict[str, Any]] = None,
 ) -> None:
     probs = torch.softmax(logits_pos, dim=0)
     # Use the shared helper for entropy in bits to match baseline numerics
@@ -36,6 +37,7 @@ def append_prism_record(
         entropy=ent_bits,
         top_tokens=top_tokens,
         top_probs=top_probs,
+        extra=extra,
     )
     buf.setdefault("records", []).append(rec)
 
@@ -67,6 +69,7 @@ def append_prism_pure_next_token(
     control_ids: Optional[Tuple[Optional[int], Optional[int]]] = None,
     p_uniform: Optional[float] = None,
     semantic_margin_delta: float = 0.002,
+    extra: Optional[Dict[str, Any]] = None,
 ) -> None:
     flag_labels = [copy_strict_label] + [copy_soft_labels.get(int(k)) for k in copy_soft_window_ks if copy_soft_labels.get(int(k))]
     flag_labels.extend(copy_soft_extra_labels.values())
@@ -103,6 +106,8 @@ def append_prism_pure_next_token(
         p_uniform=p_uniform,
         semantic_margin_delta=semantic_margin_delta,
     )
+    combined_extra = dict(extra or {})
+    combined_extra.update(view["record_extra"])
     rec = make_pure_record(
         prompt_id=prompt_id,
         prompt_variant=prompt_variant,
@@ -112,6 +117,6 @@ def append_prism_pure_next_token(
         entropy=view["entropy_bits"],
         top_tokens=view["top_tokens"],
         top_probs=view["top_probs"],
-        extra=view["record_extra"],
+        extra=combined_extra,
     )
     buf.setdefault("pure_next_token_records", []).append(rec)

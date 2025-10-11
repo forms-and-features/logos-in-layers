@@ -8,12 +8,30 @@ def _filter_records(
     *,
     prompt_id: str = "pos",
     prompt_variant: str = "orig",
+    fact_index: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     return [
         rec
         for rec in records
         if rec.get("prompt_id") == prompt_id and rec.get("prompt_variant") == prompt_variant
+        and (
+            fact_index is None
+            or (
+                rec.get("fact_index") is None and fact_index == 0
+            )
+            or (
+                rec.get("fact_index") is not None
+                and _matches_int(rec.get("fact_index"), fact_index)
+            )
+        )
     ]
+
+
+def _matches_int(value: Any, target: int) -> bool:
+    try:
+        return int(value) == int(target)
+    except Exception:
+        return False
 
 
 def _layer_row_map(records: List[Dict[str, Any]]) -> Dict[int, int]:
@@ -238,9 +256,15 @@ def build_evaluation_pack(
     tuned_audit_data: Optional[Dict[str, Any]],
     clean_name: str,
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]], List[Dict[str, Any]]]:
-    pure_norm_records = _filter_records(json_data.get("pure_next_token_records", []))
+    pure_norm_records = _filter_records(
+        json_data.get("pure_next_token_records", []),
+        fact_index=0,
+    )
     layer_to_row = _layer_row_map(pure_norm_records)
-    raw_full_records = _filter_records(json_data.get("raw_lens_full_records", []))
+    raw_full_records = _filter_records(
+        json_data.get("raw_lens_full_records", []),
+        fact_index=0,
+    )
 
     mg = measurement_guidance or {}
     preferred_lens = mg.get("preferred_lens_for_reporting") or "norm"
@@ -376,6 +400,39 @@ def build_evaluation_pack(
         artifact_summary=artifact_summary if isinstance(artifact_summary, dict) else {},
         raw_full_rows=raw_full_records,
     )
+
+    micro_diag = diag.get("micro_suite") if isinstance(diag, dict) else None
+    if isinstance(micro_diag, dict):
+        diag_facts = micro_diag.get("facts") or []
+        diag_aggs = micro_diag.get("aggregates") or {}
+        diag_citations = (micro_diag.get("citations") or {}).get("fact_rows") or {}
+        fact_entries: List[Dict[str, Any]] = []
+        for fact_entry in diag_facts:
+            if not isinstance(fact_entry, dict):
+                continue
+            fact_entries.append(
+                {
+                    "fact_key": fact_entry.get("fact_key"),
+                    "fact_index": fact_entry.get("fact_index"),
+                    "L_copy_strict": fact_entry.get("L_copy_strict"),
+                    "L_semantic_norm": fact_entry.get("L_semantic_norm"),
+                    "L_semantic_confirmed": fact_entry.get("L_semantic_confirmed"),
+                    "L_semantic_margin_ok_norm": fact_entry.get("L_semantic_margin_ok_norm"),
+                    "delta_hat": fact_entry.get("delta_hat"),
+                }
+            )
+        pack["micro_suite"] = {
+            "facts": fact_entries,
+            "aggregates": {
+                "L_semantic_confirmed_median": diag_aggs.get("L_semantic_confirmed_median"),
+                "delta_hat_median": diag_aggs.get("delta_hat_median"),
+                "n_missing": diag_aggs.get("n_missing"),
+                "n": diag_aggs.get("n"),
+            },
+            "citations": {
+                "fact_rows": diag_citations,
+            },
+        }
 
     return pack, milestone_rows, artifact_rows
 

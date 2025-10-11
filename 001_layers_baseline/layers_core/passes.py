@@ -82,6 +82,8 @@ def run_prompt_pass(
     norm_temp_taus: Optional[Sequence[Optional[float]]] = None,
     copy_strict_thresholds: Optional[Sequence[float]] = None,
     enable_repeatability_check: bool = True,
+    fact_key: Optional[str] = None,
+    fact_index: Optional[int] = None,
 ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], str, Dict[str, Any]]:
     """Run a single prompt pass and append outputs into json_data structures.
 
@@ -177,6 +179,10 @@ def run_prompt_pass(
         "max_abs_logit": [],
         "min_prob": [],
         "layers_flagged": [],
+    }
+    fact_extra: Dict[str, Any] = {
+        "fact_key": fact_key,
+        "fact_index": fact_index,
     }
 
     def _norm_effect_metrics(raw_vec: torch.Tensor | None, norm_vec: torch.Tensor | None):
@@ -506,6 +512,7 @@ def run_prompt_pass(
                     entropy=entropy_bits,
                     top_tokens=top_tokens_k,
                     top_probs=top_probs_k,
+                    extra=fact_extra,
                 )
                 json_data["records"].append(rec)
                 # Emit Prism per-position record at L0 for sidecar parity
@@ -520,6 +527,7 @@ def run_prompt_pass(
                         logits_pos=prism_logits_all_L0[pos],
                         decode_id_fn=decode_id_fn,
                         top_k=k_eff,
+                        extra=fact_extra,
                     )
 
                 if tuned_logits_all_L0 is not None and tuned_json_data is not None and tuned_window_manager is not None:
@@ -539,6 +547,7 @@ def run_prompt_pass(
                             entropy=tuned_entropy_bits,
                             top_tokens=tuned_top_tokens,
                             top_probs=tuned_top_probs,
+                            extra=fact_extra,
                         )
                     )
 
@@ -581,6 +590,8 @@ def run_prompt_pass(
                 p_uniform=p_uniform,
                 semantic_margin_delta=SEMANTIC_MARGIN_DELTA,
             )
+            combined_extra = dict(fact_extra)
+            combined_extra.update(view["record_extra"])
             json_data["pure_next_token_records"].append(
                 make_pure_record(
                     prompt_id=prompt_id,
@@ -591,7 +602,7 @@ def run_prompt_pass(
                     entropy=view["entropy_bits"],
                     top_tokens=view["top_tokens"],
                     top_probs=view["top_probs"],
-                    extra=view["record_extra"],
+                    extra=combined_extra,
                 )
             )
             collected_pure_records.append(collected)
@@ -635,6 +646,8 @@ def run_prompt_pass(
                     copy_strict_thresholds=(),
                     bias_tensor=unembed_ctx.b,
                 )
+                tuned_extra = dict(fact_extra)
+                tuned_extra.update(tuned_view["record_extra"])
                 tuned_json_data["pure_next_token_records"].append(
                     make_pure_record(
                         prompt_id=prompt_id,
@@ -645,7 +658,7 @@ def run_prompt_pass(
                         entropy=tuned_view["entropy_bits"],
                         top_tokens=tuned_view["top_tokens"],
                         top_probs=tuned_view["top_probs"],
-                        extra=tuned_view["record_extra"],
+                        extra=tuned_extra,
                     )
                 )
                 tuned_collected_records.append(tuned_collected)
@@ -693,6 +706,7 @@ def run_prompt_pass(
                     control_ids=control_ids,
                     p_uniform=p_uniform,
                     semantic_margin_delta=SEMANTIC_MARGIN_DELTA,
+                    extra=fact_extra,
                 )
 
             # Save residual if requested. Behavior-preserving policy:
@@ -876,6 +890,7 @@ def run_prompt_pass(
                             entropy=entropy_bits,
                             top_tokens=top_tokens_k,
                             top_probs=top_probs_k,
+                            extra=fact_extra,
                         )
                     )
                     if prism_logits_all is not None:
@@ -889,6 +904,7 @@ def run_prompt_pass(
                             logits_pos=prism_logits_all[pos],
                             decode_id_fn=decode_id_fn,
                             top_k=k_eff,
+                            extra=fact_extra,
                         )
 
                     if tuned_logits_all is not None and tuned_json_data is not None and tuned_window_manager is not None:
@@ -908,6 +924,7 @@ def run_prompt_pass(
                                 entropy=tuned_entropy_bits,
                                 top_tokens=tuned_top_tokens,
                                 top_probs=tuned_top_probs,
+                                extra=fact_extra,
                             )
                         )
 
@@ -989,6 +1006,8 @@ def run_prompt_pass(
                     p_uniform=p_uniform,
                     semantic_margin_delta=SEMANTIC_MARGIN_DELTA,
                 )
+                layer_extra = dict(fact_extra)
+                layer_extra.update(view["record_extra"])
                 json_data["pure_next_token_records"].append(
                     make_pure_record(
                         prompt_id=prompt_id,
@@ -999,7 +1018,7 @@ def run_prompt_pass(
                         entropy=view["entropy_bits"],
                         top_tokens=view["top_tokens"],
                         top_probs=view["top_probs"],
-                        extra=view["record_extra"],
+                        extra=layer_extra,
                     )
                 )
                 collected_pure_records.append(collected)
@@ -1044,6 +1063,8 @@ def run_prompt_pass(
                         p_uniform=p_uniform,
                         semantic_margin_delta=SEMANTIC_MARGIN_DELTA,
                     )
+                    tuned_layer_extra = dict(fact_extra)
+                    tuned_layer_extra.update(tuned_view["record_extra"])
                     tuned_json_data["pure_next_token_records"].append(
                         make_pure_record(
                             prompt_id=prompt_id,
@@ -1054,7 +1075,7 @@ def run_prompt_pass(
                             entropy=tuned_view["entropy_bits"],
                             top_tokens=tuned_view["top_tokens"],
                             top_probs=tuned_view["top_probs"],
-                            extra=tuned_view["record_extra"],
+                            extra=tuned_layer_extra,
                         )
                     )
                     tuned_collected_records.append(tuned_collected)
@@ -1169,11 +1190,12 @@ def run_prompt_pass(
                         ground_truth=ground_truth,
                         top_k_record=top_k_record,
                         prompt_id=prompt_id,
-                        prompt_variant=prompt_variant,
-                        control_ids=control_ids,
-                        p_uniform=p_uniform,
-                        semantic_margin_delta=SEMANTIC_MARGIN_DELTA,
-                    )
+                    prompt_variant=prompt_variant,
+                    control_ids=control_ids,
+                    p_uniform=p_uniform,
+                    semantic_margin_delta=SEMANTIC_MARGIN_DELTA,
+                    extra=fact_extra,
+                )
 
                 # Optional raw-vs-norm sample
                 if enable_raw_lens_sampling and RAW_LENS_MODE != "off" and _should_sample(layer + 1):
@@ -1303,6 +1325,8 @@ def run_prompt_pass(
             if window_summary:
                 summary_diag["raw_lens_window"] = window_summary
             if window_records:
+                for row in window_records:
+                    row.update(fact_extra)
                 json_data.setdefault("raw_lens_window_records", []).extend(window_records)
 
             # Full dual-lens sweep across all available layers (001_LAYERS_BASELINE_PLAN §1.24)
@@ -1326,6 +1350,8 @@ def run_prompt_pass(
                 if full_summary:
                     summary_diag["raw_lens_full"] = full_summary
                 if full_rows:
+                    for row in full_rows:
+                        row.update(fact_extra)
                     json_data.setdefault("raw_lens_full_records", []).extend(full_rows)
                     overlap_info = (full_summary or {}).get("topk_overlap") or {}
                     per_layer_cross = overlap_info.get("per_layer_raw_norm") or {}
