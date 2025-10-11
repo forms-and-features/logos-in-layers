@@ -1619,6 +1619,24 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             "notes": "control is France→Paris; other positives do not add new controls",
         }
 
+        # Mirror semantic-margin diagnostics into the run summary (§1.45)
+        semantic_margin_summary = diag.get("semantic_margin")
+        if isinstance(semantic_margin_summary, dict):
+            summary_block = {
+                key: semantic_margin_summary.get(key)
+                for key in (
+                    "delta_abs",
+                    "p_uniform",
+                    "L_semantic_margin_ok_norm",
+                    "margin_ok_at_L_semantic_norm",
+                    "p_answer_at_L_semantic_norm",
+                    "L_semantic_confirmed_margin_ok_norm",
+                )
+            }
+            if "L_semantic_confirmed_margin_ok_norm" not in semantic_margin_summary:
+                summary_block.pop("L_semantic_confirmed_margin_ok_norm", None)
+            json_data.setdefault("summary", {})["semantic_margin"] = summary_block
+
         micro_suite_citations = {
             "fact_rows": {
                 fact_entry["fact_key"]: fact_entry.get("row_index")
