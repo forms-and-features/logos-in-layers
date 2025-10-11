@@ -12,7 +12,8 @@ INPUTS
   * measurement_guidance { prefer_ranks, suppress_abs_probs, reasons[], preferred_lens_for_reporting?, use_confirmed_semantics? }
   * tuned_lens.audit_summary (if present): rotation_vs_temperature, positional, head_mismatch, tuned_is_calibration_only, preferred_semantics_lens_hint
   * evaluation_pack (if present): milestones, artifact (…v2), repeatability, alignment, norm_trajectory, entropy, tuned_audit, citations
-  * summary.semantic_margin { delta_abs, p_uniform, L_semantic_margin_ok_norm, margin_ok_at_L_semantic_norm, p_answer_at_L_semantic_norm, L_semantic_confirmed_margin_ok_norm? }
+  * summary.semantic_margin { `delta_abs`, `p_uniform`, `L_semantic_margin_ok_norm`, `margin_ok_at_L_semantic_norm`, `p_answer_at_L_semantic_norm`, `L_semantic_confirmed_margin_ok_norm`? }
+  * summary.micro_suite (if present): medians/IQR, `n_missing`, notes about the fact battery
   * evaluation_pack.micro_suite (if present): per‑fact milestones, aggregates (medians/IQR), and citations to CSV rows
 - CSV – layer‑level results (one per model):
   * output-<MODEL>-records.csv
@@ -24,12 +25,13 @@ INPUTS
     coverage (`topk_prompt_mass@50`),
     control (`control_margin`),
     entropy (`entropy_bits`) and teacher entropy (`teacher_entropy_bits`) for drift.
+    Leading columns now include `fact_key`, `fact_index`, `prompt_id` (`pos`/`ctl`), and `prompt_variant` (`orig`/`no_filler`).
 - CSV – Optional sidecars per model:
   * Prism: output-<MODEL>-records-prism.csv; output-<MODEL>-pure-next-token-prism.csv
   * Tuned‑Lens: output-<MODEL>-records-tuned.csv; output-<MODEL>-pure-next-token-tuned.csv
-  * Raw‑vs‑Norm (window): output-<MODEL>-pure-next-token-rawlens-window.csv
+  * Raw‑vs‑Norm (window): output-<MODEL>-pure-next-token-rawlens-window.csv (includes `fact_key`/`fact_index` for each prompt)
   * Raw‑vs‑Norm (full): output-<MODEL>-pure-next-token-rawlens.csv
-    (Augmented per §1.37–1.38 with: js_divergence, kl_raw_to_norm_bits, l1_prob_diff, topk_jaccard_raw_norm@50)
+    (Augmented per §1.37–1.38 with: js_divergence, kl_raw_to_norm_bits, l1_prob_diff, topk_jaccard_raw_norm@50; leading columns include `fact_key`/`fact_index`)
   * Tuned‑variants (component ablations): output-<MODEL>-pure-next-token-tuned-variants.csv  (full tuned / rotation‑only / temperature‑only)
   * Tuned positions audit: output-<MODEL>-positions-tuned-audit.csv
   * Milestones (quick citation): output-<MODEL>-milestones.csv
@@ -53,6 +55,7 @@ Also honor `measurement_guidance`:
 - If `prefer_ranks = true` or `suppress_abs_probs = true`, lead with rank thresholds and avoid absolute probability claims except as within‑model qualitative trends.
 - Uniform‑margin gate: treat any `L_semantic_norm` with `margin_ok_at_L_semantic_norm=false` as **weak rank‑1 (near‑uniform)**. Prefer `L_semantic_confirmed_margin_ok_norm` when present. If neither exists, report the layer as tentative and avoid strong claims.
 - When `evaluation_pack.micro_suite` exists, use **medians** (and IQR when helpful) across facts for timing metrics (copy depth, semantic onset, Δ̂). Still cite at least one concrete row per model via the provided citations.
+- When `summary.micro_suite` or `evaluation_pack.micro_suite` exists, rely on the **medians/IQR** to discuss robustness and call out any large `n_missing`; highlight individual fact outliers only to explain deviations (cite the fact rows).
 - If `suppress_abs_probs=true` or artefact tier = high, do **not** quote numeric probabilities anywhere (including `p_answer`, `p_top1`). Use ranks/KL and qualitative phrasing (“higher/lower”) only.
 
 Gold‑token alignment caveat: Verify `gold_alignment` across models. For any model with `unresolved`, flag reduced comparability, rely on rank thresholds (`first_rank_le_{1,5,10}`), and avoid absolute probability claims. Stylistic ablation caveat: Filter depth summaries to `prompt_id = pos`, `prompt_variant = orig`. Compare `ΔL_sem`, `ΔL_copy`, and `ΔL_copy_soft[k]` (optionally normalized by `n_layers`); treat large positive shifts as stronger stylistic‑cue sensitivity and keep comparisons within-family when in doubt. When “top‑1” does not refer to the answer, label it as generic top‑1 (not `p_answer`), and include layer indices when citing any milestones (KL, cosine, rank, probabilities).
