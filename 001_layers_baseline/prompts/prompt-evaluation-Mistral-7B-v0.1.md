@@ -4,7 +4,7 @@ You are an interpretability researcher from a top AI research lab (e.g. OpenAI, 
 INPUTS
 
 * SCRIPT – source code of the probe’s script (for context).
-* JSON – 001_layers_baseline/run-latest/output-MODEL.json (compact summary; per‑token/per‑layer details live in CSVs).
+* JSON – 001_layers_baseline/run-latest/output-Mistral-7B-v0.1.json (compact summary; per‑token/per‑layer details live in CSVs).
   Read in particular:
   * `diagnostics.last_layer_consistency` (final‑head calibration)
   * `diagnostics.normalization_provenance`, `diagnostics.numeric_health`, `diagnostics.copy_mask`
@@ -29,18 +29,18 @@ INPUTS
   * `summary.micro_suite` (if present): medians/IQR, `n_missing`, notes describing the fact battery
   * evaluation_pack.micro_suite (if present): per‑fact milestones, aggregates (medians/IQR), and CSV row citations
 * CSV – layer‑level results:
-  * 001_layers_baseline/run-latest/output-MODEL-records.csv
-  * 001_layers_baseline/run-latest/output-MODEL-pure-next-token.csv
+  * 001_layers_baseline/run-latest/output-Mistral-7B-v0.1-records.csv
+  * 001_layers_baseline/run-latest/output-Mistral-7B-v0.1-pure-next-token.csv
   Includes: flags (`copy_collapse`, strict sweep `copy_strict@τ` with τ∈{0.70,0.80,0.90,0.95}, `copy_soft_k{1,2,3}@τ_soft`, `entropy_collapse`, `is_answer`), prob/calibration (`p_top1`, `p_top5`, `p_answer`, `answer_rank`, `kl_to_final_bits`), norm‑temp (`kl_to_final_bits_norm_temp`), geometry (`cos_to_final`, `cos_to_answer`, `cos_to_prompt_max`, `geom_crossover`), surface mass (`echo_mass_prompt`, `answer_mass`, `answer_minus_echo_mass`, `mass_ratio_ans_over_prompt`), coverage (`topk_prompt_mass@50`), control (`control_margin = p(Paris) − p(Berlin)`), and **entropy columns** (`entropy_bits`, `teacher_entropy_bits`). Leading columns now include `fact_key`, `fact_index`, `prompt_id` (`pos`/`ctl`), and `prompt_variant` (`orig`/`no_filler`).
 * Optional sidecars (if present):
-  * Prism: output-MODEL-records-prism.csv, output-MODEL-pure-next-token-prism.csv
-  * Tuned‑Lens: output-MODEL-records-tuned.csv, output-MODEL-pure-next-token-tuned.csv
-  * Raw‑vs‑Norm (window): output-MODEL-pure-next-token-rawlens-window.csv (includes `fact_key`/`fact_index` for each prompt)
-  * Raw‑vs‑Norm (full): output-MODEL-pure-next-token-rawlens.csv (augmented with: `js_divergence`, `kl_raw_to_norm_bits`, `l1_prob_diff`, `topk_jaccard_raw_norm@50`; leading columns include `fact_key`/`fact_index`)
-  * **Tuned variants**: output-MODEL-pure-next-token-tuned-variants.csv (full tuned / rotation‑only / temperature‑only)
-  * **Tuned positions audit**: output-MODEL-positions-tuned-audit.csv
-  * **Milestones (quick citation):** output-MODEL-milestones.csv (rows for L_copy/L_copy_soft/L_semantic/L_semantic_confirmed)
-  * **Artifact audit (quick scan):** output-MODEL-artifact-audit.csv
+  * Prism: output-Mistral-7B-v0.1-records-prism.csv, output-Mistral-7B-v0.1-pure-next-token-prism.csv
+  * Tuned‑Lens: output-Mistral-7B-v0.1-records-tuned.csv, output-Mistral-7B-v0.1-pure-next-token-tuned.csv
+  * Raw‑vs‑Norm (window): output-Mistral-7B-v0.1-pure-next-token-rawlens-window.csv (includes `fact_key`/`fact_index` for each prompt)
+  * Raw‑vs‑Norm (full): output-Mistral-7B-v0.1-pure-next-token-rawlens.csv (augmented with: `js_divergence`, `kl_raw_to_norm_bits`, `l1_prob_diff`, `topk_jaccard_raw_norm@50`; leading columns include `fact_key`/`fact_index`)
+  * **Tuned variants**: output-Mistral-7B-v0.1-pure-next-token-tuned-variants.csv (full tuned / rotation‑only / temperature‑only)
+  * **Tuned positions audit**: output-Mistral-7B-v0.1-positions-tuned-audit.csv
+  * **Milestones (quick citation):** output-Mistral-7B-v0.1-milestones.csv (rows for L_copy/L_copy_soft/L_semantic/L_semantic_confirmed)
+  * **Artifact audit (quick scan):** output-Mistral-7B-v0.1-artifact-audit.csv
   * If `evaluation_pack.citations` exists, use its row indices and filenames for line‑numbered quotes.
 
 Also use your own expertise in latest LLM research.

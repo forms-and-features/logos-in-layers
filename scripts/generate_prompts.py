@@ -30,9 +30,8 @@ def iter_model_ids():
 
 def build_prompt(template: str, model_id: str) -> str:
     # Replace MODEL placeholders with the model_id
-    # Only the 'output-MODEL' tokens appear in the template; replace conservatively.
     content = template.replace("output-MODEL", f"output-{model_id}")
-    content = template.replace("evaluation-MODEL", f"evaluation-{model_id}")
+    content = content.replace("evaluation-MODEL", f"evaluation-{model_id}")
     return content
 
 
