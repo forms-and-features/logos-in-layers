@@ -39,9 +39,11 @@ def summarize_pure_records(
         Dict[str, Any]: Collapse indices, KL/rank milestones, cosine milestones,
         surface/geom diagnostics, and normalized depth fractions where available.
     """
+    delta_top2_logit = 0.5
     L_copy: Optional[int] = None
     L_copy_H: Optional[int] = None
     L_sem: Optional[int] = None
+    L_semantic_top2_ok: Optional[int] = None
     soft_window_set = list(dict.fromkeys(int(k) for k in copy_soft_window_ks if int(k) > 0))
     if not soft_window_set:
         soft_window_set = [copy_window_k]
@@ -252,6 +254,24 @@ def summarize_pure_records(
     )
     for rec in ordered_records:
         L = rec.get("layer")
+        ar = rec.get("answer_rank")
+        gap_val = rec.get("answer_logit_gap")
+        try:
+            ar_int = None if ar is None else int(ar)
+        except (TypeError, ValueError):
+            ar_int = None
+        try:
+            gap_float: Optional[float] = None if gap_val is None else float(gap_val)
+        except (TypeError, ValueError):
+            gap_float = None
+        if (
+            L_semantic_top2_ok is None
+            and isinstance(L, int)
+            and ar_int == 1
+            and gap_float is not None
+            and gap_float >= delta_top2_logit
+        ):
+            L_semantic_top2_ok = L
         hits = rec.get("copy_strict_hits", {}) or {}
         for t in tau_list:
             key = f"{t:.2f}".rstrip('0').rstrip('.')
@@ -344,6 +364,7 @@ def summarize_pure_records(
     summary.setdefault("cos_milestones", {})[lens_key] = milestones
 
     # Normalized depth fractions (baseline lens only)
+    semantic_gate_frac: Optional[float] = None
     if lens_key == "norm" and n_layers and n_layers > 0:
         denom = float(n_layers)
 
@@ -369,12 +390,14 @@ def summarize_pure_records(
             depth_fractions[f"L_copy_soft_k{k}_frac"] = _frac(soft_layers_map.get(key))
 
         summary["depth_fractions"] = depth_fractions
+        semantic_gate_frac = _frac(L_semantic_top2_ok)
 
     sem_rec = records_by_layer.get(L_sem) if isinstance(L_sem, int) else None
     answer_minus_uniform_at_sem = None
     margin_ok_at_sem: Optional[bool] = None
     p_answer_at_sem: Optional[float] = None
     answer_rank_at_sem: Optional[int] = None
+    gap_at_L_semantic: Optional[float] = None
     if sem_rec is not None:
         if sem_rec.get("p_answer") is not None:
             try:
@@ -391,6 +414,12 @@ def summarize_pure_records(
                 answer_rank_at_sem = int(sem_rec.get("answer_rank"))
             except (TypeError, ValueError):
                 answer_rank_at_sem = None
+        gap_val_sem = sem_rec.get("answer_logit_gap")
+        if gap_val_sem is not None:
+            try:
+                gap_at_L_semantic = float(gap_val_sem)
+            except (TypeError, ValueError):
+                gap_at_L_semantic = None
         margin_flag = sem_rec.get("semantic_margin_ok")
         if margin_flag is None:
             margin_ok_at_sem = None
@@ -409,6 +438,12 @@ def summarize_pure_records(
         "L_semantic_margin_ok_norm": L_sem_margin_ok,
         "margin_ok_at_L_semantic_norm": margin_ok_at_sem,
         "p_answer_at_L_semantic_norm": p_answer_at_sem,
+    }
+    summary["semantic_gate"] = {
+        "delta_top2_logit": float(delta_top2_logit),
+        "L_semantic_top2_ok_norm": L_semantic_top2_ok,
+        "L_semantic_top2_ok_norm_frac": semantic_gate_frac,
+        "gap_at_L_semantic_norm": gap_at_L_semantic,
     }
 
     return summary

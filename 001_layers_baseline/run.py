@@ -363,6 +363,9 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 "semantic_margin": {
                     "delta_abs": 0.002,
                 },
+                "semantic_gate": {
+                    "delta_top2_logit": 0.5,
+                },
             },
             "answer_margin_unit": "logit",
         }
@@ -1636,6 +1639,18 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             if "L_semantic_confirmed_margin_ok_norm" not in semantic_margin_summary:
                 summary_block.pop("L_semantic_confirmed_margin_ok_norm", None)
             json_data.setdefault("summary", {})["semantic_margin"] = summary_block
+        semantic_gate_summary = diag.get("semantic_gate")
+        if isinstance(semantic_gate_summary, dict):
+            gate_block = {
+                key: semantic_gate_summary.get(key)
+                for key in (
+                    "delta_top2_logit",
+                    "L_semantic_top2_ok_norm",
+                    "L_semantic_top2_ok_norm_frac",
+                    "gap_at_L_semantic_norm",
+                )
+            }
+            json_data.setdefault("summary", {})["semantic_gate"] = gate_block
 
         micro_suite_citations = {
             "fact_rows": {

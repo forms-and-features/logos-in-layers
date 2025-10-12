@@ -1561,7 +1561,7 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 
 ✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
-### [ ] 1.47. **Top‑2 (runner‑up) margin gate for semantic onset**
+### [x] 1.47. **Top‑2 (runner‑up) margin gate for semantic onset**
 
 **Why.** Rank‑1 at small logit gaps can be transient and calibration‑driven, even when above‑uniform (§1.45). A **runner‑up (Top‑2) margin** ensures the answer decisively beats the second‑best token at the layer where semantics are claimed.
 
@@ -1592,6 +1592,8 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 2. Persist the fields above into `summary.semantic_gate`.
 3. No CSV schema changes; JSON only.
 4. Add `diagnostics.surface_diagnostics_config.semantic_gate = {"delta_top2_logit": 0.5}` for provenance.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

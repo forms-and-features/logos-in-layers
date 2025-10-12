@@ -21,6 +21,7 @@ def test_summarize_pure_records():
             "teacher_entropy_bits": 3.0,
             "answer_minus_uniform": -0.001,
             "semantic_margin_ok": False,
+            "answer_logit_gap": 0.05,
         },
         {
             "layer": 1,
@@ -35,6 +36,7 @@ def test_summarize_pure_records():
             "teacher_entropy_bits": 2.8,
             "answer_minus_uniform": -0.0005,
             "semantic_margin_ok": False,
+            "answer_logit_gap": 0.1,
         },
         {
             "layer": 2,
@@ -49,6 +51,7 @@ def test_summarize_pure_records():
             "teacher_entropy_bits": 2.7,
             "answer_minus_uniform": 0.0001,
             "semantic_margin_ok": False,
+            "answer_logit_gap": 0.2,
         },
         {
             "layer": 3,
@@ -64,6 +67,7 @@ def test_summarize_pure_records():
             "answer_minus_uniform": 0.01,
             "semantic_margin_ok": True,
             "p_answer": 0.012,
+            "answer_logit_gap": 0.6,
         },
     ]
 
@@ -125,3 +129,8 @@ def test_summarize_pure_records():
     assert sem_margin["L_semantic_margin_ok_norm"] == 3
     assert sem_margin["margin_ok_at_L_semantic_norm"] is True
     assert abs(sem_margin["p_answer_at_L_semantic_norm"] - 0.012) < 1e-9
+    semantic_gate = diag["semantic_gate"]
+    assert abs(semantic_gate["delta_top2_logit"] - 0.5) < 1e-9
+    assert semantic_gate["L_semantic_top2_ok_norm"] == 3
+    assert semantic_gate["L_semantic_top2_ok_norm_frac"] == 0.75
+    assert abs(semantic_gate["gap_at_L_semantic_norm"] - 0.6) < 1e-9
