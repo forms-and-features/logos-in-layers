@@ -13,6 +13,7 @@ INPUTS
   * tuned_lens.audit_summary (if present): rotation_vs_temperature, positional, head_mismatch, tuned_is_calibration_only, preferred_semantics_lens_hint
   * evaluation_pack (if present): milestones, artifact (…v2), repeatability, alignment, norm_trajectory, entropy, tuned_audit, citations
   * summary.semantic_margin { `delta_abs`, `p_uniform`, `L_semantic_margin_ok_norm`, `margin_ok_at_L_semantic_norm`, `p_answer_at_L_semantic_norm`, `L_semantic_confirmed_margin_ok_norm`? }
+  * summary.semantic_gate { delta_top2_logit, L_semantic_top2_ok_norm, L_semantic_top2_ok_norm_frac, gap_at_L_semantic_norm, L_semantic_run2, L_semantic_strong, L_semantic_strong_run2 }
   * summary.micro_suite (if present): medians/IQR, `n_missing`, notes about the fact battery
   * evaluation_pack.micro_suite (if present): per‑fact milestones, aggregates (medians/IQR), and citations to CSV rows
 - CSV – layer‑level results (one per model):
@@ -54,6 +55,8 @@ Normalization gate: If norm strategies differ across models (e.g., post_ln2 vs n
 Also honor `measurement_guidance`:
 - If `prefer_ranks = true` or `suppress_abs_probs = true`, lead with rank thresholds and avoid absolute probability claims except as within‑model qualitative trends.
 - Uniform‑margin gate: treat any `L_semantic_norm` with `margin_ok_at_L_semantic_norm=false` as **weak rank‑1 (near‑uniform)**. Prefer `L_semantic_confirmed_margin_ok_norm` when present. If neither exists, report the layer as tentative and avoid strong claims.
+- Top‑2 margin gate: treat any L_semantic_norm with answer_logit_gap(L_semantic_norm) < delta_top2_logit as **weak rank‑1**. Prefer L_semantic_top2_ok_norm when present; when both uniform‑ and Top‑2 gates pass and L_semantic_strong is present, prefer that.
+- Stability gate (run‑of‑two): when L_semantic_run2 (or L_semantic_strong_run2) exists, **prefer** it over single‑layer onsets. If absent, annotate one‑layer onsets as potentially unstable near lens transitions.
 - When `evaluation_pack.micro_suite` exists, use **medians** (and IQR when helpful) across facts for timing metrics (copy depth, semantic onset, Δ̂). Still cite at least one concrete row per model via the provided citations.
 - When `summary.micro_suite` or `evaluation_pack.micro_suite` exists, rely on the **medians/IQR** to discuss robustness and call out any large `n_missing`; highlight individual fact outliers only to explain deviations (cite the fact rows).
 - If `suppress_abs_probs=true` or artefact tier = high, do **not** quote numeric probabilities anywhere (including `p_answer`, `p_top1`). Use ranks/KL and qualitative phrasing (“higher/lower”) only.
@@ -69,7 +72,7 @@ Write concise but thorough paragraphs that correlate quantitative patterns acros
 
 1. Result synthesis
    Correlate quantitative patterns across models. Use:
-   - `first_rank_le_{10,5,1}` and `L_semantic_confirmed` (if present) for timing, **gated by** `summary.semantic_margin` (prefer the *_margin_ok_* variants when present).
+   - L_semantic_strong_run2 (if present), else L_semantic_strong, else L_semantic_confirmed, else first_rank_le_{10,5,1} (all normalized by depth); honor measurement_guidance
    - Δ̂ = (L_sem − L_copy_variant)/n_layers; if `evaluation_pack.micro_suite` exists, report **median Δ̂** across facts.
    - Tuned audit: `delta_kl_rot_{p25,p50,p75}` and `pos_ood_gap`; note `tuned_is_calibration_only`.
    - Head mismatch: `tau_star_modelcal` and before/after final‑KL.
@@ -77,12 +80,15 @@ Write concise but thorough paragraphs that correlate quantitative patterns acros
 2. Copy reflex (early layers 0–3)
    Use pure‑CSV flags: `copy_collapse` OR `copy_soft_k1@τ_soft`=True in layers 0–3 → mark “copy‑reflex”. Call out outliers. Normalize timing by depth.
 
+   Report control strength: if control_summary.first_control_strong_pos is present, flag lexical leakage as **strong**; otherwise treat positive control margins as weak calibration noise.
+
 3. Lens artefact risk
    Report:
    - From diagnostics.raw_lens_full and artifact‑audit CSV: `lens_artifact_score_v2` (and legacy score), `js_divergence_p50`, `l1_prob_diff_p50`, `jaccard_raw_norm_p50`, `pct_layers_kl_ge_1.0`, `n_norm_only_semantics_layers`, earliest norm‑only layer.
    - Risk tier (low/medium/high). For high tier, restrict to rank/KL milestones and confirmed semantics.
 
 4. Confirmed semantics
+   When available, report L_semantic_strong_run2 in preference to other milestones; otherwise prefer L_semantic_strong, then L_semantic_confirmed (noting any uniform/Top‑2 margin failures).
    If `summary.L_semantic_confirmed` exists, report its layer and `confirmed_source` (raw/tuned/both).
    If `summary.semantic_margin` exists, prefer `L_semantic_confirmed_margin_ok_norm` (or annotate `L_semantic_confirmed` as weak if the margin gate fails).
    If confirmed is absent, cite `L_semantic_norm`, explicitly noting when `margin_ok_at_L_semantic_norm=false`.

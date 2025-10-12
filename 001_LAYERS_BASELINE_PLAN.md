@@ -1561,6 +1561,102 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 
 ✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
+### [ ] 1.47. **Top‑2 (runner‑up) margin gate for semantic onset**
+
+**Why.** Rank‑1 at small logit gaps can be transient and calibration‑driven, even when above‑uniform (§1.45). A **runner‑up (Top‑2) margin** ensures the answer decisively beats the second‑best token at the layer where semantics are claimed.
+
+**What.** Add a **Top‑2 margin gate** and corresponding milestones:
+
+* **Per‑layer scalar (norm lens):** `answer_logit_gap = logit(answer) − logit(second_best)` (already computed in §1.35 for rank‑1 layers).
+* **Threshold:** `δ_top2_logit = 0.5` (logit units).
+* **Milestones (norm lens):**
+
+  * `L_semantic_top2_ok_norm` = first layer with `answer_rank==1` **and** `answer_logit_gap ≥ δ_top2_logit`.
+  * `L_semantic_top2_ok_norm_frac = L_semantic_top2_ok_norm / n_layers` (nullable).
+* **Roll‑up (JSON)** under a new block:
+
+```json
+"summary": {
+  "semantic_gate": {
+    "delta_top2_logit": 0.5,
+    "L_semantic_top2_ok_norm": null,
+    "L_semantic_top2_ok_norm_frac": null,
+    "gap_at_L_semantic_norm": null
+  }
+}
+```
+
+**How.**
+
+1. During the existing pure next‑token decode, the project already writes `answer_logit_gap` when `answer_rank==1` (§1.35). Reuse it to derive `L_semantic_top2_ok_norm` post‑sweep.
+2. Persist the fields above into `summary.semantic_gate`.
+3. No CSV schema changes; JSON only.
+4. Add `diagnostics.surface_diagnostics_config.semantic_gate = {"delta_top2_logit": 0.5}` for provenance.
+
+---
+
+### [ ] 1.48. **Stability gate (run‑of‑two) for semantic onset**
+
+**Why.** One‑layer rank‑1 “blips” can occur near lens transitions or temperature inflections. Requiring **two consecutive rank‑1 layers** improves robustness without extra forwards.
+
+**What.** Add **run‑length** gates and “strong” composites:
+
+* **Run‑of‑two milestone (norm lens):**
+  `L_semantic_run2 = min L s.t. answer_rank(L)==1 and answer_rank(L+1)==1`.
+* **Strong + stable (composite):**
+  `L_semantic_strong = first L where (answer_rank(L)==1) ∧ (answer_minus_uniform(L) ≥ δ_abs from §1.45) ∧ (answer_logit_gap(L) ≥ δ_top2_logit from §1.47)`.
+  `L_semantic_strong_run2 = min L s.t. L and L+1 both satisfy the **strong** criteria above.
+* **Optional corroboration window (advisory only; no new forwards):** if `L_semantic_confirmed` (§1.25) exists, report whether the 2‑layer band `[L, L+1]` overlaps the ±Δ window used there.
+
+**How.**
+
+1. Scan the existing per‑layer arrays of `answer_rank`, `answer_minus_uniform` (§1.45), and `answer_logit_gap` (§1.35).
+2. Write to JSON (all nullable when not satisfied):
+
+```json
+"summary": {
+  "semantic_gate": {
+    "L_semantic_run2": null,
+    "L_semantic_strong": null,
+    "L_semantic_strong_run2": null
+  }
+}
+```
+
+3. Add normalized depths in `summary.depth_fractions` for any non‑null of the above.
+4. No CSV schema changes.
+
+---
+
+### [ ] 1.49. **Control “strong” indicator (runner‑up margin on control prompt)**
+
+**Why.** A positive **control margin** (`p(Paris) − p(Berlin) > 0`) can be minuscule. Flagging **strong control**—where the control answer also decisively beats its runner‑up—helps separate harmless calibration wiggles from genuine lexical leakage.
+
+**What.**
+
+* **Per‑layer (control rows):** compute `control_top2_logit_gap = logit(Paris) − logit(second_best)` when `Paris` is top‑1 under the control prompt.
+* **Threshold:** `δ_top2_logit_ctl = 0.5` (logit units; reuse §1.47 if desired).
+* **Milestone & summary:**
+
+  * `first_control_strong_pos` = first control layer with `control_margin > 0` **and** `control_top2_logit_gap ≥ δ_top2_logit_ctl`.
+  * `max_control_top2_logit_gap` over control layers.
+  * JSON roll‑up:
+
+```json
+"control_summary": {
+  "first_control_margin_pos": null,
+  "max_control_margin": null,
+  "first_control_strong_pos": null,
+  "max_control_top2_logit_gap": null,
+  "delta_top2_logit_ctl": 0.5
+}
+```
+
+**How.**
+
+1. In the control pass (already present in §1.8), compute `control_top2_logit_gap` at layers where `Paris` is top‑1; track the earliest layer crossing both gates.
+2. Persist fields above; no CSV schema changes required.
+
 ---
 
 #### Wrap‑up
