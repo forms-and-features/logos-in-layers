@@ -44,6 +44,9 @@ def summarize_pure_records(
     L_copy_H: Optional[int] = None
     L_sem: Optional[int] = None
     L_semantic_top2_ok: Optional[int] = None
+    L_semantic_run2: Optional[int] = None
+    L_semantic_strong: Optional[int] = None
+    L_semantic_strong_run2: Optional[int] = None
     soft_window_set = list(dict.fromkeys(int(k) for k in copy_soft_window_ks if int(k) > 0))
     if not soft_window_set:
         soft_window_set = [copy_window_k]
@@ -82,6 +85,8 @@ def summarize_pure_records(
 
     records_by_layer: Dict[int, Dict[str, Any]] = {}
     L_sem_margin_ok: Optional[int] = None
+    rank1_flags: Dict[int, bool] = {}
+    strong_flags: Dict[int, bool] = {}
 
     for rec in pure_records:
         layer = rec.get("layer")
@@ -103,6 +108,40 @@ def summarize_pure_records(
                 if L_copy_soft[k] is None and rec["copy_soft_hits"].get(k):
                     L_copy_soft[k] = layer
 
+        # Convert answer_rank and related metrics once for reuse
+        try:
+            answer_rank_int: Optional[int] = None if rec.get("answer_rank") is None else int(rec.get("answer_rank"))
+        except (TypeError, ValueError):
+            answer_rank_int = None
+
+        answer_minus_uniform_val: Optional[float] = None
+        if rec.get("answer_minus_uniform") is not None:
+            try:
+                answer_minus_uniform_val = float(rec.get("answer_minus_uniform"))
+            except (TypeError, ValueError):
+                answer_minus_uniform_val = None
+
+        gap_float: Optional[float] = None
+        if rec.get("answer_logit_gap") is not None:
+            try:
+                gap_float = float(rec.get("answer_logit_gap"))
+            except (TypeError, ValueError):
+                gap_float = None
+
+        rank1_flag = bool(answer_rank_int == 1)
+        if isinstance(layer, int):
+            rank1_flags[layer] = rank1_flag
+            strong_flag = bool(
+                rank1_flag
+                and answer_minus_uniform_val is not None
+                and answer_minus_uniform_val >= float(semantic_margin_delta)
+                and gap_float is not None
+                and gap_float >= float(delta_top2_logit)
+            )
+            strong_flags[layer] = strong_flag
+            if L_semantic_strong is None and strong_flag:
+                L_semantic_strong = layer
+
         kl_bits = rec.get("kl_to_final_bits")
         if kl_bits is not None:
             if first_kl_below_0_5 is None and kl_bits <= 0.5:
@@ -110,13 +149,12 @@ def summarize_pure_records(
             if first_kl_below_1_0 is None and kl_bits <= 1.0:
                 first_kl_below_1_0 = layer
 
-        ar = rec.get("answer_rank")
-        if ar is not None:
-            if first_rank_le_1 is None and ar <= 1:
+        if answer_rank_int is not None:
+            if first_rank_le_1 is None and answer_rank_int <= 1:
                 first_rank_le_1 = layer
-            if first_rank_le_5 is None and ar <= 5:
+            if first_rank_le_5 is None and answer_rank_int <= 5:
                 first_rank_le_5 = layer
-            if first_rank_le_10 is None and ar <= 10:
+            if first_rank_le_10 is None and answer_rank_int <= 10:
                 first_rank_le_10 = layer
 
         # Surface mass crossover
@@ -155,16 +193,11 @@ def summarize_pure_records(
             L_topk_decay = layer
             topk_mass_at_L = tk
 
-        gap_top = rec.get("answer_logit_gap")
-        if gap_top is not None:
-            try:
-                gap_float = float(gap_top)
-                if first_gap_ge_0_5 is None and gap_float >= 0.5:
-                    first_gap_ge_0_5 = layer
-                if first_gap_ge_1_0 is None and gap_float >= 1.0:
-                    first_gap_ge_1_0 = layer
-            except (TypeError, ValueError):
-                pass
+        if gap_float is not None:
+            if first_gap_ge_0_5 is None and gap_float >= 0.5:
+                first_gap_ge_0_5 = layer
+            if first_gap_ge_1_0 is None and gap_float >= 1.0:
+                first_gap_ge_1_0 = layer
 
         ent_bits = rec.get("entropy_bits")
         teacher_bits = rec.get("teacher_entropy_bits")
@@ -173,6 +206,13 @@ def summarize_pure_records(
                 entropy_gaps.append(float(ent_bits) - float(teacher_bits))
             except (TypeError, ValueError):
                 pass
+
+    layers_sorted_for_runs = sorted(rank1_flags.keys())
+    for layer in layers_sorted_for_runs:
+        if L_semantic_run2 is None and rank1_flags.get(layer) and rank1_flags.get(layer + 1):
+            L_semantic_run2 = layer
+        if L_semantic_strong_run2 is None and strong_flags.get(layer) and strong_flags.get(layer + 1):
+            L_semantic_strong_run2 = layer
 
     delta_soft: Dict[int, Optional[int]] = {}
     for k, layer_idx in L_copy_soft.items():
@@ -389,6 +429,10 @@ def summarize_pure_records(
             key = f"k{k}"
             depth_fractions[f"L_copy_soft_k{k}_frac"] = _frac(soft_layers_map.get(key))
 
+        depth_fractions["L_semantic_run2_frac"] = _frac(L_semantic_run2)
+        depth_fractions["L_semantic_strong_frac"] = _frac(L_semantic_strong)
+        depth_fractions["L_semantic_strong_run2_frac"] = _frac(L_semantic_strong_run2)
+
         summary["depth_fractions"] = depth_fractions
         semantic_gate_frac = _frac(L_semantic_top2_ok)
 
@@ -445,6 +489,15 @@ def summarize_pure_records(
         "L_semantic_top2_ok_norm_frac": semantic_gate_frac,
         "gap_at_L_semantic_norm": gap_at_L_semantic,
     }
+    semantic_gate_block = summary["semantic_gate"]
+    semantic_gate_block.update(
+        {
+            "delta_abs": float(semantic_margin_delta),
+            "L_semantic_run2": L_semantic_run2,
+            "L_semantic_strong": L_semantic_strong,
+            "L_semantic_strong_run2": L_semantic_strong_run2,
+        }
+    )
 
     return summary
 

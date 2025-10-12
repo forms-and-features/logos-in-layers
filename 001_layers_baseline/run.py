@@ -1409,6 +1409,26 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         margin_block.setdefault("L_semantic_confirmed_margin_ok_norm", None)
                 except Exception:
                     pass
+            try:
+                gate_block = diag.setdefault("semantic_gate", {})
+                run2_layer = gate_block.get("L_semantic_run2")
+                delta_window = conf.get("Δ_window")
+                center_layer = conf.get("L_semantic_norm")
+                if (
+                    conf.get("L_semantic_confirmed") is not None
+                    and isinstance(run2_layer, int)
+                    and isinstance(delta_window, int)
+                    and isinstance(center_layer, int)
+                ):
+                    window_low = center_layer - delta_window
+                    window_high = center_layer + delta_window
+                    band_layers = (run2_layer, run2_layer + 1)
+                    overlaps = any(window_low <= layer <= window_high for layer in band_layers)
+                    gate_block["run2_overlaps_confirmed_window"] = bool(overlaps)
+                else:
+                    gate_block.setdefault("run2_overlaps_confirmed_window", None)
+            except Exception:
+                pass
         except Exception as e:
             try:
                 diag["confirmed_semantics_error"] = str(e)
@@ -1644,10 +1664,15 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             gate_block = {
                 key: semantic_gate_summary.get(key)
                 for key in (
+                    "delta_abs",
                     "delta_top2_logit",
                     "L_semantic_top2_ok_norm",
                     "L_semantic_top2_ok_norm_frac",
                     "gap_at_L_semantic_norm",
+                    "L_semantic_run2",
+                    "L_semantic_strong",
+                    "L_semantic_strong_run2",
+                    "run2_overlaps_confirmed_window",
                 )
             }
             json_data.setdefault("summary", {})["semantic_gate"] = gate_block

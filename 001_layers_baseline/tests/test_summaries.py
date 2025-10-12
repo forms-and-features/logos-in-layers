@@ -107,6 +107,9 @@ def test_summarize_pure_records():
     assert depth["L_copy_strict_frac"] == 0.25
     assert depth["L_copy_soft_k1_frac"] == 0.25
     assert depth["L_copy_soft_k2_frac"] == 0.5
+    assert depth["L_semantic_run2_frac"] is None
+    assert depth["L_semantic_strong_frac"] == 0.75
+    assert depth["L_semantic_strong_run2_frac"] is None
 
     # Threshold sweep block exists with expected structure
     ct = diag.get("copy_thresholds")
@@ -134,3 +137,7 @@ def test_summarize_pure_records():
     assert semantic_gate["L_semantic_top2_ok_norm"] == 3
     assert semantic_gate["L_semantic_top2_ok_norm_frac"] == 0.75
     assert abs(semantic_gate["gap_at_L_semantic_norm"] - 0.6) < 1e-9
+    assert abs(semantic_gate["delta_abs"] - 0.002) < 1e-9
+    assert semantic_gate["L_semantic_run2"] is None
+    assert semantic_gate["L_semantic_strong"] == 3
+    assert semantic_gate["L_semantic_strong_run2"] is None

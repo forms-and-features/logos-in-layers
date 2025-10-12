@@ -1597,7 +1597,7 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 
 ---
 
-### [ ] 1.48. **Stability gate (run‑of‑two) for semantic onset**
+### [x] 1.48. **Stability gate (run‑of‑two) for semantic onset**
 
 **Why.** One‑layer rank‑1 “blips” can occur near lens transitions or temperature inflections. Requiring **two consecutive rank‑1 layers** improves robustness without extra forwards.
 
@@ -1627,6 +1627,8 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 
 3. Add normalized depths in `summary.depth_fractions` for any non‑null of the above.
 4. No CSV schema changes.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 
