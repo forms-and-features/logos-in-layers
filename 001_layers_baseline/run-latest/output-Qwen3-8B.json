@@ -2,7 +2,9 @@
   "prompt": {
     "type": "prompt",
     "context_prompt": "Give the city name only, plain text. The capital of Germany is called simply",
-    "ground_truth": "Berlin"
+    "ground_truth": "Berlin",
+    "fact_key": "Germany→Berlin",
+    "fact_index": 0
   },
   "test_prompts": [
     {
@@ -820,7 +822,10 @@
       "delta": 0.05,
       "gamma": 0.02,
       "K": 50,
-      "tau": 0.33
+      "tau": 0.33,
+      "semantic_margin": {
+        "delta_abs": 0.002
+      }
     },
     "answer_margin_unit": "logit",
     "unembed_bias": {
@@ -7189,6 +7194,15 @@
       "L_copy_soft_k2_frac": null,
       "L_copy_soft_k3_frac": null
     },
+    "L_semantic_margin_ok": 31,
+    "semantic_margin": {
+      "delta_abs": 0.002,
+      "p_uniform": 6.581718618365627e-06,
+      "L_semantic_margin_ok_norm": 31,
+      "margin_ok_at_L_semantic_norm": true,
+      "p_answer_at_L_semantic_norm": 0.9359333515167236,
+      "L_semantic_confirmed_margin_ok_norm": 31
+    },
     "raw_lens_window": {
       "radius": 4,
       "center_layers": [
@@ -7958,7 +7972,9 @@
         "pieces": [
           "ĠBerlin"
         ],
-        "string": "Berlin"
+        "string": "Berlin",
+        "fact_key": "Germany→Berlin",
+        "fact_index": 0
       },
       {
         "prompt_id": "ctl",
@@ -7973,7 +7989,9 @@
         "pieces": [
           "ĠParis"
         ],
-        "string": "Paris"
+        "string": "Paris",
+        "fact_key": null,
+        "fact_index": null
       },
       {
         "prompt_id": "pos",
@@ -7988,7 +8006,145 @@
         "pieces": [
           "ĠBerlin"
         ],
-        "string": "Berlin"
+        "string": "Berlin",
+        "fact_key": "Germany→Berlin",
+        "fact_index": 0
+      },
+      {
+        "prompt_id": "pos",
+        "prompt_variant": "orig",
+        "ok": true,
+        "status": "ok",
+        "variant": "with_space",
+        "first_id": 12095,
+        "answer_ids": [
+          12095
+        ],
+        "pieces": [
+          "ĠParis"
+        ],
+        "string": "Paris",
+        "fact_key": "France→Paris",
+        "fact_index": 1
+      },
+      {
+        "prompt_id": "pos",
+        "prompt_variant": "no_filler",
+        "ok": true,
+        "status": "ok",
+        "variant": "with_space",
+        "first_id": 12095,
+        "answer_ids": [
+          12095
+        ],
+        "pieces": [
+          "ĠParis"
+        ],
+        "string": "Paris",
+        "fact_key": "France→Paris",
+        "fact_index": 1
+      },
+      {
+        "prompt_id": "pos",
+        "prompt_variant": "orig",
+        "ok": true,
+        "status": "ok",
+        "variant": "with_space",
+        "first_id": 21718,
+        "answer_ids": [
+          21718
+        ],
+        "pieces": [
+          "ĠRome"
+        ],
+        "string": "Rome",
+        "fact_key": "Italy→Rome",
+        "fact_index": 2
+      },
+      {
+        "prompt_id": "pos",
+        "prompt_variant": "no_filler",
+        "ok": true,
+        "status": "ok",
+        "variant": "with_space",
+        "first_id": 21718,
+        "answer_ids": [
+          21718
+        ],
+        "pieces": [
+          "ĠRome"
+        ],
+        "string": "Rome",
+        "fact_key": "Italy→Rome",
+        "fact_index": 2
+      },
+      {
+        "prompt_id": "pos",
+        "prompt_variant": "orig",
+        "ok": true,
+        "status": "ok",
+        "variant": "with_space",
+        "first_id": 26194,
+        "answer_ids": [
+          26194
+        ],
+        "pieces": [
+          "ĠTokyo"
+        ],
+        "string": "Tokyo",
+        "fact_key": "Japan→Tokyo",
+        "fact_index": 3
+      },
+      {
+        "prompt_id": "pos",
+        "prompt_variant": "no_filler",
+        "ok": true,
+        "status": "ok",
+        "variant": "with_space",
+        "first_id": 26194,
+        "answer_ids": [
+          26194
+        ],
+        "pieces": [
+          "ĠTokyo"
+        ],
+        "string": "Tokyo",
+        "fact_key": "Japan→Tokyo",
+        "fact_index": 3
+      },
+      {
+        "prompt_id": "pos",
+        "prompt_variant": "orig",
+        "ok": true,
+        "status": "ok",
+        "variant": "with_space",
+        "first_id": 32166,
+        "answer_ids": [
+          32166
+        ],
+        "pieces": [
+          "ĠOttawa"
+        ],
+        "string": "Ottawa",
+        "fact_key": "Canada→Ottawa",
+        "fact_index": 4
+      },
+      {
+        "prompt_id": "pos",
+        "prompt_variant": "no_filler",
+        "ok": true,
+        "status": "ok",
+        "variant": "with_space",
+        "first_id": 32166,
+        "answer_ids": [
+          32166
+        ],
+        "pieces": [
+          "ĠOttawa"
+        ],
+        "string": "Ottawa",
+        "fact_key": "Canada→Ottawa",
+        "fact_index": 4
       }
     ],
     "tuned_lens": {
@@ -8107,6 +8263,14 @@
               "ge_0.4": 36,
               "ge_0.6": 36
             }
+          },
+          "L_semantic_margin_ok": null,
+          "semantic_margin": {
+            "delta_abs": 0.002,
+            "p_uniform": 6.581718618365627e-06,
+            "L_semantic_margin_ok_norm": null,
+            "margin_ok_at_L_semantic_norm": true,
+            "p_answer_at_L_semantic_norm": 0.4173722267150879
           }
         },
         {
@@ -8220,6 +8384,14 @@
               "ge_0.4": 36,
               "ge_0.6": 36
             }
+          },
+          "L_semantic_margin_ok": null,
+          "semantic_margin": {
+            "delta_abs": 0.002,
+            "p_uniform": 6.581718618365627e-06,
+            "L_semantic_margin_ok_norm": null,
+            "margin_ok_at_L_semantic_norm": true,
+            "p_answer_at_L_semantic_norm": 0.9656817317008972
           }
         },
         {
@@ -8333,6 +8505,982 @@
               "ge_0.4": 36,
               "ge_0.6": 36
             }
+          },
+          "L_semantic_margin_ok": null,
+          "semantic_margin": {
+            "delta_abs": 0.002,
+            "p_uniform": 6.581718618365627e-06,
+            "L_semantic_margin_ok_norm": null,
+            "margin_ok_at_L_semantic_norm": true,
+            "p_answer_at_L_semantic_norm": 0.7138071060180664
+          }
+        },
+        {
+          "L_copy": null,
+          "L_copy_H": 32,
+          "L_semantic": 31,
+          "delta_layers": null,
+          "copy_thresh": 0.95,
+          "copy_window_k": 1,
+          "copy_match_level": "id_subsequence",
+          "first_kl_below_0.5": 36,
+          "first_kl_below_1.0": 32,
+          "first_rank_le_1": 31,
+          "first_rank_le_5": 30,
+          "first_rank_le_10": 30,
+          "copy_soft_threshold": 0.5,
+          "copy_soft_window_ks": [
+            1,
+            2,
+            3
+          ],
+          "L_copy_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "delta_layers_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "copy_detector": {
+            "strict": {
+              "thresh": 0.95,
+              "k": 1,
+              "L_copy_strict": null
+            },
+            "soft": {
+              "thresh": 0.5,
+              "window_ks": [
+                1,
+                2,
+                3
+              ],
+              "L_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            },
+            "deltas": {
+              "Δ_sem_minus_copy_strict": null,
+              "Δ_sem_minus_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            }
+          },
+          "answer_margin_thresholds": {
+            "gap_ge_0.5": null,
+            "gap_ge_1.0": null
+          },
+          "entropy_gap_bits_percentiles": {
+            "p25": -0.4799888774543164,
+            "p50": 7.756209786257232,
+            "p75": 8.672335799059356
+          },
+          "entropy_gap_samples": 36,
+          "copy_thresholds": {
+            "tau_list": [
+              0.7,
+              0.8,
+              0.9,
+              0.95
+            ],
+            "L_copy_strict": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "L_copy_strict_frac": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "norm_only_flags": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "stability": "none"
+          },
+          "L_surface_to_meaning_tuned": 30,
+          "answer_mass_at_L_surface_tuned": 0.09989447891712189,
+          "echo_mass_at_L_surface_tuned": 0.01739897235738974,
+          "L_geom_tuned": 31,
+          "cos_to_answer_at_L_geom_tuned": 0.12673208117485046,
+          "cos_to_prompt_max_at_L_geom_tuned": 0.09507779031991959,
+          "L_topk_decay_tuned": 1,
+          "topk_prompt_mass_at_L_tuned": 0.08635993581265211,
+          "topk_prompt_tau_tuned": 0.33,
+          "surface_delta_tuned": 0.05,
+          "geom_gamma_tuned": 0.02,
+          "cos_milestones": {
+            "tuned": {
+              "ge_0.2": 36,
+              "ge_0.4": 36,
+              "ge_0.6": 36
+            }
+          },
+          "L_semantic_margin_ok": null,
+          "semantic_margin": {
+            "delta_abs": 0.002,
+            "p_uniform": 6.581718618365627e-06,
+            "L_semantic_margin_ok_norm": null,
+            "margin_ok_at_L_semantic_norm": true,
+            "p_answer_at_L_semantic_norm": 0.7692141532897949
+          }
+        },
+        {
+          "L_copy": null,
+          "L_copy_H": 32,
+          "L_semantic": 32,
+          "delta_layers": null,
+          "copy_thresh": 0.95,
+          "copy_window_k": 1,
+          "copy_match_level": "id_subsequence",
+          "first_kl_below_0.5": 36,
+          "first_kl_below_1.0": 32,
+          "first_rank_le_1": 32,
+          "first_rank_le_5": 32,
+          "first_rank_le_10": 32,
+          "copy_soft_threshold": 0.5,
+          "copy_soft_window_ks": [
+            1,
+            2,
+            3
+          ],
+          "L_copy_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "delta_layers_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "copy_detector": {
+            "strict": {
+              "thresh": 0.95,
+              "k": 1,
+              "L_copy_strict": null
+            },
+            "soft": {
+              "thresh": 0.5,
+              "window_ks": [
+                1,
+                2,
+                3
+              ],
+              "L_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            },
+            "deltas": {
+              "Δ_sem_minus_copy_strict": null,
+              "Δ_sem_minus_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            }
+          },
+          "answer_margin_thresholds": {
+            "gap_ge_0.5": null,
+            "gap_ge_1.0": null
+          },
+          "entropy_gap_bits_percentiles": {
+            "p25": 1.0875648796337791,
+            "p50": 7.450453633047934,
+            "p75": 8.856767290808554
+          },
+          "entropy_gap_samples": 36,
+          "copy_thresholds": {
+            "tau_list": [
+              0.7,
+              0.8,
+              0.9,
+              0.95
+            ],
+            "L_copy_strict": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "L_copy_strict_frac": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "norm_only_flags": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "stability": "none"
+          },
+          "L_surface_to_meaning_tuned": 32,
+          "answer_mass_at_L_surface_tuned": 0.9779641628265381,
+          "echo_mass_at_L_surface_tuned": 0.002154150203067735,
+          "L_geom_tuned": 32,
+          "cos_to_answer_at_L_geom_tuned": 0.12332199513912201,
+          "cos_to_prompt_max_at_L_geom_tuned": 0.10191411525011063,
+          "L_topk_decay_tuned": 1,
+          "topk_prompt_mass_at_L_tuned": 0.08107495680451393,
+          "topk_prompt_tau_tuned": 0.33,
+          "surface_delta_tuned": 0.05,
+          "geom_gamma_tuned": 0.02,
+          "cos_milestones": {
+            "tuned": {
+              "ge_0.2": 36,
+              "ge_0.4": 36,
+              "ge_0.6": 36
+            }
+          },
+          "L_semantic_margin_ok": null,
+          "semantic_margin": {
+            "delta_abs": 0.002,
+            "p_uniform": 6.581718618365627e-06,
+            "L_semantic_margin_ok_norm": null,
+            "margin_ok_at_L_semantic_norm": true,
+            "p_answer_at_L_semantic_norm": 0.9779641628265381
+          }
+        },
+        {
+          "L_copy": null,
+          "L_copy_H": 32,
+          "L_semantic": 32,
+          "delta_layers": null,
+          "copy_thresh": 0.95,
+          "copy_window_k": 1,
+          "copy_match_level": "id_subsequence",
+          "first_kl_below_0.5": 36,
+          "first_kl_below_1.0": 32,
+          "first_rank_le_1": 32,
+          "first_rank_le_5": 32,
+          "first_rank_le_10": 32,
+          "copy_soft_threshold": 0.5,
+          "copy_soft_window_ks": [
+            1,
+            2,
+            3
+          ],
+          "L_copy_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "delta_layers_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "copy_detector": {
+            "strict": {
+              "thresh": 0.95,
+              "k": 1,
+              "L_copy_strict": null
+            },
+            "soft": {
+              "thresh": 0.5,
+              "window_ks": [
+                1,
+                2,
+                3
+              ],
+              "L_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            },
+            "deltas": {
+              "Δ_sem_minus_copy_strict": null,
+              "Δ_sem_minus_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            }
+          },
+          "answer_margin_thresholds": {
+            "gap_ge_0.5": null,
+            "gap_ge_1.0": null
+          },
+          "entropy_gap_bits_percentiles": {
+            "p25": -0.4199160083384843,
+            "p50": 7.908783938065019,
+            "p75": 8.643989826813188
+          },
+          "entropy_gap_samples": 36,
+          "copy_thresholds": {
+            "tau_list": [
+              0.7,
+              0.8,
+              0.9,
+              0.95
+            ],
+            "L_copy_strict": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "L_copy_strict_frac": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "norm_only_flags": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "stability": "none"
+          },
+          "L_surface_to_meaning_tuned": 32,
+          "answer_mass_at_L_surface_tuned": 0.9935027956962585,
+          "echo_mass_at_L_surface_tuned": 0.00014827246848145477,
+          "L_geom_tuned": 32,
+          "cos_to_answer_at_L_geom_tuned": 0.13595691323280334,
+          "cos_to_prompt_max_at_L_geom_tuned": 0.09850877523422241,
+          "L_topk_decay_tuned": 1,
+          "topk_prompt_mass_at_L_tuned": 0.08661270898301154,
+          "topk_prompt_tau_tuned": 0.33,
+          "surface_delta_tuned": 0.05,
+          "geom_gamma_tuned": 0.02,
+          "cos_milestones": {
+            "tuned": {
+              "ge_0.2": 36,
+              "ge_0.4": 36,
+              "ge_0.6": 36
+            }
+          },
+          "L_semantic_margin_ok": null,
+          "semantic_margin": {
+            "delta_abs": 0.002,
+            "p_uniform": 6.581718618365627e-06,
+            "L_semantic_margin_ok_norm": null,
+            "margin_ok_at_L_semantic_norm": true,
+            "p_answer_at_L_semantic_norm": 0.9935027956962585
+          }
+        },
+        {
+          "L_copy": null,
+          "L_copy_H": 32,
+          "L_semantic": 30,
+          "delta_layers": null,
+          "copy_thresh": 0.95,
+          "copy_window_k": 1,
+          "copy_match_level": "id_subsequence",
+          "first_kl_below_0.5": 36,
+          "first_kl_below_1.0": 31,
+          "first_rank_le_1": 30,
+          "first_rank_le_5": 30,
+          "first_rank_le_10": 30,
+          "copy_soft_threshold": 0.5,
+          "copy_soft_window_ks": [
+            1,
+            2,
+            3
+          ],
+          "L_copy_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "delta_layers_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "copy_detector": {
+            "strict": {
+              "thresh": 0.95,
+              "k": 1,
+              "L_copy_strict": null
+            },
+            "soft": {
+              "thresh": 0.5,
+              "window_ks": [
+                1,
+                2,
+                3
+              ],
+              "L_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            },
+            "deltas": {
+              "Δ_sem_minus_copy_strict": null,
+              "Δ_sem_minus_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            }
+          },
+          "answer_margin_thresholds": {
+            "gap_ge_0.5": null,
+            "gap_ge_1.0": null
+          },
+          "entropy_gap_bits_percentiles": {
+            "p25": 0.7852695875263787,
+            "p50": 7.160666614065228,
+            "p75": 8.549698262701092
+          },
+          "entropy_gap_samples": 36,
+          "copy_thresholds": {
+            "tau_list": [
+              0.7,
+              0.8,
+              0.9,
+              0.95
+            ],
+            "L_copy_strict": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "L_copy_strict_frac": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "norm_only_flags": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "stability": "none"
+          },
+          "L_surface_to_meaning_tuned": 30,
+          "answer_mass_at_L_surface_tuned": 0.344370037317276,
+          "echo_mass_at_L_surface_tuned": 0.15216566221244143,
+          "L_geom_tuned": 32,
+          "cos_to_answer_at_L_geom_tuned": 0.13726666569709778,
+          "cos_to_prompt_max_at_L_geom_tuned": 0.1136329174041748,
+          "L_topk_decay_tuned": 1,
+          "topk_prompt_mass_at_L_tuned": 0.0812330205226317,
+          "topk_prompt_tau_tuned": 0.33,
+          "surface_delta_tuned": 0.05,
+          "geom_gamma_tuned": 0.02,
+          "cos_milestones": {
+            "tuned": {
+              "ge_0.2": 36,
+              "ge_0.4": 36,
+              "ge_0.6": 36
+            }
+          },
+          "L_semantic_margin_ok": null,
+          "semantic_margin": {
+            "delta_abs": 0.002,
+            "p_uniform": 6.581718618365627e-06,
+            "L_semantic_margin_ok_norm": null,
+            "margin_ok_at_L_semantic_norm": true,
+            "p_answer_at_L_semantic_norm": 0.344370037317276
+          }
+        },
+        {
+          "L_copy": null,
+          "L_copy_H": 32,
+          "L_semantic": 32,
+          "delta_layers": null,
+          "copy_thresh": 0.95,
+          "copy_window_k": 1,
+          "copy_match_level": "id_subsequence",
+          "first_kl_below_0.5": 36,
+          "first_kl_below_1.0": 32,
+          "first_rank_le_1": 32,
+          "first_rank_le_5": 32,
+          "first_rank_le_10": 30,
+          "copy_soft_threshold": 0.5,
+          "copy_soft_window_ks": [
+            1,
+            2,
+            3
+          ],
+          "L_copy_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "delta_layers_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "copy_detector": {
+            "strict": {
+              "thresh": 0.95,
+              "k": 1,
+              "L_copy_strict": null
+            },
+            "soft": {
+              "thresh": 0.5,
+              "window_ks": [
+                1,
+                2,
+                3
+              ],
+              "L_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            },
+            "deltas": {
+              "Δ_sem_minus_copy_strict": null,
+              "Δ_sem_minus_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            }
+          },
+          "answer_margin_thresholds": {
+            "gap_ge_0.5": null,
+            "gap_ge_1.0": null
+          },
+          "entropy_gap_bits_percentiles": {
+            "p25": -0.381769414640436,
+            "p50": 7.728127781652441,
+            "p75": 8.385263029836645
+          },
+          "entropy_gap_samples": 36,
+          "copy_thresholds": {
+            "tau_list": [
+              0.7,
+              0.8,
+              0.9,
+              0.95
+            ],
+            "L_copy_strict": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "L_copy_strict_frac": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "norm_only_flags": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "stability": "none"
+          },
+          "L_surface_to_meaning_tuned": 32,
+          "answer_mass_at_L_surface_tuned": 0.9553620219230652,
+          "echo_mass_at_L_surface_tuned": 0.005024970799435937,
+          "L_geom_tuned": 32,
+          "cos_to_answer_at_L_geom_tuned": 0.12225702404975891,
+          "cos_to_prompt_max_at_L_geom_tuned": 0.09983816742897034,
+          "L_topk_decay_tuned": 1,
+          "topk_prompt_mass_at_L_tuned": 0.08649600564967841,
+          "topk_prompt_tau_tuned": 0.33,
+          "surface_delta_tuned": 0.05,
+          "geom_gamma_tuned": 0.02,
+          "cos_milestones": {
+            "tuned": {
+              "ge_0.2": 36,
+              "ge_0.4": 36,
+              "ge_0.6": 36
+            }
+          },
+          "L_semantic_margin_ok": null,
+          "semantic_margin": {
+            "delta_abs": 0.002,
+            "p_uniform": 6.581718618365627e-06,
+            "L_semantic_margin_ok_norm": null,
+            "margin_ok_at_L_semantic_norm": true,
+            "p_answer_at_L_semantic_norm": 0.9553620219230652
+          }
+        },
+        {
+          "L_copy": null,
+          "L_copy_H": null,
+          "L_semantic": null,
+          "delta_layers": null,
+          "copy_thresh": 0.95,
+          "copy_window_k": 1,
+          "copy_match_level": "id_subsequence",
+          "first_kl_below_0.5": 36,
+          "first_kl_below_1.0": 36,
+          "first_rank_le_1": null,
+          "first_rank_le_5": 32,
+          "first_rank_le_10": 31,
+          "copy_soft_threshold": 0.5,
+          "copy_soft_window_ks": [
+            1,
+            2,
+            3
+          ],
+          "L_copy_soft": {
+            "1": 32,
+            "2": null,
+            "3": null
+          },
+          "delta_layers_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "copy_detector": {
+            "strict": {
+              "thresh": 0.95,
+              "k": 1,
+              "L_copy_strict": null
+            },
+            "soft": {
+              "thresh": 0.5,
+              "window_ks": [
+                1,
+                2,
+                3
+              ],
+              "L_copy_soft": {
+                "k1": 32,
+                "k2": null,
+                "k3": null
+              }
+            },
+            "deltas": {
+              "Δ_sem_minus_copy_strict": null,
+              "Δ_sem_minus_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            }
+          },
+          "answer_margin_thresholds": {
+            "gap_ge_0.5": null,
+            "gap_ge_1.0": null
+          },
+          "entropy_gap_bits_percentiles": {
+            "p25": 0.3462305335217657,
+            "p50": 6.470533755224341,
+            "p75": 7.766002324026221
+          },
+          "entropy_gap_samples": 36,
+          "copy_thresholds": {
+            "tau_list": [
+              0.7,
+              0.8,
+              0.9,
+              0.95
+            ],
+            "L_copy_strict": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "L_copy_strict_frac": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "norm_only_flags": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "stability": "none"
+          },
+          "L_surface_to_meaning_tuned": 35,
+          "answer_mass_at_L_surface_tuned": 0.10773295164108276,
+          "echo_mass_at_L_surface_tuned": 0.006508968826511877,
+          "L_geom_tuned": null,
+          "cos_to_answer_at_L_geom_tuned": null,
+          "cos_to_prompt_max_at_L_geom_tuned": null,
+          "L_topk_decay_tuned": 1,
+          "topk_prompt_mass_at_L_tuned": 0.08099069667514414,
+          "topk_prompt_tau_tuned": 0.33,
+          "surface_delta_tuned": 0.05,
+          "geom_gamma_tuned": 0.02,
+          "cos_milestones": {
+            "tuned": {
+              "ge_0.2": 36,
+              "ge_0.4": 36,
+              "ge_0.6": 36
+            }
+          },
+          "L_semantic_margin_ok": null,
+          "semantic_margin": {
+            "delta_abs": 0.002,
+            "p_uniform": 6.581718618365627e-06,
+            "L_semantic_margin_ok_norm": null,
+            "margin_ok_at_L_semantic_norm": null,
+            "p_answer_at_L_semantic_norm": null
+          }
+        },
+        {
+          "L_copy": null,
+          "L_copy_H": 32,
+          "L_semantic": 32,
+          "delta_layers": null,
+          "copy_thresh": 0.95,
+          "copy_window_k": 1,
+          "copy_match_level": "id_subsequence",
+          "first_kl_below_0.5": 36,
+          "first_kl_below_1.0": 36,
+          "first_rank_le_1": 32,
+          "first_rank_le_5": 32,
+          "first_rank_le_10": 31,
+          "copy_soft_threshold": 0.5,
+          "copy_soft_window_ks": [
+            1,
+            2,
+            3
+          ],
+          "L_copy_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "delta_layers_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "copy_detector": {
+            "strict": {
+              "thresh": 0.95,
+              "k": 1,
+              "L_copy_strict": null
+            },
+            "soft": {
+              "thresh": 0.5,
+              "window_ks": [
+                1,
+                2,
+                3
+              ],
+              "L_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            },
+            "deltas": {
+              "Δ_sem_minus_copy_strict": null,
+              "Δ_sem_minus_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            }
+          },
+          "answer_margin_thresholds": {
+            "gap_ge_0.5": null,
+            "gap_ge_1.0": null
+          },
+          "entropy_gap_bits_percentiles": {
+            "p25": -2.2316679697690027,
+            "p50": 6.354624058658121,
+            "p75": 6.988064553195475
+          },
+          "entropy_gap_samples": 36,
+          "copy_thresholds": {
+            "tau_list": [
+              0.7,
+              0.8,
+              0.9,
+              0.95
+            ],
+            "L_copy_strict": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "L_copy_strict_frac": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "norm_only_flags": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "stability": "none"
+          },
+          "L_surface_to_meaning_tuned": 32,
+          "answer_mass_at_L_surface_tuned": 0.7666013240814209,
+          "echo_mass_at_L_surface_tuned": 0.20260859156420033,
+          "L_geom_tuned": null,
+          "cos_to_answer_at_L_geom_tuned": null,
+          "cos_to_prompt_max_at_L_geom_tuned": null,
+          "L_topk_decay_tuned": 1,
+          "topk_prompt_mass_at_L_tuned": 0.08641417638864368,
+          "topk_prompt_tau_tuned": 0.33,
+          "surface_delta_tuned": 0.05,
+          "geom_gamma_tuned": 0.02,
+          "cos_milestones": {
+            "tuned": {
+              "ge_0.2": 36,
+              "ge_0.4": 36,
+              "ge_0.6": 36
+            }
+          },
+          "L_semantic_margin_ok": null,
+          "semantic_margin": {
+            "delta_abs": 0.002,
+            "p_uniform": 6.581718618365627e-06,
+            "L_semantic_margin_ok_norm": null,
+            "margin_ok_at_L_semantic_norm": true,
+            "p_answer_at_L_semantic_norm": 0.7666013240814209
+          }
+        },
+        {
+          "L_copy": null,
+          "L_copy_H": 31,
+          "L_semantic": 30,
+          "delta_layers": null,
+          "copy_thresh": 0.95,
+          "copy_window_k": 1,
+          "copy_match_level": "id_subsequence",
+          "first_kl_below_0.5": 36,
+          "first_kl_below_1.0": 30,
+          "first_rank_le_1": 30,
+          "first_rank_le_5": 30,
+          "first_rank_le_10": 28,
+          "copy_soft_threshold": 0.5,
+          "copy_soft_window_ks": [
+            1,
+            2,
+            3
+          ],
+          "L_copy_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "delta_layers_soft": {
+            "1": null,
+            "2": null,
+            "3": null
+          },
+          "copy_detector": {
+            "strict": {
+              "thresh": 0.95,
+              "k": 1,
+              "L_copy_strict": null
+            },
+            "soft": {
+              "thresh": 0.5,
+              "window_ks": [
+                1,
+                2,
+                3
+              ],
+              "L_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            },
+            "deltas": {
+              "Δ_sem_minus_copy_strict": null,
+              "Δ_sem_minus_copy_soft": {
+                "k1": null,
+                "k2": null,
+                "k3": null
+              }
+            }
+          },
+          "answer_margin_thresholds": {
+            "gap_ge_0.5": null,
+            "gap_ge_1.0": null
+          },
+          "entropy_gap_bits_percentiles": {
+            "p25": 1.7205587642007263,
+            "p50": 7.666284682016888,
+            "p75": 9.078087212305585
+          },
+          "entropy_gap_samples": 36,
+          "copy_thresholds": {
+            "tau_list": [
+              0.7,
+              0.8,
+              0.9,
+              0.95
+            ],
+            "L_copy_strict": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "L_copy_strict_frac": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "norm_only_flags": {
+              "0.7": null,
+              "0.8": null,
+              "0.9": null,
+              "0.95": null
+            },
+            "stability": "none"
+          },
+          "L_surface_to_meaning_tuned": 30,
+          "answer_mass_at_L_surface_tuned": 0.7138071060180664,
+          "echo_mass_at_L_surface_tuned": 0.03832329829384917,
+          "L_geom_tuned": 31,
+          "cos_to_answer_at_L_geom_tuned": 0.138032466173172,
+          "cos_to_prompt_max_at_L_geom_tuned": 0.10223683714866638,
+          "L_topk_decay_tuned": 1,
+          "topk_prompt_mass_at_L_tuned": 0.08116818720009178,
+          "topk_prompt_tau_tuned": 0.33,
+          "surface_delta_tuned": 0.05,
+          "geom_gamma_tuned": 0.02,
+          "cos_milestones": {
+            "tuned": {
+              "ge_0.2": 36,
+              "ge_0.4": 36,
+              "ge_0.6": 36
+            }
+          },
+          "L_semantic_margin_ok": null,
+          "semantic_margin": {
+            "delta_abs": 0.002,
+            "p_uniform": 6.581718618365627e-06,
+            "L_semantic_margin_ok_norm": null,
+            "margin_ok_at_L_semantic_norm": true,
+            "p_answer_at_L_semantic_norm": 0.7138071060180664
           }
         }
       ]
@@ -8378,6 +9526,89 @@
         "v2_addends": {
           "js_p50": 0.1,
           "l1_p50": 0.05
+        }
+      }
+    },
+    "micro_suite": {
+      "facts": [
+        {
+          "fact_key": "Germany→Berlin",
+          "fact_index": 0,
+          "L_copy_strict": null,
+          "L_copy_soft_k1": null,
+          "L_semantic_norm": 31,
+          "L_semantic_confirmed": 31,
+          "L_semantic_margin_ok_norm": 31,
+          "delta_hat": null,
+          "row_index": 31
+        },
+        {
+          "fact_key": "France→Paris",
+          "fact_index": 1,
+          "L_copy_strict": null,
+          "L_copy_soft_k1": null,
+          "L_semantic_norm": 30,
+          "L_semantic_confirmed": null,
+          "L_semantic_margin_ok_norm": 30,
+          "delta_hat": null,
+          "row_index": 104
+        },
+        {
+          "fact_key": "Italy→Rome",
+          "fact_index": 2,
+          "L_copy_strict": null,
+          "L_copy_soft_k1": 30,
+          "L_semantic_norm": 32,
+          "L_semantic_confirmed": null,
+          "L_semantic_margin_ok_norm": 32,
+          "delta_hat": 0.05555555555555555,
+          "row_index": 180
+        },
+        {
+          "fact_key": "Japan→Tokyo",
+          "fact_index": 3,
+          "L_copy_strict": null,
+          "L_copy_soft_k1": null,
+          "L_semantic_norm": 30,
+          "L_semantic_confirmed": null,
+          "L_semantic_margin_ok_norm": 30,
+          "delta_hat": null,
+          "row_index": 252
+        },
+        {
+          "fact_key": "Canada→Ottawa",
+          "fact_index": 4,
+          "L_copy_strict": null,
+          "L_copy_soft_k1": null,
+          "L_semantic_norm": 32,
+          "L_semantic_confirmed": null,
+          "L_semantic_margin_ok_norm": 32,
+          "delta_hat": null,
+          "row_index": 328
+        }
+      ],
+      "aggregates": {
+        "n": 5,
+        "L_copy_strict_median": null,
+        "L_copy_soft_k1_median": 30,
+        "L_semantic_norm_median": 31,
+        "L_semantic_confirmed_median": 31,
+        "L_semantic_margin_ok_norm_median": 31,
+        "delta_hat_median": 0.0556,
+        "L_semantic_norm_iqr": [
+          30,
+          32
+        ],
+        "n_missing": 0,
+        "notes": "control is France→Paris; other positives do not add new controls"
+      },
+      "citations": {
+        "fact_rows": {
+          "Germany→Berlin": 31,
+          "France→Paris": 104,
+          "Italy→Rome": 180,
+          "Japan→Tokyo": 252,
+          "Canada→Ottawa": 328
         }
       }
     },
@@ -8538,6 +9769,214 @@
         "answer_rank_raw": 16,
         "is_answer_norm": false,
         "is_answer_raw": false
+      },
+      {
+        "layer": 0,
+        "kl_norm_vs_raw_bits": 0.0005307548358638571,
+        "top1_agree": true,
+        "p_top1_norm": 7.252558589243563e-06,
+        "p_top1_raw": 8.334228368767072e-06,
+        "p_answer_norm": 6.445956387324259e-06,
+        "p_answer_raw": 6.248685167520307e-06,
+        "answer_rank_norm": 132111,
+        "answer_rank_raw": 132580,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 10,
+        "kl_norm_vs_raw_bits": 1.3275554078587268,
+        "top1_agree": false,
+        "p_top1_norm": 0.00015036429977044463,
+        "p_top1_raw": 0.02657524310052395,
+        "p_answer_norm": 7.171555353124859e-06,
+        "p_answer_raw": 2.922387238868396e-06,
+        "answer_rank_norm": 49140,
+        "answer_rank_raw": 50712,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 19,
+        "kl_norm_vs_raw_bits": 2.6518971479034312,
+        "top1_agree": false,
+        "p_top1_norm": 0.0003844040911644697,
+        "p_top1_raw": 0.05948024243116379,
+        "p_answer_norm": 4.1317351133329794e-05,
+        "p_answer_raw": 6.917832070030272e-05,
+        "answer_rank_norm": 996,
+        "answer_rank_raw": 1536,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 28,
+        "kl_norm_vs_raw_bits": 17.481633332870874,
+        "top1_agree": false,
+        "p_top1_norm": 0.29332470893859863,
+        "p_top1_raw": 0.9995655417442322,
+        "p_answer_norm": 0.06051117926836014,
+        "p_answer_raw": 0.9995655417442322,
+        "answer_rank_norm": 6,
+        "answer_rank_raw": 1,
+        "is_answer_norm": false,
+        "is_answer_raw": true
+      },
+      {
+        "layer": 0,
+        "kl_norm_vs_raw_bits": 0.0005307548358638571,
+        "top1_agree": true,
+        "p_top1_norm": 7.252558589243563e-06,
+        "p_top1_raw": 8.334228368767072e-06,
+        "p_answer_norm": 6.515854693134315e-06,
+        "p_answer_raw": 6.402678536687745e-06,
+        "answer_rank_norm": 108424,
+        "answer_rank_raw": 111228,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 10,
+        "kl_norm_vs_raw_bits": 1.3933063530840635,
+        "top1_agree": false,
+        "p_top1_norm": 0.0001651730271987617,
+        "p_top1_raw": 0.03347161412239075,
+        "p_answer_norm": 8.489323590765707e-06,
+        "p_answer_raw": 2.9664440717169782e-06,
+        "answer_rank_norm": 33107,
+        "answer_rank_raw": 48387,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 19,
+        "kl_norm_vs_raw_bits": 2.696548659581641,
+        "top1_agree": false,
+        "p_top1_norm": 0.00034923412022180855,
+        "p_top1_raw": 0.057990770787000656,
+        "p_answer_norm": 6.317579845926957e-06,
+        "p_answer_raw": 6.792553222112474e-07,
+        "answer_rank_norm": 51464,
+        "answer_rank_raw": 50844,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 28,
+        "kl_norm_vs_raw_bits": 10.8918662824615,
+        "top1_agree": false,
+        "p_top1_norm": 0.42768698930740356,
+        "p_top1_raw": 0.9930082559585571,
+        "p_answer_norm": 0.00013559999933931977,
+        "p_answer_raw": 4.875873038656664e-09,
+        "answer_rank_norm": 69,
+        "answer_rank_raw": 21,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 0,
+        "kl_norm_vs_raw_bits": 0.0005307548358638571,
+        "top1_agree": true,
+        "p_top1_norm": 7.252558589243563e-06,
+        "p_top1_raw": 8.334228368767072e-06,
+        "p_answer_norm": 6.6243578658031765e-06,
+        "p_answer_raw": 6.706992735416861e-06,
+        "answer_rank_norm": 52889,
+        "answer_rank_raw": 48434,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 10,
+        "kl_norm_vs_raw_bits": 1.3932172660709166,
+        "top1_agree": false,
+        "p_top1_norm": 0.0001528085849713534,
+        "p_top1_raw": 0.028632456436753273,
+        "p_answer_norm": 7.707519216637593e-06,
+        "p_answer_raw": 2.732974508035113e-06,
+        "answer_rank_norm": 41779,
+        "answer_rank_raw": 51133,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 19,
+        "kl_norm_vs_raw_bits": 2.674776859860965,
+        "top1_agree": false,
+        "p_top1_norm": 0.00031959477928467095,
+        "p_top1_raw": 0.048169758170843124,
+        "p_answer_norm": 1.0181066500081215e-05,
+        "p_answer_raw": 1.607749027243699e-06,
+        "answer_rank_norm": 26154,
+        "answer_rank_raw": 32852,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 28,
+        "kl_norm_vs_raw_bits": 3.9244246428267924,
+        "top1_agree": false,
+        "p_top1_norm": 0.41429340839385986,
+        "p_top1_raw": 0.395352303981781,
+        "p_answer_norm": 0.0016394545091316104,
+        "p_answer_raw": 0.0022689036559313536,
+        "answer_rank_norm": 21,
+        "answer_rank_raw": 7,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 0,
+        "kl_norm_vs_raw_bits": 0.0005307548358638571,
+        "top1_agree": true,
+        "p_top1_norm": 7.252558589243563e-06,
+        "p_top1_raw": 8.334228368767072e-06,
+        "p_answer_norm": 6.472415861935588e-06,
+        "p_answer_raw": 6.345506790239597e-06,
+        "answer_rank_norm": 124546,
+        "answer_rank_raw": 120210,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 10,
+        "kl_norm_vs_raw_bits": 1.3710255707081596,
+        "top1_agree": false,
+        "p_top1_norm": 0.00014877424109727144,
+        "p_top1_raw": 0.025127721950411797,
+        "p_answer_norm": 6.704389306833036e-06,
+        "p_answer_raw": 4.12254507864418e-07,
+        "answer_rank_norm": 56456,
+        "answer_rank_raw": 121100,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 19,
+        "kl_norm_vs_raw_bits": 2.718880778778827,
+        "top1_agree": false,
+        "p_top1_norm": 0.0003609739360399544,
+        "p_top1_raw": 0.05824768543243408,
+        "p_answer_norm": 4.713791895483155e-06,
+        "p_answer_raw": 7.136520707717864e-09,
+        "answer_rank_norm": 71239,
+        "answer_rank_raw": 143661,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 28,
+        "kl_norm_vs_raw_bits": 10.961223445901453,
+        "top1_agree": false,
+        "p_top1_norm": 0.3495978116989136,
+        "p_top1_raw": 0.9575808048248291,
+        "p_answer_norm": 0.00031946910894475877,
+        "p_answer_raw": 4.216025306646998e-09,
+        "answer_rank_norm": 53,
+        "answer_rank_raw": 33,
+        "is_answer_norm": false,
+        "is_answer_raw": false
       }
     ],
     "summary": {
@@ -8545,6 +9984,15 @@
       "max_kl_norm_vs_raw_bits": 13.60491323774041,
       "lens_artifact_risk": "high"
     }
+  },
+  "prompts": {
+    "facts_micro_suite": [
+      "Germany→Berlin",
+      "France→Paris",
+      "Italy→Rome",
+      "Japan→Tokyo",
+      "Canada→Ottawa"
+    ]
   },
   "provenance": {
     "env": {
@@ -8722,6 +10170,14 @@
             "ge_0.4": 36,
             "ge_0.6": 36
           }
+        },
+        "L_semantic_margin_ok": null,
+        "semantic_margin": {
+          "delta_abs": 0.002,
+          "p_uniform": 6.581718618365627e-06,
+          "L_semantic_margin_ok_norm": null,
+          "margin_ok_at_L_semantic_norm": true,
+          "p_answer_at_L_semantic_norm": 0.4173722267150879
         }
       },
       {
@@ -8835,6 +10291,14 @@
             "ge_0.4": 36,
             "ge_0.6": 36
           }
+        },
+        "L_semantic_margin_ok": null,
+        "semantic_margin": {
+          "delta_abs": 0.002,
+          "p_uniform": 6.581718618365627e-06,
+          "L_semantic_margin_ok_norm": null,
+          "margin_ok_at_L_semantic_norm": true,
+          "p_answer_at_L_semantic_norm": 0.9656817317008972
         }
       },
       {
@@ -8948,6 +10412,982 @@
             "ge_0.4": 36,
             "ge_0.6": 36
           }
+        },
+        "L_semantic_margin_ok": null,
+        "semantic_margin": {
+          "delta_abs": 0.002,
+          "p_uniform": 6.581718618365627e-06,
+          "L_semantic_margin_ok_norm": null,
+          "margin_ok_at_L_semantic_norm": true,
+          "p_answer_at_L_semantic_norm": 0.7138071060180664
+        }
+      },
+      {
+        "L_copy": null,
+        "L_copy_H": 32,
+        "L_semantic": 31,
+        "delta_layers": null,
+        "copy_thresh": 0.95,
+        "copy_window_k": 1,
+        "copy_match_level": "id_subsequence",
+        "first_kl_below_0.5": 36,
+        "first_kl_below_1.0": 32,
+        "first_rank_le_1": 31,
+        "first_rank_le_5": 30,
+        "first_rank_le_10": 30,
+        "copy_soft_threshold": 0.5,
+        "copy_soft_window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "delta_layers_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "copy_detector": {
+          "strict": {
+            "thresh": 0.95,
+            "k": 1,
+            "L_copy_strict": null
+          },
+          "soft": {
+            "thresh": 0.5,
+            "window_ks": [
+              1,
+              2,
+              3
+            ],
+            "L_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          },
+          "deltas": {
+            "Δ_sem_minus_copy_strict": null,
+            "Δ_sem_minus_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          }
+        },
+        "answer_margin_thresholds": {
+          "gap_ge_0.5": null,
+          "gap_ge_1.0": null
+        },
+        "entropy_gap_bits_percentiles": {
+          "p25": -0.4799888774543164,
+          "p50": 7.756209786257232,
+          "p75": 8.672335799059356
+        },
+        "entropy_gap_samples": 36,
+        "copy_thresholds": {
+          "tau_list": [
+            0.7,
+            0.8,
+            0.9,
+            0.95
+          ],
+          "L_copy_strict": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "L_copy_strict_frac": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "norm_only_flags": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "stability": "none"
+        },
+        "L_surface_to_meaning_tuned": 30,
+        "answer_mass_at_L_surface_tuned": 0.09989447891712189,
+        "echo_mass_at_L_surface_tuned": 0.01739897235738974,
+        "L_geom_tuned": 31,
+        "cos_to_answer_at_L_geom_tuned": 0.12673208117485046,
+        "cos_to_prompt_max_at_L_geom_tuned": 0.09507779031991959,
+        "L_topk_decay_tuned": 1,
+        "topk_prompt_mass_at_L_tuned": 0.08635993581265211,
+        "topk_prompt_tau_tuned": 0.33,
+        "surface_delta_tuned": 0.05,
+        "geom_gamma_tuned": 0.02,
+        "cos_milestones": {
+          "tuned": {
+            "ge_0.2": 36,
+            "ge_0.4": 36,
+            "ge_0.6": 36
+          }
+        },
+        "L_semantic_margin_ok": null,
+        "semantic_margin": {
+          "delta_abs": 0.002,
+          "p_uniform": 6.581718618365627e-06,
+          "L_semantic_margin_ok_norm": null,
+          "margin_ok_at_L_semantic_norm": true,
+          "p_answer_at_L_semantic_norm": 0.7692141532897949
+        }
+      },
+      {
+        "L_copy": null,
+        "L_copy_H": 32,
+        "L_semantic": 32,
+        "delta_layers": null,
+        "copy_thresh": 0.95,
+        "copy_window_k": 1,
+        "copy_match_level": "id_subsequence",
+        "first_kl_below_0.5": 36,
+        "first_kl_below_1.0": 32,
+        "first_rank_le_1": 32,
+        "first_rank_le_5": 32,
+        "first_rank_le_10": 32,
+        "copy_soft_threshold": 0.5,
+        "copy_soft_window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "delta_layers_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "copy_detector": {
+          "strict": {
+            "thresh": 0.95,
+            "k": 1,
+            "L_copy_strict": null
+          },
+          "soft": {
+            "thresh": 0.5,
+            "window_ks": [
+              1,
+              2,
+              3
+            ],
+            "L_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          },
+          "deltas": {
+            "Δ_sem_minus_copy_strict": null,
+            "Δ_sem_minus_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          }
+        },
+        "answer_margin_thresholds": {
+          "gap_ge_0.5": null,
+          "gap_ge_1.0": null
+        },
+        "entropy_gap_bits_percentiles": {
+          "p25": 1.0875648796337791,
+          "p50": 7.450453633047934,
+          "p75": 8.856767290808554
+        },
+        "entropy_gap_samples": 36,
+        "copy_thresholds": {
+          "tau_list": [
+            0.7,
+            0.8,
+            0.9,
+            0.95
+          ],
+          "L_copy_strict": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "L_copy_strict_frac": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "norm_only_flags": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "stability": "none"
+        },
+        "L_surface_to_meaning_tuned": 32,
+        "answer_mass_at_L_surface_tuned": 0.9779641628265381,
+        "echo_mass_at_L_surface_tuned": 0.002154150203067735,
+        "L_geom_tuned": 32,
+        "cos_to_answer_at_L_geom_tuned": 0.12332199513912201,
+        "cos_to_prompt_max_at_L_geom_tuned": 0.10191411525011063,
+        "L_topk_decay_tuned": 1,
+        "topk_prompt_mass_at_L_tuned": 0.08107495680451393,
+        "topk_prompt_tau_tuned": 0.33,
+        "surface_delta_tuned": 0.05,
+        "geom_gamma_tuned": 0.02,
+        "cos_milestones": {
+          "tuned": {
+            "ge_0.2": 36,
+            "ge_0.4": 36,
+            "ge_0.6": 36
+          }
+        },
+        "L_semantic_margin_ok": null,
+        "semantic_margin": {
+          "delta_abs": 0.002,
+          "p_uniform": 6.581718618365627e-06,
+          "L_semantic_margin_ok_norm": null,
+          "margin_ok_at_L_semantic_norm": true,
+          "p_answer_at_L_semantic_norm": 0.9779641628265381
+        }
+      },
+      {
+        "L_copy": null,
+        "L_copy_H": 32,
+        "L_semantic": 32,
+        "delta_layers": null,
+        "copy_thresh": 0.95,
+        "copy_window_k": 1,
+        "copy_match_level": "id_subsequence",
+        "first_kl_below_0.5": 36,
+        "first_kl_below_1.0": 32,
+        "first_rank_le_1": 32,
+        "first_rank_le_5": 32,
+        "first_rank_le_10": 32,
+        "copy_soft_threshold": 0.5,
+        "copy_soft_window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "delta_layers_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "copy_detector": {
+          "strict": {
+            "thresh": 0.95,
+            "k": 1,
+            "L_copy_strict": null
+          },
+          "soft": {
+            "thresh": 0.5,
+            "window_ks": [
+              1,
+              2,
+              3
+            ],
+            "L_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          },
+          "deltas": {
+            "Δ_sem_minus_copy_strict": null,
+            "Δ_sem_minus_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          }
+        },
+        "answer_margin_thresholds": {
+          "gap_ge_0.5": null,
+          "gap_ge_1.0": null
+        },
+        "entropy_gap_bits_percentiles": {
+          "p25": -0.4199160083384843,
+          "p50": 7.908783938065019,
+          "p75": 8.643989826813188
+        },
+        "entropy_gap_samples": 36,
+        "copy_thresholds": {
+          "tau_list": [
+            0.7,
+            0.8,
+            0.9,
+            0.95
+          ],
+          "L_copy_strict": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "L_copy_strict_frac": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "norm_only_flags": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "stability": "none"
+        },
+        "L_surface_to_meaning_tuned": 32,
+        "answer_mass_at_L_surface_tuned": 0.9935027956962585,
+        "echo_mass_at_L_surface_tuned": 0.00014827246848145477,
+        "L_geom_tuned": 32,
+        "cos_to_answer_at_L_geom_tuned": 0.13595691323280334,
+        "cos_to_prompt_max_at_L_geom_tuned": 0.09850877523422241,
+        "L_topk_decay_tuned": 1,
+        "topk_prompt_mass_at_L_tuned": 0.08661270898301154,
+        "topk_prompt_tau_tuned": 0.33,
+        "surface_delta_tuned": 0.05,
+        "geom_gamma_tuned": 0.02,
+        "cos_milestones": {
+          "tuned": {
+            "ge_0.2": 36,
+            "ge_0.4": 36,
+            "ge_0.6": 36
+          }
+        },
+        "L_semantic_margin_ok": null,
+        "semantic_margin": {
+          "delta_abs": 0.002,
+          "p_uniform": 6.581718618365627e-06,
+          "L_semantic_margin_ok_norm": null,
+          "margin_ok_at_L_semantic_norm": true,
+          "p_answer_at_L_semantic_norm": 0.9935027956962585
+        }
+      },
+      {
+        "L_copy": null,
+        "L_copy_H": 32,
+        "L_semantic": 30,
+        "delta_layers": null,
+        "copy_thresh": 0.95,
+        "copy_window_k": 1,
+        "copy_match_level": "id_subsequence",
+        "first_kl_below_0.5": 36,
+        "first_kl_below_1.0": 31,
+        "first_rank_le_1": 30,
+        "first_rank_le_5": 30,
+        "first_rank_le_10": 30,
+        "copy_soft_threshold": 0.5,
+        "copy_soft_window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "delta_layers_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "copy_detector": {
+          "strict": {
+            "thresh": 0.95,
+            "k": 1,
+            "L_copy_strict": null
+          },
+          "soft": {
+            "thresh": 0.5,
+            "window_ks": [
+              1,
+              2,
+              3
+            ],
+            "L_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          },
+          "deltas": {
+            "Δ_sem_minus_copy_strict": null,
+            "Δ_sem_minus_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          }
+        },
+        "answer_margin_thresholds": {
+          "gap_ge_0.5": null,
+          "gap_ge_1.0": null
+        },
+        "entropy_gap_bits_percentiles": {
+          "p25": 0.7852695875263787,
+          "p50": 7.160666614065228,
+          "p75": 8.549698262701092
+        },
+        "entropy_gap_samples": 36,
+        "copy_thresholds": {
+          "tau_list": [
+            0.7,
+            0.8,
+            0.9,
+            0.95
+          ],
+          "L_copy_strict": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "L_copy_strict_frac": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "norm_only_flags": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "stability": "none"
+        },
+        "L_surface_to_meaning_tuned": 30,
+        "answer_mass_at_L_surface_tuned": 0.344370037317276,
+        "echo_mass_at_L_surface_tuned": 0.15216566221244143,
+        "L_geom_tuned": 32,
+        "cos_to_answer_at_L_geom_tuned": 0.13726666569709778,
+        "cos_to_prompt_max_at_L_geom_tuned": 0.1136329174041748,
+        "L_topk_decay_tuned": 1,
+        "topk_prompt_mass_at_L_tuned": 0.0812330205226317,
+        "topk_prompt_tau_tuned": 0.33,
+        "surface_delta_tuned": 0.05,
+        "geom_gamma_tuned": 0.02,
+        "cos_milestones": {
+          "tuned": {
+            "ge_0.2": 36,
+            "ge_0.4": 36,
+            "ge_0.6": 36
+          }
+        },
+        "L_semantic_margin_ok": null,
+        "semantic_margin": {
+          "delta_abs": 0.002,
+          "p_uniform": 6.581718618365627e-06,
+          "L_semantic_margin_ok_norm": null,
+          "margin_ok_at_L_semantic_norm": true,
+          "p_answer_at_L_semantic_norm": 0.344370037317276
+        }
+      },
+      {
+        "L_copy": null,
+        "L_copy_H": 32,
+        "L_semantic": 32,
+        "delta_layers": null,
+        "copy_thresh": 0.95,
+        "copy_window_k": 1,
+        "copy_match_level": "id_subsequence",
+        "first_kl_below_0.5": 36,
+        "first_kl_below_1.0": 32,
+        "first_rank_le_1": 32,
+        "first_rank_le_5": 32,
+        "first_rank_le_10": 30,
+        "copy_soft_threshold": 0.5,
+        "copy_soft_window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "delta_layers_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "copy_detector": {
+          "strict": {
+            "thresh": 0.95,
+            "k": 1,
+            "L_copy_strict": null
+          },
+          "soft": {
+            "thresh": 0.5,
+            "window_ks": [
+              1,
+              2,
+              3
+            ],
+            "L_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          },
+          "deltas": {
+            "Δ_sem_minus_copy_strict": null,
+            "Δ_sem_minus_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          }
+        },
+        "answer_margin_thresholds": {
+          "gap_ge_0.5": null,
+          "gap_ge_1.0": null
+        },
+        "entropy_gap_bits_percentiles": {
+          "p25": -0.381769414640436,
+          "p50": 7.728127781652441,
+          "p75": 8.385263029836645
+        },
+        "entropy_gap_samples": 36,
+        "copy_thresholds": {
+          "tau_list": [
+            0.7,
+            0.8,
+            0.9,
+            0.95
+          ],
+          "L_copy_strict": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "L_copy_strict_frac": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "norm_only_flags": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "stability": "none"
+        },
+        "L_surface_to_meaning_tuned": 32,
+        "answer_mass_at_L_surface_tuned": 0.9553620219230652,
+        "echo_mass_at_L_surface_tuned": 0.005024970799435937,
+        "L_geom_tuned": 32,
+        "cos_to_answer_at_L_geom_tuned": 0.12225702404975891,
+        "cos_to_prompt_max_at_L_geom_tuned": 0.09983816742897034,
+        "L_topk_decay_tuned": 1,
+        "topk_prompt_mass_at_L_tuned": 0.08649600564967841,
+        "topk_prompt_tau_tuned": 0.33,
+        "surface_delta_tuned": 0.05,
+        "geom_gamma_tuned": 0.02,
+        "cos_milestones": {
+          "tuned": {
+            "ge_0.2": 36,
+            "ge_0.4": 36,
+            "ge_0.6": 36
+          }
+        },
+        "L_semantic_margin_ok": null,
+        "semantic_margin": {
+          "delta_abs": 0.002,
+          "p_uniform": 6.581718618365627e-06,
+          "L_semantic_margin_ok_norm": null,
+          "margin_ok_at_L_semantic_norm": true,
+          "p_answer_at_L_semantic_norm": 0.9553620219230652
+        }
+      },
+      {
+        "L_copy": null,
+        "L_copy_H": null,
+        "L_semantic": null,
+        "delta_layers": null,
+        "copy_thresh": 0.95,
+        "copy_window_k": 1,
+        "copy_match_level": "id_subsequence",
+        "first_kl_below_0.5": 36,
+        "first_kl_below_1.0": 36,
+        "first_rank_le_1": null,
+        "first_rank_le_5": 32,
+        "first_rank_le_10": 31,
+        "copy_soft_threshold": 0.5,
+        "copy_soft_window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "1": 32,
+          "2": null,
+          "3": null
+        },
+        "delta_layers_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "copy_detector": {
+          "strict": {
+            "thresh": 0.95,
+            "k": 1,
+            "L_copy_strict": null
+          },
+          "soft": {
+            "thresh": 0.5,
+            "window_ks": [
+              1,
+              2,
+              3
+            ],
+            "L_copy_soft": {
+              "k1": 32,
+              "k2": null,
+              "k3": null
+            }
+          },
+          "deltas": {
+            "Δ_sem_minus_copy_strict": null,
+            "Δ_sem_minus_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          }
+        },
+        "answer_margin_thresholds": {
+          "gap_ge_0.5": null,
+          "gap_ge_1.0": null
+        },
+        "entropy_gap_bits_percentiles": {
+          "p25": 0.3462305335217657,
+          "p50": 6.470533755224341,
+          "p75": 7.766002324026221
+        },
+        "entropy_gap_samples": 36,
+        "copy_thresholds": {
+          "tau_list": [
+            0.7,
+            0.8,
+            0.9,
+            0.95
+          ],
+          "L_copy_strict": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "L_copy_strict_frac": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "norm_only_flags": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "stability": "none"
+        },
+        "L_surface_to_meaning_tuned": 35,
+        "answer_mass_at_L_surface_tuned": 0.10773295164108276,
+        "echo_mass_at_L_surface_tuned": 0.006508968826511877,
+        "L_geom_tuned": null,
+        "cos_to_answer_at_L_geom_tuned": null,
+        "cos_to_prompt_max_at_L_geom_tuned": null,
+        "L_topk_decay_tuned": 1,
+        "topk_prompt_mass_at_L_tuned": 0.08099069667514414,
+        "topk_prompt_tau_tuned": 0.33,
+        "surface_delta_tuned": 0.05,
+        "geom_gamma_tuned": 0.02,
+        "cos_milestones": {
+          "tuned": {
+            "ge_0.2": 36,
+            "ge_0.4": 36,
+            "ge_0.6": 36
+          }
+        },
+        "L_semantic_margin_ok": null,
+        "semantic_margin": {
+          "delta_abs": 0.002,
+          "p_uniform": 6.581718618365627e-06,
+          "L_semantic_margin_ok_norm": null,
+          "margin_ok_at_L_semantic_norm": null,
+          "p_answer_at_L_semantic_norm": null
+        }
+      },
+      {
+        "L_copy": null,
+        "L_copy_H": 32,
+        "L_semantic": 32,
+        "delta_layers": null,
+        "copy_thresh": 0.95,
+        "copy_window_k": 1,
+        "copy_match_level": "id_subsequence",
+        "first_kl_below_0.5": 36,
+        "first_kl_below_1.0": 36,
+        "first_rank_le_1": 32,
+        "first_rank_le_5": 32,
+        "first_rank_le_10": 31,
+        "copy_soft_threshold": 0.5,
+        "copy_soft_window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "delta_layers_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "copy_detector": {
+          "strict": {
+            "thresh": 0.95,
+            "k": 1,
+            "L_copy_strict": null
+          },
+          "soft": {
+            "thresh": 0.5,
+            "window_ks": [
+              1,
+              2,
+              3
+            ],
+            "L_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          },
+          "deltas": {
+            "Δ_sem_minus_copy_strict": null,
+            "Δ_sem_minus_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          }
+        },
+        "answer_margin_thresholds": {
+          "gap_ge_0.5": null,
+          "gap_ge_1.0": null
+        },
+        "entropy_gap_bits_percentiles": {
+          "p25": -2.2316679697690027,
+          "p50": 6.354624058658121,
+          "p75": 6.988064553195475
+        },
+        "entropy_gap_samples": 36,
+        "copy_thresholds": {
+          "tau_list": [
+            0.7,
+            0.8,
+            0.9,
+            0.95
+          ],
+          "L_copy_strict": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "L_copy_strict_frac": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "norm_only_flags": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "stability": "none"
+        },
+        "L_surface_to_meaning_tuned": 32,
+        "answer_mass_at_L_surface_tuned": 0.7666013240814209,
+        "echo_mass_at_L_surface_tuned": 0.20260859156420033,
+        "L_geom_tuned": null,
+        "cos_to_answer_at_L_geom_tuned": null,
+        "cos_to_prompt_max_at_L_geom_tuned": null,
+        "L_topk_decay_tuned": 1,
+        "topk_prompt_mass_at_L_tuned": 0.08641417638864368,
+        "topk_prompt_tau_tuned": 0.33,
+        "surface_delta_tuned": 0.05,
+        "geom_gamma_tuned": 0.02,
+        "cos_milestones": {
+          "tuned": {
+            "ge_0.2": 36,
+            "ge_0.4": 36,
+            "ge_0.6": 36
+          }
+        },
+        "L_semantic_margin_ok": null,
+        "semantic_margin": {
+          "delta_abs": 0.002,
+          "p_uniform": 6.581718618365627e-06,
+          "L_semantic_margin_ok_norm": null,
+          "margin_ok_at_L_semantic_norm": true,
+          "p_answer_at_L_semantic_norm": 0.7666013240814209
+        }
+      },
+      {
+        "L_copy": null,
+        "L_copy_H": 31,
+        "L_semantic": 30,
+        "delta_layers": null,
+        "copy_thresh": 0.95,
+        "copy_window_k": 1,
+        "copy_match_level": "id_subsequence",
+        "first_kl_below_0.5": 36,
+        "first_kl_below_1.0": 30,
+        "first_rank_le_1": 30,
+        "first_rank_le_5": 30,
+        "first_rank_le_10": 28,
+        "copy_soft_threshold": 0.5,
+        "copy_soft_window_ks": [
+          1,
+          2,
+          3
+        ],
+        "L_copy_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "delta_layers_soft": {
+          "1": null,
+          "2": null,
+          "3": null
+        },
+        "copy_detector": {
+          "strict": {
+            "thresh": 0.95,
+            "k": 1,
+            "L_copy_strict": null
+          },
+          "soft": {
+            "thresh": 0.5,
+            "window_ks": [
+              1,
+              2,
+              3
+            ],
+            "L_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          },
+          "deltas": {
+            "Δ_sem_minus_copy_strict": null,
+            "Δ_sem_minus_copy_soft": {
+              "k1": null,
+              "k2": null,
+              "k3": null
+            }
+          }
+        },
+        "answer_margin_thresholds": {
+          "gap_ge_0.5": null,
+          "gap_ge_1.0": null
+        },
+        "entropy_gap_bits_percentiles": {
+          "p25": 1.7205587642007263,
+          "p50": 7.666284682016888,
+          "p75": 9.078087212305585
+        },
+        "entropy_gap_samples": 36,
+        "copy_thresholds": {
+          "tau_list": [
+            0.7,
+            0.8,
+            0.9,
+            0.95
+          ],
+          "L_copy_strict": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "L_copy_strict_frac": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "norm_only_flags": {
+            "0.7": null,
+            "0.8": null,
+            "0.9": null,
+            "0.95": null
+          },
+          "stability": "none"
+        },
+        "L_surface_to_meaning_tuned": 30,
+        "answer_mass_at_L_surface_tuned": 0.7138071060180664,
+        "echo_mass_at_L_surface_tuned": 0.03832329829384917,
+        "L_geom_tuned": 31,
+        "cos_to_answer_at_L_geom_tuned": 0.138032466173172,
+        "cos_to_prompt_max_at_L_geom_tuned": 0.10223683714866638,
+        "L_topk_decay_tuned": 1,
+        "topk_prompt_mass_at_L_tuned": 0.08116818720009178,
+        "topk_prompt_tau_tuned": 0.33,
+        "surface_delta_tuned": 0.05,
+        "geom_gamma_tuned": 0.02,
+        "cos_milestones": {
+          "tuned": {
+            "ge_0.2": 36,
+            "ge_0.4": 36,
+            "ge_0.6": 36
+          }
+        },
+        "L_semantic_margin_ok": null,
+        "semantic_margin": {
+          "delta_abs": 0.002,
+          "p_uniform": 6.581718618365627e-06,
+          "L_semantic_margin_ok_norm": null,
+          "margin_ok_at_L_semantic_norm": true,
+          "p_answer_at_L_semantic_norm": 0.7138071060180664
         }
       }
     ],
@@ -9127,14 +11567,14 @@
     },
     "audit_summary": {
       "rotation_vs_temperature": {
-        "delta_kl_rot_p25": 0.7638492489869058,
-        "delta_kl_rot_p50": 0.8783470427641218,
-        "delta_kl_rot_p75": 1.0002629642210041,
-        "delta_kl_temp_p25": -0.008364548207363764,
-        "delta_kl_temp_p50": 0.008079057006932011,
-        "delta_kl_temp_p75": 0.034310538847130256,
-        "delta_kl_interaction_p50": 2.7122076799426997,
-        "delta_kl_tuned_p50": 3.626672455249219
+        "delta_kl_rot_p25": 0.8111097374787031,
+        "delta_kl_rot_p50": 0.9212089029774528,
+        "delta_kl_rot_p75": 1.0050185424913374,
+        "delta_kl_temp_p25": 0.0009718739600257376,
+        "delta_kl_temp_p50": 0.025048241202264343,
+        "delta_kl_temp_p75": 0.04750195213360886,
+        "delta_kl_interaction_p50": 2.8157618736802137,
+        "delta_kl_tuned_p50": 3.7702941350888457
       },
       "positional": {
         "pos_grid": [
@@ -9145,9 +11585,9 @@
           0.92,
           0.98
         ],
-        "pos_in_dist_le_0.92": 4.508356649370683,
-        "pos_ood_ge_0.96": 3.626672455249219,
-        "pos_ood_gap": -0.8816841941214637
+        "pos_in_dist_le_0.92": 4.998663708541972,
+        "pos_ood_ge_0.96": 3.7702941350888457,
+        "pos_ood_gap": -1.2283695734531266
       },
       "head_mismatch": {
         "kl_bits_tuned_final": 0.0,
@@ -9176,6 +11616,105 @@
         }
       },
       "prefer_tuned": true
+    }
+  },
+  "summary": {
+    "semantic_margin": {
+      "delta_abs": 0.002,
+      "p_uniform": 6.581718618365627e-06,
+      "L_semantic_margin_ok_norm": 31,
+      "margin_ok_at_L_semantic_norm": true,
+      "p_answer_at_L_semantic_norm": 0.9359333515167236,
+      "L_semantic_confirmed_margin_ok_norm": 31
+    },
+    "micro_suite": {
+      "n": 5,
+      "L_copy_strict_median": null,
+      "L_copy_soft_k1_median": 30,
+      "L_semantic_norm_median": 31,
+      "L_semantic_confirmed_median": 31,
+      "L_semantic_margin_ok_norm_median": 31,
+      "delta_hat_median": 0.0556,
+      "L_semantic_norm_iqr": [
+        30,
+        32
+      ],
+      "n_missing": 0,
+      "notes": "control is France→Paris; other positives do not add new controls"
+    }
+  },
+  "micro_suite": {
+    "facts": [
+      {
+        "fact_key": "Germany→Berlin",
+        "fact_index": 0,
+        "L_copy_strict": null,
+        "L_copy_soft_k1": null,
+        "L_semantic_norm": 31,
+        "L_semantic_confirmed": 31,
+        "L_semantic_margin_ok_norm": 31,
+        "delta_hat": null,
+        "row_index": 31
+      },
+      {
+        "fact_key": "France→Paris",
+        "fact_index": 1,
+        "L_copy_strict": null,
+        "L_copy_soft_k1": null,
+        "L_semantic_norm": 30,
+        "L_semantic_confirmed": null,
+        "L_semantic_margin_ok_norm": 30,
+        "delta_hat": null,
+        "row_index": 104
+      },
+      {
+        "fact_key": "Italy→Rome",
+        "fact_index": 2,
+        "L_copy_strict": null,
+        "L_copy_soft_k1": 30,
+        "L_semantic_norm": 32,
+        "L_semantic_confirmed": null,
+        "L_semantic_margin_ok_norm": 32,
+        "delta_hat": 0.05555555555555555,
+        "row_index": 180
+      },
+      {
+        "fact_key": "Japan→Tokyo",
+        "fact_index": 3,
+        "L_copy_strict": null,
+        "L_copy_soft_k1": null,
+        "L_semantic_norm": 30,
+        "L_semantic_confirmed": null,
+        "L_semantic_margin_ok_norm": 30,
+        "delta_hat": null,
+        "row_index": 252
+      },
+      {
+        "fact_key": "Canada→Ottawa",
+        "fact_index": 4,
+        "L_copy_strict": null,
+        "L_copy_soft_k1": null,
+        "L_semantic_norm": 32,
+        "L_semantic_confirmed": null,
+        "L_semantic_margin_ok_norm": 32,
+        "delta_hat": null,
+        "row_index": 328
+      }
+    ],
+    "aggregates": {
+      "n": 5,
+      "L_copy_strict_median": null,
+      "L_copy_soft_k1_median": 30,
+      "L_semantic_norm_median": 31,
+      "L_semantic_confirmed_median": 31,
+      "L_semantic_margin_ok_norm_median": 31,
+      "delta_hat_median": 0.0556,
+      "L_semantic_norm_iqr": [
+        30,
+        32
+      ],
+      "n_missing": 0,
+      "notes": "control is France→Paris; other positives do not add new controls"
     }
   },
   "measurement_guidance": {
@@ -9251,14 +11790,14 @@
     },
     "tuned_audit": {
       "rotation_vs_temperature": {
-        "delta_kl_rot_p25": 0.7638492489869058,
-        "delta_kl_rot_p50": 0.8783470427641218,
-        "delta_kl_rot_p75": 1.0002629642210041,
-        "delta_kl_temp_p25": -0.008364548207363764,
-        "delta_kl_temp_p50": 0.008079057006932011,
-        "delta_kl_temp_p75": 0.034310538847130256,
-        "delta_kl_interaction_p50": 2.7122076799426997,
-        "delta_kl_tuned_p50": 3.626672455249219
+        "delta_kl_rot_p25": 0.8111097374787031,
+        "delta_kl_rot_p50": 0.9212089029774528,
+        "delta_kl_rot_p75": 1.0050185424913374,
+        "delta_kl_temp_p25": 0.0009718739600257376,
+        "delta_kl_temp_p50": 0.025048241202264343,
+        "delta_kl_temp_p75": 0.04750195213360886,
+        "delta_kl_interaction_p50": 2.8157618736802137,
+        "delta_kl_tuned_p50": 3.7702941350888457
       },
       "positional": {
         "pos_grid": [
@@ -9269,9 +11808,9 @@
           0.92,
           0.98
         ],
-        "pos_in_dist_le_0.92": 4.508356649370683,
-        "pos_ood_ge_0.96": 3.626672455249219,
-        "pos_ood_gap": -0.8816841941214637
+        "pos_in_dist_le_0.92": 4.998663708541972,
+        "pos_ood_ge_0.96": 3.7702941350888457,
+        "pos_ood_gap": -1.2283695734531266
       },
       "head_mismatch": {
         "kl_bits_tuned_final": 0.0,
@@ -9294,6 +11833,70 @@
         "rawlens_full_csv": "output-Qwen3-8B-pure-next-token-rawlens.csv",
         "tuned_variants_csv": "output-Qwen3-8B-pure-next-token-tuned-variants.csv",
         "positions_audit_csv": "output-Qwen3-8B-positions-tuned-audit.csv"
+      }
+    },
+    "micro_suite": {
+      "facts": [
+        {
+          "fact_key": "Germany→Berlin",
+          "fact_index": 0,
+          "L_copy_strict": null,
+          "L_semantic_norm": 31,
+          "L_semantic_confirmed": 31,
+          "L_semantic_margin_ok_norm": 31,
+          "delta_hat": null
+        },
+        {
+          "fact_key": "France→Paris",
+          "fact_index": 1,
+          "L_copy_strict": null,
+          "L_semantic_norm": 30,
+          "L_semantic_confirmed": null,
+          "L_semantic_margin_ok_norm": 30,
+          "delta_hat": null
+        },
+        {
+          "fact_key": "Italy→Rome",
+          "fact_index": 2,
+          "L_copy_strict": null,
+          "L_semantic_norm": 32,
+          "L_semantic_confirmed": null,
+          "L_semantic_margin_ok_norm": 32,
+          "delta_hat": 0.05555555555555555
+        },
+        {
+          "fact_key": "Japan→Tokyo",
+          "fact_index": 3,
+          "L_copy_strict": null,
+          "L_semantic_norm": 30,
+          "L_semantic_confirmed": null,
+          "L_semantic_margin_ok_norm": 30,
+          "delta_hat": null
+        },
+        {
+          "fact_key": "Canada→Ottawa",
+          "fact_index": 4,
+          "L_copy_strict": null,
+          "L_semantic_norm": 32,
+          "L_semantic_confirmed": null,
+          "L_semantic_margin_ok_norm": 32,
+          "delta_hat": null
+        }
+      ],
+      "aggregates": {
+        "L_semantic_confirmed_median": 31,
+        "delta_hat_median": 0.0556,
+        "n_missing": 0,
+        "n": 5
+      },
+      "citations": {
+        "fact_rows": {
+          "Germany→Berlin": 31,
+          "France→Paris": 104,
+          "Italy→Rome": 180,
+          "Japan→Tokyo": 252,
+          "Canada→Ottawa": 328
+        }
       }
     }
   },

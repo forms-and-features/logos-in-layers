@@ -2,7 +2,9 @@
   "prompt": {
     "type": "prompt",
     "context_prompt": "Give the city name only, plain text. The capital of Germany is called simply",
-    "ground_truth": "Berlin"
+    "ground_truth": "Berlin",
+    "fact_key": "Germany→Berlin",
+    "fact_index": 0
   },
   "test_prompts": [
     {
@@ -820,7 +822,10 @@
       "delta": 0.05,
       "gamma": 0.02,
       "K": 50,
-      "tau": 0.33
+      "tau": 0.33,
+      "semantic_margin": {
+        "delta_abs": 0.002
+      }
     },
     "answer_margin_unit": "logit",
     "unembed_bias": {
@@ -829,6 +834,7 @@
       "max_abs": 0.0
     },
     "flags": {
+      "rank_only_near_uniform": true,
       "repeatability_skipped": "deterministic_env",
       "normalization_spike": true
     },
@@ -7143,6 +7149,15 @@
       "L_copy_soft_k2_frac": null,
       "L_copy_soft_k3_frac": null
     },
+    "L_semantic_margin_ok": 80,
+    "semantic_margin": {
+      "delta_abs": 0.002,
+      "p_uniform": 7.79690618762475e-06,
+      "L_semantic_margin_ok_norm": 80,
+      "margin_ok_at_L_semantic_norm": false,
+      "p_answer_at_L_semantic_norm": 2.3916558347991668e-05,
+      "L_semantic_confirmed_margin_ok_norm": null
+    },
     "raw_lens_window": {
       "radius": 4,
       "center_layers": [
@@ -8667,7 +8682,9 @@
         "pieces": [
           "ĠBerlin"
         ],
-        "string": "Berlin"
+        "string": "Berlin",
+        "fact_key": "Germany→Berlin",
+        "fact_index": 0
       },
       {
         "prompt_id": "ctl",
@@ -8682,7 +8699,9 @@
         "pieces": [
           "ĠParis"
         ],
-        "string": "Paris"
+        "string": "Paris",
+        "fact_key": null,
+        "fact_index": null
       },
       {
         "prompt_id": "pos",
@@ -8697,7 +8716,145 @@
         "pieces": [
           "ĠBerlin"
         ],
-        "string": "Berlin"
+        "string": "Berlin",
+        "fact_key": "Germany→Berlin",
+        "fact_index": 0
+      },
+      {
+        "prompt_id": "pos",
+        "prompt_variant": "orig",
+        "ok": true,
+        "status": "ok",
+        "variant": "with_space",
+        "first_id": 12366,
+        "answer_ids": [
+          12366
+        ],
+        "pieces": [
+          "ĠParis"
+        ],
+        "string": "Paris",
+        "fact_key": "France→Paris",
+        "fact_index": 1
+      },
+      {
+        "prompt_id": "pos",
+        "prompt_variant": "no_filler",
+        "ok": true,
+        "status": "ok",
+        "variant": "with_space",
+        "first_id": 12366,
+        "answer_ids": [
+          12366
+        ],
+        "pieces": [
+          "ĠParis"
+        ],
+        "string": "Paris",
+        "fact_key": "France→Paris",
+        "fact_index": 1
+      },
+      {
+        "prompt_id": "pos",
+        "prompt_variant": "orig",
+        "ok": true,
+        "status": "ok",
+        "variant": "with_space",
+        "first_id": 22463,
+        "answer_ids": [
+          22463
+        ],
+        "pieces": [
+          "ĠRome"
+        ],
+        "string": "Rome",
+        "fact_key": "Italy→Rome",
+        "fact_index": 2
+      },
+      {
+        "prompt_id": "pos",
+        "prompt_variant": "no_filler",
+        "ok": true,
+        "status": "ok",
+        "variant": "with_space",
+        "first_id": 22463,
+        "answer_ids": [
+          22463
+        ],
+        "pieces": [
+          "ĠRome"
+        ],
+        "string": "Rome",
+        "fact_key": "Italy→Rome",
+        "fact_index": 2
+      },
+      {
+        "prompt_id": "pos",
+        "prompt_variant": "orig",
+        "ok": true,
+        "status": "ok",
+        "variant": "with_space",
+        "first_id": 27286,
+        "answer_ids": [
+          27286
+        ],
+        "pieces": [
+          "ĠTokyo"
+        ],
+        "string": "Tokyo",
+        "fact_key": "Japan→Tokyo",
+        "fact_index": 3
+      },
+      {
+        "prompt_id": "pos",
+        "prompt_variant": "no_filler",
+        "ok": true,
+        "status": "ok",
+        "variant": "with_space",
+        "first_id": 27286,
+        "answer_ids": [
+          27286
+        ],
+        "pieces": [
+          "ĠTokyo"
+        ],
+        "string": "Tokyo",
+        "fact_key": "Japan→Tokyo",
+        "fact_index": 3
+      },
+      {
+        "prompt_id": "pos",
+        "prompt_variant": "orig",
+        "ok": true,
+        "status": "ok",
+        "variant": "with_space",
+        "first_id": 33266,
+        "answer_ids": [
+          33266
+        ],
+        "pieces": [
+          "ĠOttawa"
+        ],
+        "string": "Ottawa",
+        "fact_key": "Canada→Ottawa",
+        "fact_index": 4
+      },
+      {
+        "prompt_id": "pos",
+        "prompt_variant": "no_filler",
+        "ok": true,
+        "status": "ok",
+        "variant": "with_space",
+        "first_id": 33266,
+        "answer_ids": [
+          33266
+        ],
+        "pieces": [
+          "ĠOttawa"
+        ],
+        "string": "Ottawa",
+        "fact_key": "Canada→Ottawa",
+        "fact_index": 4
       }
     ],
     "tuned_lens": {
@@ -8729,6 +8886,89 @@
         "v2_addends": {
           "js_p50": 0.1,
           "l1_p50": 0.05
+        }
+      }
+    },
+    "micro_suite": {
+      "facts": [
+        {
+          "fact_key": "Germany→Berlin",
+          "fact_index": 0,
+          "L_copy_strict": null,
+          "L_copy_soft_k1": null,
+          "L_semantic_norm": 40,
+          "L_semantic_confirmed": 40,
+          "L_semantic_margin_ok_norm": 80,
+          "delta_hat": null,
+          "row_index": 40
+        },
+        {
+          "fact_key": "France→Paris",
+          "fact_index": 1,
+          "L_copy_strict": null,
+          "L_copy_soft_k1": null,
+          "L_semantic_norm": 49,
+          "L_semantic_confirmed": null,
+          "L_semantic_margin_ok_norm": 80,
+          "delta_hat": null,
+          "row_index": 211
+        },
+        {
+          "fact_key": "Italy→Rome",
+          "fact_index": 2,
+          "L_copy_strict": null,
+          "L_copy_soft_k1": null,
+          "L_semantic_norm": 51,
+          "L_semantic_confirmed": null,
+          "L_semantic_margin_ok_norm": 80,
+          "delta_hat": null,
+          "row_index": 375
+        },
+        {
+          "fact_key": "Japan→Tokyo",
+          "fact_index": 3,
+          "L_copy_strict": null,
+          "L_copy_soft_k1": null,
+          "L_semantic_norm": 80,
+          "L_semantic_confirmed": null,
+          "L_semantic_margin_ok_norm": 80,
+          "delta_hat": null,
+          "row_index": 566
+        },
+        {
+          "fact_key": "Canada→Ottawa",
+          "fact_index": 4,
+          "L_copy_strict": null,
+          "L_copy_soft_k1": null,
+          "L_semantic_norm": 60,
+          "L_semantic_confirmed": null,
+          "L_semantic_margin_ok_norm": 80,
+          "delta_hat": null,
+          "row_index": 708
+        }
+      ],
+      "aggregates": {
+        "n": 5,
+        "L_copy_strict_median": null,
+        "L_copy_soft_k1_median": null,
+        "L_semantic_norm_median": 51,
+        "L_semantic_confirmed_median": 40,
+        "L_semantic_margin_ok_norm_median": 80,
+        "delta_hat_median": null,
+        "L_semantic_norm_iqr": [
+          49,
+          60
+        ],
+        "n_missing": 0,
+        "notes": "control is France→Paris; other positives do not add new controls"
+      },
+      "citations": {
+        "fact_rows": {
+          "Germany→Berlin": 40,
+          "France→Paris": 211,
+          "Italy→Rome": 375,
+          "Japan→Tokyo": 566,
+          "Canada→Ottawa": 708
         }
       }
     },
@@ -8889,6 +9129,214 @@
         "answer_rank_raw": 1,
         "is_answer_norm": true,
         "is_answer_raw": true
+      },
+      {
+        "layer": 0,
+        "kl_norm_vs_raw_bits": 0.0005976704049410775,
+        "top1_agree": false,
+        "p_top1_norm": 9.172249519906472e-06,
+        "p_top1_raw": 8.097964382614009e-06,
+        "p_answer_norm": 7.87160752224736e-06,
+        "p_answer_raw": 7.72072235122323e-06,
+        "answer_rank_norm": 46165,
+        "answer_rank_raw": 116107,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 21,
+        "kl_norm_vs_raw_bits": 0.011636421399787385,
+        "top1_agree": true,
+        "p_top1_norm": 2.1667920009349473e-05,
+        "p_top1_raw": 1.2175855772511568e-05,
+        "p_answer_norm": 1.2133199561503716e-05,
+        "p_answer_raw": 9.336149560112972e-06,
+        "answer_rank_norm": 1679,
+        "answer_rank_raw": 1883,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 41,
+        "kl_norm_vs_raw_bits": 0.00256868349545551,
+        "top1_agree": false,
+        "p_top1_norm": 2.4871789719327353e-05,
+        "p_top1_raw": 1.9585084373829886e-05,
+        "p_answer_norm": 2.0413859601831064e-05,
+        "p_answer_raw": 1.9322549633216113e-05,
+        "answer_rank_norm": 5,
+        "answer_rank_raw": 2,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 61,
+        "kl_norm_vs_raw_bits": 0.04277632302958693,
+        "top1_agree": true,
+        "p_top1_norm": 3.78016775357537e-05,
+        "p_top1_raw": 0.0002670535468496382,
+        "p_answer_norm": 3.78016775357537e-05,
+        "p_answer_raw": 0.0002670535468496382,
+        "answer_rank_norm": 1,
+        "answer_rank_raw": 1,
+        "is_answer_norm": true,
+        "is_answer_raw": true
+      },
+      {
+        "layer": 0,
+        "kl_norm_vs_raw_bits": 0.0005976704049410775,
+        "top1_agree": false,
+        "p_top1_norm": 9.172249519906472e-06,
+        "p_top1_raw": 8.097964382614009e-06,
+        "p_answer_norm": 7.477824965462787e-06,
+        "p_answer_raw": 7.806190296832938e-06,
+        "answer_rank_norm": 118644,
+        "answer_rank_raw": 55722,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 21,
+        "kl_norm_vs_raw_bits": 0.011888488846916028,
+        "top1_agree": true,
+        "p_top1_norm": 2.1901059881201945e-05,
+        "p_top1_raw": 1.220396370626986e-05,
+        "p_answer_norm": 1.131380213337252e-05,
+        "p_answer_raw": 9.308034350397065e-06,
+        "answer_rank_norm": 3678,
+        "answer_rank_raw": 2053,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 41,
+        "kl_norm_vs_raw_bits": 0.0028216165661999215,
+        "top1_agree": false,
+        "p_top1_norm": 2.51703222602373e-05,
+        "p_top1_raw": 2.0081295588170178e-05,
+        "p_answer_norm": 1.5437630281667225e-05,
+        "p_answer_raw": 1.5136362890189048e-05,
+        "answer_rank_norm": 111,
+        "answer_rank_raw": 42,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 61,
+        "kl_norm_vs_raw_bits": 0.045114870560838564,
+        "top1_agree": true,
+        "p_top1_norm": 4.4249274651519954e-05,
+        "p_top1_raw": 0.00044747040374204516,
+        "p_answer_norm": 4.4249274651519954e-05,
+        "p_answer_raw": 0.00044747040374204516,
+        "answer_rank_norm": 1,
+        "answer_rank_raw": 1,
+        "is_answer_norm": true,
+        "is_answer_raw": true
+      },
+      {
+        "layer": 0,
+        "kl_norm_vs_raw_bits": 0.0005976704049410775,
+        "top1_agree": false,
+        "p_top1_norm": 9.172249519906472e-06,
+        "p_top1_raw": 8.097964382614009e-06,
+        "p_answer_norm": 7.391998678940581e-06,
+        "p_answer_raw": 7.832461051293649e-06,
+        "answer_rank_norm": 123751,
+        "answer_rank_raw": 34007,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 21,
+        "kl_norm_vs_raw_bits": 0.01220920021318475,
+        "top1_agree": false,
+        "p_top1_norm": 2.148550447600428e-05,
+        "p_top1_raw": 1.197817073261831e-05,
+        "p_answer_norm": 6.753221896360628e-06,
+        "p_answer_raw": 7.414091669488698e-06,
+        "answer_rank_norm": 93524,
+        "answer_rank_raw": 92657,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 41,
+        "kl_norm_vs_raw_bits": 0.00296899091823029,
+        "top1_agree": false,
+        "p_top1_norm": 2.6508225346333347e-05,
+        "p_top1_raw": 2.2449103198596276e-05,
+        "p_answer_norm": 1.3231328011897858e-05,
+        "p_answer_raw": 1.326359051745385e-05,
+        "answer_rank_norm": 790,
+        "answer_rank_raw": 227,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 61,
+        "kl_norm_vs_raw_bits": 0.03620271884421214,
+        "top1_agree": false,
+        "p_top1_norm": 2.6080857423949055e-05,
+        "p_top1_raw": 7.469890988431871e-05,
+        "p_answer_norm": 2.1375553842517547e-05,
+        "p_answer_raw": 6.891781958984211e-05,
+        "answer_rank_norm": 7,
+        "answer_rank_raw": 2,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 0,
+        "kl_norm_vs_raw_bits": 0.0005976704049410775,
+        "top1_agree": false,
+        "p_top1_norm": 9.172249519906472e-06,
+        "p_top1_raw": 8.097964382614009e-06,
+        "p_answer_norm": 7.923258635855746e-06,
+        "p_answer_raw": 7.752611054456793e-06,
+        "answer_rank_norm": 35778,
+        "answer_rank_raw": 99898,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 21,
+        "kl_norm_vs_raw_bits": 0.011988229379115239,
+        "top1_agree": false,
+        "p_top1_norm": 2.1543741240748204e-05,
+        "p_top1_raw": 1.195007462229114e-05,
+        "p_answer_norm": 6.491856311185984e-06,
+        "p_answer_raw": 7.232158623082796e-06,
+        "answer_rank_norm": 101123,
+        "answer_rank_raw": 104184,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 41,
+        "kl_norm_vs_raw_bits": 0.003060850815718773,
+        "top1_agree": true,
+        "p_top1_norm": 2.7291995138511993e-05,
+        "p_top1_raw": 2.0739485989906825e-05,
+        "p_answer_norm": 1.442036318621831e-05,
+        "p_answer_raw": 1.3426727491605561e-05,
+        "answer_rank_norm": 263,
+        "answer_rank_raw": 182,
+        "is_answer_norm": false,
+        "is_answer_raw": false
+      },
+      {
+        "layer": 61,
+        "kl_norm_vs_raw_bits": 0.04056666037178344,
+        "top1_agree": true,
+        "p_top1_norm": 3.1528012186754495e-05,
+        "p_top1_raw": 0.00015746876306366175,
+        "p_answer_norm": 3.1528012186754495e-05,
+        "p_answer_raw": 0.00015746876306366175,
+        "answer_rank_norm": 1,
+        "answer_rank_raw": 1,
+        "is_answer_norm": true,
+        "is_answer_raw": true
       }
     ],
     "summary": {
@@ -8896,6 +9344,15 @@
       "max_kl_norm_vs_raw_bits": 0.04289584828470766,
       "lens_artifact_risk": "low"
     }
+  },
+  "prompts": {
+    "facts_micro_suite": [
+      "Germany→Berlin",
+      "France→Paris",
+      "Italy→Rome",
+      "Japan→Tokyo",
+      "Canada→Ottawa"
+    ]
   },
   "provenance": {
     "env": {
@@ -8963,12 +9420,112 @@
     "mode": "auto",
     "path": "/home/kkonstant/logos-in-layers/001_layers_baseline/tuned_lenses/Meta-Llama-3-70B"
   },
+  "summary": {
+    "semantic_margin": {
+      "delta_abs": 0.002,
+      "p_uniform": 7.79690618762475e-06,
+      "L_semantic_margin_ok_norm": 80,
+      "margin_ok_at_L_semantic_norm": false,
+      "p_answer_at_L_semantic_norm": 2.3916558347991668e-05,
+      "L_semantic_confirmed_margin_ok_norm": null
+    },
+    "micro_suite": {
+      "n": 5,
+      "L_copy_strict_median": null,
+      "L_copy_soft_k1_median": null,
+      "L_semantic_norm_median": 51,
+      "L_semantic_confirmed_median": 40,
+      "L_semantic_margin_ok_norm_median": 80,
+      "delta_hat_median": null,
+      "L_semantic_norm_iqr": [
+        49,
+        60
+      ],
+      "n_missing": 0,
+      "notes": "control is France→Paris; other positives do not add new controls"
+    }
+  },
+  "micro_suite": {
+    "facts": [
+      {
+        "fact_key": "Germany→Berlin",
+        "fact_index": 0,
+        "L_copy_strict": null,
+        "L_copy_soft_k1": null,
+        "L_semantic_norm": 40,
+        "L_semantic_confirmed": 40,
+        "L_semantic_margin_ok_norm": 80,
+        "delta_hat": null,
+        "row_index": 40
+      },
+      {
+        "fact_key": "France→Paris",
+        "fact_index": 1,
+        "L_copy_strict": null,
+        "L_copy_soft_k1": null,
+        "L_semantic_norm": 49,
+        "L_semantic_confirmed": null,
+        "L_semantic_margin_ok_norm": 80,
+        "delta_hat": null,
+        "row_index": 211
+      },
+      {
+        "fact_key": "Italy→Rome",
+        "fact_index": 2,
+        "L_copy_strict": null,
+        "L_copy_soft_k1": null,
+        "L_semantic_norm": 51,
+        "L_semantic_confirmed": null,
+        "L_semantic_margin_ok_norm": 80,
+        "delta_hat": null,
+        "row_index": 375
+      },
+      {
+        "fact_key": "Japan→Tokyo",
+        "fact_index": 3,
+        "L_copy_strict": null,
+        "L_copy_soft_k1": null,
+        "L_semantic_norm": 80,
+        "L_semantic_confirmed": null,
+        "L_semantic_margin_ok_norm": 80,
+        "delta_hat": null,
+        "row_index": 566
+      },
+      {
+        "fact_key": "Canada→Ottawa",
+        "fact_index": 4,
+        "L_copy_strict": null,
+        "L_copy_soft_k1": null,
+        "L_semantic_norm": 60,
+        "L_semantic_confirmed": null,
+        "L_semantic_margin_ok_norm": 80,
+        "delta_hat": null,
+        "row_index": 708
+      }
+    ],
+    "aggregates": {
+      "n": 5,
+      "L_copy_strict_median": null,
+      "L_copy_soft_k1_median": null,
+      "L_semantic_norm_median": 51,
+      "L_semantic_confirmed_median": 40,
+      "L_semantic_margin_ok_norm_median": 80,
+      "delta_hat_median": null,
+      "L_semantic_norm_iqr": [
+        49,
+        60
+      ],
+      "n_missing": 0,
+      "notes": "control is France→Paris; other positives do not add new controls"
+    }
+  },
   "measurement_guidance": {
     "prefer_ranks": true,
     "suppress_abs_probs": true,
     "reasons": [
       "norm_only_semantics_window",
-      "normalization_spike"
+      "normalization_spike",
+      "rank_only_near_uniform"
     ],
     "notes": "Family-level head calibration; treat probabilities comparatively only within model.",
     "preferred_lens_for_reporting": "norm",
@@ -9046,6 +9603,70 @@
         "rawlens_full_csv": "output-Meta-Llama-3-70B-pure-next-token-rawlens.csv",
         "tuned_variants_csv": null,
         "positions_audit_csv": null
+      }
+    },
+    "micro_suite": {
+      "facts": [
+        {
+          "fact_key": "Germany→Berlin",
+          "fact_index": 0,
+          "L_copy_strict": null,
+          "L_semantic_norm": 40,
+          "L_semantic_confirmed": 40,
+          "L_semantic_margin_ok_norm": 80,
+          "delta_hat": null
+        },
+        {
+          "fact_key": "France→Paris",
+          "fact_index": 1,
+          "L_copy_strict": null,
+          "L_semantic_norm": 49,
+          "L_semantic_confirmed": null,
+          "L_semantic_margin_ok_norm": 80,
+          "delta_hat": null
+        },
+        {
+          "fact_key": "Italy→Rome",
+          "fact_index": 2,
+          "L_copy_strict": null,
+          "L_semantic_norm": 51,
+          "L_semantic_confirmed": null,
+          "L_semantic_margin_ok_norm": 80,
+          "delta_hat": null
+        },
+        {
+          "fact_key": "Japan→Tokyo",
+          "fact_index": 3,
+          "L_copy_strict": null,
+          "L_semantic_norm": 80,
+          "L_semantic_confirmed": null,
+          "L_semantic_margin_ok_norm": 80,
+          "delta_hat": null
+        },
+        {
+          "fact_key": "Canada→Ottawa",
+          "fact_index": 4,
+          "L_copy_strict": null,
+          "L_semantic_norm": 60,
+          "L_semantic_confirmed": null,
+          "L_semantic_margin_ok_norm": 80,
+          "delta_hat": null
+        }
+      ],
+      "aggregates": {
+        "L_semantic_confirmed_median": 40,
+        "delta_hat_median": null,
+        "n_missing": 0,
+        "n": 5
+      },
+      "citations": {
+        "fact_rows": {
+          "Germany→Berlin": 40,
+          "France→Paris": 211,
+          "Italy→Rome": 375,
+          "Japan→Tokyo": 566,
+          "Canada→Ottawa": 708
+        }
       }
     }
   },
