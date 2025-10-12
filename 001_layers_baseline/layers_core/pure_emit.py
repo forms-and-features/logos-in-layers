@@ -138,8 +138,13 @@ def compute_pure_next_token_info(
     except Exception:
         cos_to_final = None
 
+    # Pre-compute top-2 stats reused by control and copy heuristics
+    top2_k = min(2, last_logits.shape[-1])
+    _vals2, _idx2 = torch.topk(last_logits, top2_k, largest=True, sorted=True)
+
     # Control margin
     control_margin = None
+    control_top2_logit_gap = None
     if control_ids is not None and all(x is not None for x in control_ids):
         paris_id, berlin_id = control_ids  # type: ignore
         try:
@@ -148,6 +153,14 @@ def compute_pure_next_token_info(
             )
         except Exception:
             control_margin = None
+        try:
+            paris_idx = int(paris_id)
+            top1_current = int(_idx2[0].item())
+            if len(_vals2) > 1 and top1_current == paris_idx:
+                paris_logit = float(last_logits[paris_idx].item())
+                control_top2_logit_gap = paris_logit - float(_vals2[1].item())
+        except Exception:
+            control_top2_logit_gap = None
 
     # Uniform semantics margin
     vocab_size = int(last_logits.shape[-1])
@@ -210,11 +223,9 @@ def compute_pure_next_token_info(
         strict_tau_list = tuple(sorted({float(t) for t in copy_strict_thresholds}))
 
     # Compute base stats to avoid recomputation
-    # top-2 from last position for margin check
-    _vals2, _idx2 = torch.topk(last_logits, 2, largest=True, sorted=True)
     _full = last_full_probs
     _p1 = float(_full[_idx2[0]].item()) if _full is not None else None
-    _p2 = float(_full[_idx2[1]].item()) if _full is not None else None
+    _p2 = float(_full[_idx2[1]].item()) if (_full is not None and top2_k > 1) else None
     strict_hits: Dict[str, bool] = {}
     # k=1 window is last top-1 id
     window_k1 = window_manager.get_window(lens_type, prompt_id, prompt_variant, 1)
@@ -327,6 +338,7 @@ def compute_pure_next_token_info(
         **metrics,
         "cos_to_final": cos_to_final,
         "control_margin": control_margin,
+        "control_top2_logit_gap": control_top2_logit_gap,
         # Surface and geom
         "echo_mass_prompt": echo_mass_prompt,
         "answer_mass": answer_mass,
@@ -394,6 +406,7 @@ def compute_pure_next_token_info(
         collected["copy_strict_hits"] = strict_hits
     collected["answer_minus_uniform"] = answer_minus_uniform
     collected["p_answer"] = metrics.get("p_answer")
+    collected["control_top2_logit_gap"] = control_top2_logit_gap
     if lens_type == "norm":
         collected["semantic_margin_ok"] = semantic_margin_ok
 

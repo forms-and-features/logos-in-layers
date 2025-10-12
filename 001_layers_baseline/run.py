@@ -117,6 +117,7 @@ from layers_core.summaries import (
     compute_confirmed_semantics,
     compute_lens_artifact_score,
     classify_norm_trajectory,
+    summarize_control_records,
 )
 
 def clean_model_name(model_id):
@@ -1182,18 +1183,12 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             pass
 
         # Compute and persist control prompt info and summary
-        first_pos = None
-        max_margin = None
-        for rec in json_data.get("pure_next_token_records", []):
-            if rec.get("prompt_id") != "ctl":
-                continue
-            cm = rec.get("control_margin")
-            if cm is None:
-                continue
-            if max_margin is None or cm > max_margin:
-                max_margin = cm
-            if cm > 0 and first_pos is None:
-                first_pos = rec.get("layer")
+        delta_top2_logit_ctl = 0.5
+        control_summary = summarize_control_records(
+            json_data.get("pure_next_token_records", []),
+            control_answer_id=first_ans_id_ctl,
+            delta_top2_logit_ctl=delta_top2_logit_ctl,
+        )
         json_data["control_prompt"] = {
             "context_prompt": context_prompt_ctl,
             "gold_answer": {
@@ -1212,10 +1207,7 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 "pieces": control_alignment_entry.get("pieces"),
             },
         }
-        json_data["control_summary"] = {
-            "first_control_margin_pos": first_pos,
-            "max_control_margin": max_margin,
-        }
+        json_data["control_summary"] = control_summary
 
         try:
             rate = compute_gold_alignment_rate(gold_alignment_entries)

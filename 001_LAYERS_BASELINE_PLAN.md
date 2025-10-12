@@ -1632,7 +1632,7 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 
 ---
 
-### [ ] 1.49. **Control “strong” indicator (runner‑up margin on control prompt)**
+### [x] 1.49. **Control “strong” indicator (runner‑up margin on control prompt)**
 
 **Why.** A positive **control margin** (`p(Paris) − p(Berlin) > 0`) can be minuscule. Flagging **strong control**—where the control answer also decisively beats its runner‑up—helps separate harmless calibration wiggles from genuine lexical leakage.
 
@@ -1660,6 +1660,8 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 
 1. In the control pass (already present in §1.8), compute `control_top2_logit_gap` at layers where `Paris` is top‑1; track the earliest layer crossing both gates.
 2. Persist fields above; no CSV schema changes required.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

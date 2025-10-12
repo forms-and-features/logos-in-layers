@@ -3,7 +3,7 @@
 
 import _pathfix  # noqa: F401
 
-from layers_core.summaries import summarize_pure_records
+from layers_core.summaries import summarize_pure_records, summarize_control_records
 
 
 def test_summarize_pure_records():
@@ -141,3 +141,20 @@ def test_summarize_pure_records():
     assert semantic_gate["L_semantic_run2"] is None
     assert semantic_gate["L_semantic_strong"] == 3
     assert semantic_gate["L_semantic_strong_run2"] is None
+
+
+def test_summarize_control_records():
+    records = [
+        {"prompt_id": "ctl", "layer": 0, "control_margin": -0.05, "control_top2_logit_gap": None, "top1_token_id": 2},
+        {"prompt_id": "ctl", "layer": 1, "control_margin": 0.01, "control_top2_logit_gap": 0.3, "top1_token_id": 1},
+        {"prompt_id": "ctl", "layer": 2, "control_margin": 0.02, "control_top2_logit_gap": 0.7, "top1_token_id": 1},
+        {"prompt_id": "pos", "layer": 3, "control_margin": 0.9},  # ignored
+    ]
+
+    summary = summarize_control_records(records, control_answer_id=1, delta_top2_logit_ctl=0.5)
+
+    assert summary["first_control_margin_pos"] == 1
+    assert abs(summary["max_control_margin"] - 0.02) < 1e-9
+    assert summary["first_control_strong_pos"] == 2
+    assert abs(summary["max_control_top2_logit_gap"] - 0.7) < 1e-9
+    assert abs(summary["delta_top2_logit_ctl"] - 0.5) < 1e-9

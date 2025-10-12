@@ -502,6 +502,72 @@ def summarize_pure_records(
     return summary
 
 
+def summarize_control_records(
+    records: Sequence[Dict[str, Any]],
+    *,
+    control_answer_id: Optional[int],
+    delta_top2_logit_ctl: float = 0.5,
+) -> Dict[str, Optional[Any]]:
+    """Summarize control-prompt metrics, including strong control gate (plan §1.49)."""
+
+    def _to_int(val: Any) -> Optional[int]:
+        try:
+            return None if val is None else int(val)
+        except (TypeError, ValueError):
+            return None
+
+    def _to_float(val: Any) -> Optional[float]:
+        try:
+            return None if val is None else float(val)
+        except (TypeError, ValueError):
+            return None
+
+    control_id = _to_int(control_answer_id)
+    delta_ctl = float(delta_top2_logit_ctl)
+
+    first_margin_pos: Optional[int] = None
+    max_margin: Optional[float] = None
+    first_strong_pos: Optional[int] = None
+    max_top2_gap: Optional[float] = None
+
+    for rec in records:
+        if rec.get("prompt_id") != "ctl":
+            continue
+
+        layer_idx = _to_int(rec.get("layer"))
+        margin_val = _to_float(rec.get("control_margin"))
+        gap_val = _to_float(rec.get("control_top2_logit_gap"))
+        top1_id = _to_int(rec.get("top1_token_id"))
+
+        if margin_val is not None:
+            if max_margin is None or margin_val > max_margin:
+                max_margin = margin_val
+            if margin_val > 0 and first_margin_pos is None and layer_idx is not None:
+                first_margin_pos = layer_idx
+
+        if gap_val is not None:
+            if max_top2_gap is None or gap_val > max_top2_gap:
+                max_top2_gap = gap_val
+            strong_gate = (
+                margin_val is not None
+                and margin_val > 0
+                and gap_val >= delta_ctl
+                and layer_idx is not None
+            )
+            if strong_gate:
+                if control_id is None or top1_id == control_id:
+                    if first_strong_pos is None:
+                        first_strong_pos = layer_idx
+
+    return {
+        "first_control_margin_pos": first_margin_pos,
+        "max_control_margin": max_margin,
+        "first_control_strong_pos": first_strong_pos,
+        "max_control_top2_logit_gap": max_top2_gap,
+        "delta_top2_logit_ctl": delta_ctl,
+    }
+
+
 # --- Unified sidecar summaries (001_LAYERS_BASELINE_PLAN §1.21) ------------------------
 
 from typing import Tuple

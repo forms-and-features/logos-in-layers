@@ -157,3 +157,52 @@ def test_cosine_bias_invariance():
     cos_base = view_base["record_extra"]["cos_to_final"]
     cos_bias = view_bias["record_extra"]["cos_to_final"]
     assert abs(cos_base - cos_bias) < 1e-6
+
+
+def test_control_top2_logit_gap_emitted():
+    vocab = 4
+    seq_len = 2
+    logits_all = torch.zeros(seq_len, vocab)
+    logits_all[-1] = torch.tensor([2.0, 3.0, 1.0, -1.0], dtype=torch.float32)
+    tokens = torch.zeros(1, seq_len, dtype=torch.long)
+    ctx_ids = [0, 1]
+    wm = WindowManager(window_k=1, extra_window_ks=[1, 2])
+    final_logits = torch.tensor([1.0, 1.5, -0.2, 0.0], dtype=torch.float32)
+    final_probs = torch.softmax(final_logits, dim=0)
+    final_dir = final_logits / (final_logits.norm() + 1e-12)
+
+    decode_id = lambda idx: f"tok{int(idx)}"
+    control_ids = (1, 0)  # Paris id =1, Berlin id =0
+
+    view, collected, _ = compute_pure_next_token_info(
+        layer_out_idx=1,
+        logits_all=logits_all,
+        tokens_tensor=tokens,
+        ctx_ids_list=ctx_ids,
+        window_manager=wm,
+        lens_type="norm",
+        final_probs_tensor=final_probs,
+        first_ans_token_id=1,
+        final_dir_vec=final_dir,
+        copy_threshold=0.5,
+        copy_margin=0.1,
+        copy_strict_label=format_copy_strict_label(0.5),
+        copy_soft_threshold=0.5,
+        copy_soft_window_ks=(1,),
+        copy_soft_labels={1: format_copy_soft_label(1, 0.5)},
+        copy_soft_extra_labels={},
+        entropy_collapse_threshold=5.0,
+        decode_id_fn=decode_id,
+        ground_truth="tok1",
+        top_k_record=3,
+        prompt_id="ctl",
+        prompt_variant="orig",
+        control_ids=control_ids,
+    )
+
+    gap_view = view["record_extra"]["control_top2_logit_gap"]
+    gap_collected = collected["control_top2_logit_gap"]
+    assert gap_view is not None
+    assert gap_collected is not None
+    assert abs(gap_view - 1.0) < 1e-6
+    assert abs(gap_collected - 1.0) < 1e-6

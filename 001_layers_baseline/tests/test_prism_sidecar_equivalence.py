@@ -186,6 +186,7 @@ def test_prism_pure_next_token_helper_fields_match_manual_logic():
             -(final_probs * (final_probs + 1e-30).log()).sum().item() / math.log(2)
         ),
         "control_margin": None,
+        "control_top2_logit_gap": None,
         "resid_norm_ratio": None,
         "delta_resid_cos": None,
         "answer_logit_gap": answer_logit_gap,
