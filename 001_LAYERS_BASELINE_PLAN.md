@@ -1665,6 +1665,144 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 
 ---
 
+### [ ] 1.50. Gate‑stability under small temperature rescalings (no new forwards)
+
+**Why.** Rank milestones are invariant to monotone rescalings of logits, but **gate criteria** (uniform‑margin δ_abs and Top‑2 logit gap δ_top2) are **not**. If a “semantic onset” passes these gates only at a narrow effective temperature, claims become calibration‑sensitive. A light, local rescaling audit ensures that “strong” gates are not knife‑edge artefacts.
+
+**What.** Evaluate whether the **two semantic gates** hold under small multiplicative rescalings of the decoded logits at a few **target layers** without any new forwards.
+
+* **Scales:** `S = {0.90, 0.95, 1.05, 1.10}` (multiply layer logits by `s` before softmax).
+* **Targets (per run, if present):** `L_semantic_norm`, `L_semantic_strong`, `L_semantic_strong_run2` (test both L and L+1), and `L_semantic_confirmed`.
+* **Per‑target outputs (JSON):**
+
+  ```json
+  "diagnostics": {
+    "gate_stability_small_scale": {
+      "scales": [0.90, 0.95, 1.05, 1.10],
+      "per_target": {
+        "L_semantic_norm": { "layer": L, "uniform_margin_pass_frac": 0.75, "top2_gap_pass_frac": 1.00, "both_gates_pass_frac": 0.75 },
+        "L_semantic_strong": { "...": "..." }
+      },
+      "min_both_gates_pass_frac": 0.75
+    }
+  }
+  ```
+* **Advisory flag:** if `both_gates_pass_frac < 0.75` at any target, append `"scale_sensitive_semantic_gate"` to `measurement_guidance.reasons`.
+
+**How.**
+
+1. During the standard decode loop (pure next‑token, **norm lens**), when a layer `ℓ` is in the **target set**, keep its raw **logits** in scope and compute per‑scale:
+
+   * `p_answer(s) = softmax(z_ℓ * s)[answer_id]`
+   * `answer_minus_uniform(s) = p_answer(s) − 1/|V|`
+   * `answer_logit_gap(s) = (z_ℓ[answer] − z_ℓ[runner_up]) * s`  *(runner‑up is taken at the base scale; this is conservative and avoids quadrant flips; if desired, recompute runner‑up per‑scale.)*
+2. For each scale, mark **uniform‑margin pass** if `answer_minus_uniform(s) ≥ δ_abs` and **Top‑2 pass** if `answer_logit_gap(s) ≥ δ_top2_logit`. Aggregate pass‑fractions.
+3. Write the `gate_stability_small_scale` block into JSON. **No CSV schema changes.** No extra forwards; this is decode‑time arithmetic on per‑layer logits already in memory.
+
+---
+
+### [ ] 1.51. Lens‑consistency invariants across views (read‑only; no new forwards)
+
+**Why.** Large KL or entropy gaps can be driven by tail mass. A **set‑ and rank‑level** agreement between lenses at candidate layers makes “early meaning” claims more auditable and ties Tuned‑Lens and Raw‑vs‑Norm diagnostics to a single invariant criterion.
+
+**What.** Compute **top‑K Jaccard** and **top‑50 Spearman** rank correlations between **norm vs raw** and **norm vs tuned** at a few **candidate layers**, using logits/probabilities already computed.
+
+* **Candidate layers:** `first_rank_le_10`, `first_rank_le_5`, `L_semantic_norm`, `L_semantic_strong(_run2)`, `L_semantic_confirmed` (if present).
+* **Per‑pair metrics:**
+
+  * `topk_jaccard@10`, `topk_jaccard@50` for *(norm vs raw)* and *(norm vs tuned, if tuned sidecar present)*.
+  * `spearman_top50` over the top‑50 tokens (by **norm**) comparing ranks under the paired lens.
+* **JSON roll‑up:**
+
+  ```json
+  "diagnostics": {
+    "lens_consistency": {
+      "targets": ["first_rank_le_10","L_semantic_norm", "..."],
+      "norm_vs_raw": {
+        "at_targets": [
+          {"layer": L, "jaccard@10": 0.6, "jaccard@50": 0.8, "spearman_top50": 0.72}
+        ],
+        "p50": {"jaccard@10": 0.55, "jaccard@50": 0.78, "spearman_top50": 0.70}
+      },
+      "norm_vs_tuned": { "... same shape, if present ..." }
+    }
+  }
+  ```
+* **Advisory flags:**
+
+  * If any target has `jaccard@10 < 0.30` **or** `spearman_top50 < 0.30`, append `"low_lens_consistency_at_semantic"` to `measurement_guidance.reasons`.
+
+**How.**
+
+1. **Norm vs Raw:** reuse per‑layer probability vectors emitted for **raw‑vs‑norm full sidecar** (§1.24, §1.37–§1.38). Compute top‑K sets/ranks at the specified target layers only.
+2. **Norm vs Tuned:** read tuned sidecar vectors (already produced in §1.12/§1.21/§1.43) at the same layers; derive top‑K sets and top‑50 ranks for Spearman.
+3. Persist the **compact JSON** block only; optionally mirror two candidate‑layer rows into `output--artifact-audit.csv` footer for quick quoting. **No new forwards.**
+
+---
+
+### [ ] 1.52. Position‑window stability of semantic onset (reuse positions audit; no new forwards)
+
+**Why.** A one‑position “semantic onset” can be fragile to position within the sequence window. A small **position grid** check at the reported onset layer provides a stability scalar with near‑zero runtime cost by reusing the existing positions audit.
+
+**What.** Using `output--positions-tuned-audit.csv` (§1.43), compute for the **baseline norm lens** at the chosen onset layer:
+
+* `pos_window_rank1_frac_at_L_sem` = fraction of positions `pos ∈ pos_grid` where `answer_rank_baseline(L_sem) == 1`.
+* Also record the denominator (`n_positions_evaluated`) and the same fraction for `L_semantic_strong_run2` (evaluate both L and L+1; count a position as pass if **either** is rank‑1).
+
+**JSON roll‑up:**
+
+```json
+"summary": {
+  "position_window": {
+    "grid": [0.20,0.40,0.60,0.80,0.92,0.96,0.98,1.00],
+    "L_semantic_norm": L,
+    "rank1_frac": 0.62,
+    "n_positions": 8,
+    "rank1_frac_strong_run2": 0.75
+  }
+}
+```
+
+**Advisory flag.** If `rank1_frac < 0.50`, append `"pos_window_low_stability"` to `measurement_guidance.reasons`.
+
+**How.**
+
+1. After §1.43 writes `output--positions-tuned-audit.csv`, filter rows for the **baseline** columns at the chosen L (and L+1 for run‑of‑two). Count the fraction of positions where `answer_rank_baseline == 1`.
+2. Write the **compact JSON** block under `summary.position_window`. **No extra forwards.**
+
+---
+
+### [ ] 1.53. Formalize the last‑layer calibration guardrail (thresholded; no scope change)
+
+**Why.** §1.6 logs last‑layer lens vs final‑head KL and a temperature fit, and §1.22 routes this into `measurement_guidance`. Making the **gate thresholds explicit** prevents drift and harmonizes evaluator behavior.
+
+**What.** Add explicit **gates** to `diagnostics.last_layer_consistency` and wire them to `measurement_guidance`.
+
+* **Gate rule:** set `warn_high_last_layer_kl = true` if **either**:
+
+  1. `kl_to_final_bits ≥ 0.25`, **or**
+  2. `kl_to_final_bits − kl_after_temp_bits ≥ 0.25`.
+* **JSON addition:**
+
+  ```json
+  "diagnostics": {
+    "last_layer_consistency": {
+      "kl_to_final_bits": 0.41,
+      "kl_after_temp_bits": 0.10,
+      "temp_est": 0.78,
+      "gates": { "warn_high_last_layer_kl": true, "threshold_bits": 0.25 }
+    }
+  }
+  ```
+* **Measurement guidance wiring (no change of schema):** if the gate is **true**, ensure `measurement_guidance.prefer_ranks = true` and `suppress_abs_probs = true`, and append `"warn_high_last_layer_kl"` to `measurement_guidance.reasons` (if not already present).
+
+**How.**
+
+1. Implement the gate computation at the end of §1.6 after `temp_est` is fit and `kl_after_temp_bits` computed.
+2. Set/merge the booleans in `measurement_guidance` as in §1.22. **No CSV changes; no extra forwards.**
+
+---
+
 #### Wrap‑up
 
 Executing the items in **Group 1** upgrades the measurement pipeline from an informative prototype to a rigour‑grade toolchain. Only after this foundation is secure should we move on to the broader prompt battery and causal‑intervention work.

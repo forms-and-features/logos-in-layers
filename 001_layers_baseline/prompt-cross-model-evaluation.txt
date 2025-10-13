@@ -9,12 +9,15 @@ INPUTS
   * diagnostics.last_layer_consistency (final‑head calibration)
   * diagnostics.raw_lens_window / diagnostics.raw_lens_full
   * diagnostics.normalization_provenance, diagnostics.numeric_health, diagnostics.copy_mask
+  * diagnostics.lens_consistency (jaccard@10/@50 and spearman_top50 at candidate layers)
+  * diagnostics.gate_stability_small_scale (gate pass‑fractions under small rescalings)
   * measurement_guidance { prefer_ranks, suppress_abs_probs, reasons[], preferred_lens_for_reporting?, use_confirmed_semantics? }
   * tuned_lens.audit_summary (if present): rotation_vs_temperature, positional, head_mismatch, tuned_is_calibration_only, preferred_semantics_lens_hint
   * evaluation_pack (if present): milestones, artifact (…v2), repeatability, alignment, norm_trajectory, entropy, tuned_audit, citations
   * summary.semantic_margin { `delta_abs`, `p_uniform`, `L_semantic_margin_ok_norm`, `margin_ok_at_L_semantic_norm`, `p_answer_at_L_semantic_norm`, `L_semantic_confirmed_margin_ok_norm`? }
   * summary.semantic_gate { delta_top2_logit, L_semantic_top2_ok_norm, L_semantic_top2_ok_norm_frac, gap_at_L_semantic_norm, L_semantic_run2, L_semantic_strong, L_semantic_strong_run2 }
   * summary.micro_suite (if present): medians/IQR, `n_missing`, notes about the fact battery
+  * summary.position_window (NEW: rank‑1 fraction across pos_grid at semantic layer)
   * evaluation_pack.micro_suite (if present): per‑fact milestones, aggregates (medians/IQR), and citations to CSV rows
 - CSV – layer‑level results (one per model):
   * output-<MODEL>-records.csv
@@ -47,6 +50,9 @@ RULES
 - If `tuned_is_calibration_only=true`, treat tuned lens as calibration aid; prefer norm lens for semantics.
 - If `warn_high_last_layer_kl=true`, do not infer final‑row probability regressions; focus on rank/KL thresholds.
 - Do **not** recompute JS/Jaccard/KL/entropy from scratch; read values from the provided JSON/CSVs.
+- Gate‑stability (advisory): If diagnostics.gate_stability_small_scale.min_both_gates_pass_frac < 0.75 (or the target L has both_gates_pass_frac < 0.75), treat the onset as **calibration‑sensitive**; prefer L_semantic_strong_run2 or confirmed semantics and avoid absolute‑p narratives.
+- Lens‑consistency (advisory): If diagnostics.lens_consistency reports jaccard@10 < 0.30 or spearman_top50 < 0.30 at any semantic target, downgrade confidence in early semantics and lean on rank/KL milestones.
+- Position‑window stability (advisory): If summary.position_window.rank1_frac < 0.50, annotate semantic onset as **position‑fragile** and avoid broad generalization beyond the measured position.
 
 Final-row caveat (head calibration): When comparing final rows across models, prefer rank/KL thresholds. If a model’s JSON has `warn_high_last_layer_kl = true`, treat final probability differences as head‑calibration artefacts and do not infer regressions. Known pattern: the Gemma family often shows non‑zero last‑layer KL due to a calibrated final head; be on the lookout for similar signatures in other families. If `raw_lens_check.summary.lens_artifact_risk` is `high` or `first_norm_only_semantic_layer` is present, downgrade confidence in pre‑final “early semantics” and lean on rank milestones over probabilities.
 
@@ -86,6 +92,7 @@ Write concise but thorough paragraphs that correlate quantitative patterns acros
    Report:
    - From diagnostics.raw_lens_full and artifact‑audit CSV: `lens_artifact_score_v2` (and legacy score), `js_divergence_p50`, `l1_prob_diff_p50`, `jaccard_raw_norm_p50`, `pct_layers_kl_ge_1.0`, `n_norm_only_semantics_layers`, earliest norm‑only layer.
    - Risk tier (low/medium/high). For high tier, restrict to rank/KL milestones and confirmed semantics.
+   - Also report diagnostics.lens_consistency p50 values (jaccard@10/@50, spearman_top50) at candidate layers; low values indicate view‑dependent early “semantics”.
 
 4. Confirmed semantics
    When available, report L_semantic_strong_run2 in preference to other milestones; otherwise prefer L_semantic_strong, then L_semantic_confirmed (noting any uniform/Top‑2 margin failures).
@@ -93,6 +100,7 @@ Write concise but thorough paragraphs that correlate quantitative patterns acros
    If `summary.semantic_margin` exists, prefer `L_semantic_confirmed_margin_ok_norm` (or annotate `L_semantic_confirmed` as weak if the margin gate fails).
    If confirmed is absent, cite `L_semantic_norm`, explicitly noting when `margin_ok_at_L_semantic_norm=false`.
    When `evaluation_pack.micro_suite` exists, summarize medians across facts and cite at least one fact row per model.
+   When present, summarize gate‑stability under rescaling at the reported layer (both_gates_pass_frac) and the position‑window rank‑1 fraction; downgrade confidence if either is low per RULES.
 
 5. Entropy & confidence
    Compare entropy drift `(entropy_bits − teacher_entropy_bits)` at representative depths (use summary percentiles or evaluation_pack.entropy). Summarize whether drift shrinks as rank improves and KL falls.

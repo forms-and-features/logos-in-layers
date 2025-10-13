@@ -17,6 +17,9 @@ INPUTS
   * `diagnostics.topk_overlap` { `jaccard_raw_norm_p50`, `first_jaccard_raw_norm_ge_0.5` }
   * `diagnostics.repeatability` { `max_rank_dev`, `p95_rank_dev`, `top1_flip_rate` }
   * `diagnostics.norm_trajectory` { `shape`, `slope`, `r2`, `n_spikes` }
+  * diagnostics.lens_consistency (NEW: jaccard@10/@50 and spearman_top50 at candidate layers)
+  * diagnostics.gate_stability_small_scale (NEW: gate pass‑fractions under small rescalings)
+  * summary.position_window (NEW: rank‑1 fraction across pos_grid at semantic layer)
   * `summary.entropy` { `entropy_gap_bits_p25`, `p50`, `p75` }
   * `tuned_lens.audit_summary` {
   `rotation_vs_temperature` (ΔKL_rot/temp @ p25/p50/p75, interaction),
@@ -26,6 +29,7 @@ INPUTS
   * `tuned_lens.provenance_snapshot` (dataset/revision/position window, rank, temperatures stats, preconditioner), if present
   * `evaluation_pack` (if present): milestones, artefact v2, repeatability, alignment, norm trajectory, entropy, tuned audit, citations to CSV rows
   * `summary.semantic_margin` { `delta_abs`, `p_uniform`, `L_semantic_margin_ok_norm`, `margin_ok_at_L_semantic_norm`, `p_answer_at_L_semantic_norm`, `L_semantic_confirmed_margin_ok_norm`? }
+  * summary.semantic_gate { delta_top2_logit, L_semantic_top2_ok_norm, L_semantic_top2_ok_norm_frac, gap_at_L_semantic_norm, L_semantic_run2, L_semantic_strong, L_semantic_strong_run2 }
   * `summary.micro_suite` (if present): medians/IQR, `n_missing`, notes describing the fact battery
   * evaluation_pack.micro_suite (if present): per‑fact milestones, aggregates (medians/IQR), and CSV row citations
 * CSV – layer‑level results:
@@ -50,6 +54,11 @@ CAVEATS / RULES
 * **Do not recompute** JS/Jaccard/KL/entropy; use provided fields and CSVs. Cosines and coverage are within‑model trends; avoid cross‑family absolute comparisons.
 * Prefer **rank milestones** and **KL thresholds** over absolute probabilities; if `suppress_abs_probs=true` or artefact tier = high, avoid absolute p entirely.
 * Uniform‑margin gate: if `margin_ok_at_L_semantic_norm=false`, treat `L_semantic_norm` as **weak/tentative**. Prefer `L_semantic_confirmed_margin_ok_norm` when present; otherwise annotate weakness explicitly.
+* Top‑2 margin gate: treat any L_semantic_norm with answer_logit_gap(L_semantic_norm) < delta_top2_logit as **weak rank‑1**. Prefer L_semantic_top2_ok_norm when present; when both uniform‑ and Top‑2 gates pass and L_semantic_strong is present, prefer that.
+* Stability gate (run‑of‑two): when L_semantic_run2 (or L_semantic_strong_run2) exists, **prefer** it over single‑layer onsets; otherwise annotate one‑layer onsets as potentially unstable.
+* Gate‑stability (advisory): If diagnostics.gate_stability_small_scale.min_both_gates_pass_frac < 0.75 (or both_gates_pass_frac at the reported layer < 0.75), mark the onset as calibration‑sensitive; prefer L_semantic_strong_run2 or confirmed semantics for headline reporting; avoid absolute‑p claims.
+* Lens‑consistency (advisory): If diagnostics.lens_consistency shows jaccard@10 < 0.30 or spearman_top50 < 0.30 at a semantic target, downgrade confidence and lean on rank/KL milestones.
+* Position‑window stability (advisory): If summary.position_window.rank1_frac < 0.50, annotate the onset as position‑fragile and avoid generalization beyond the measured next‑token position.
 * When `summary.micro_suite` or `evaluation_pack.micro_suite` is present, report the **medians** (and IQR when helpful) across the fact battery, note any `n_missing` facts, and highlight notable fact-level outliers (cite the relevant fact rows). Use these aggregates to discuss robustness of collapse and semantics depths rather than relying solely on the baseline fact.
 * If `suppress_abs_probs=true` or artefact tier is high, do **not** quote numeric probabilities (`p_answer`, `p_top1`, etc.). Use ranks/KL and qualitative statements only.
 * If `preferred_semantics_lens_hint` or `preferred_lens_for_reporting` is set, report semantics under that lens by default (still include baseline for context).
@@ -79,15 +88,15 @@ Verify prerequisites and quote minimal evidence (≤2 lines per bullet, include 
 * **Norm trajectory:** `shape` (and slope/r2 if helpful).
 * **Measurement guidance:** quote `measurement_guidance` (prefer_ranks/suppress_abs_probs; preferred lens; use_confirmed_semantics).
 * **Semantic margin**: quote `summary.semantic_margin` (δ_abs, p_uniform) and state whether `margin_ok_at_L_semantic_norm` is true/false.
+* **Gate‑stability**: quote diagnostics.gate_stability_small_scale (min_both_gates_pass_frac and the per‑target pass‑fractions); note “calibration‑sensitive” if < 0.75.
+* **Position‑window**: quote summary.position_window (grid and rank1_frac at L_sem); note “position‑fragile” if < 0.50.
 * **Micro‑suite (if present)**: confirm `evaluation_pack.micro_suite.aggregates` exists; note the number of facts (`n`) and whether any facts are missing milestones.
 
 3. **Quantitative findings (layer‑by‑layer)**
 Build a short table from **positive** rows only (`prompt_id=pos`, `prompt_variant=orig`): “L 0 — entropy X bits, top‑1 ‘token’ …”
 
-* Bold **semantic layer** as follows:
-  – If `use_confirmed_semantics=true` or `summary.L_semantic_confirmed` exists, bold the **confirmed** layer; if `L_semantic_confirmed_margin_ok_norm` exists, prefer that.
-  – Else bold `L_semantic_norm`; if `margin_ok_at_L_semantic_norm=false`, label it “(weak; near‑uniform)”.
-* Report **control margin** (`control_summary.first_control_margin_pos`, `max_control_margin`).
+* Bold the **semantic layer** as follows (in order of preference): L_semantic_strong_run2; else L_semantic_strong; else L_semantic_confirmed (prefer margin_ok when present); else L_semantic_norm (label “weak” if either uniform or Top‑2 margin gates fail).
+* Report control margins (`control_summary.first_control_margin_pos`, `max_control_margin`) and control strength (`first_control_strong_pos` if present).
 * ** Micro‑suite (if present): report **median** `L_semantic_confirmed` (or `L_semantic_norm` when confirmed is absent) and **median** Δ̂ across facts; include one fact‑specific citation (row index) for concreteness.
 * **Entropy drift:** `(entropy_bits − teacher_entropy_bits)` at representative depths (or via `summary.entropy` / `evaluation_pack.entropy`).
 * If available, add **confidence margins** (`answer_logit_gap`, `answer_vs_top1_gap`) and **normalizer effect** snapshots.
@@ -110,6 +119,8 @@ Summarize from JSON and sidecars (no recomputation):
 * **Prevalence:** `pct_layers_kl_ge_1.0`, `n_norm_only_semantics_layers`, `earliest_norm_only_semantic`.
 If tier = **high** or a **norm‑only** layer is present near candidate semantics, explicitly caution that early semantics may be lens‑induced; prefer rank milestones and **confirmed** semantics.
 
+Also cite diagnostics.lens_consistency (jaccard@10/@50 and spearman_top50) at the semantic target; low values indicate view‑dependent early “semantics”.
+
 4.3. **Tuned‑Lens analysis (if present)**
 * **Preference:** If `tuned_is_calibration_only=true`, say so and prefer **norm** lens for semantics; otherwise use `preferred_semantics_lens_hint`/`preferred_lens_for_reporting`.
 * **Attribution:** report `delta_kl_rot_{p25,p50,p75}`, `delta_kl_temp_{p25,p50,p75}`, and `delta_kl_interaction_p50`.
@@ -124,6 +135,8 @@ If tier = **high** or a **norm‑only** layer is present near candidate semantic
 * **Cosine:** thresholds at ge_{0.2,0.4,0.6} (from `summary.cos_milestones` if present; else from CSV).
 * **Entropy:** note monotonicity of `entropy_bits` and drift vs `teacher_entropy_bits`; relate to KL/rank changes (early direction vs late calibration).
 * Margin gate reminder: when a rank‑1 milestone is reported, annotate if the uniform‑margin gate fails at that layer.
+* Stability reminder: if bolded semantics is not a run‑of‑two (L_semantic_run2 / L_semantic_strong_run2), annotate potential instability.
+* Gate‑stability & position‑window: if the bolded semantic layer fails either advisory (per RULES), mark the claim as calibration‑sensitive and/or position‑fragile.
 
 4.5. **Prism (if present)** — *shared‑decoder diagnostic only*
 * Presence/compatibility.
@@ -152,6 +165,8 @@ If tier = **high** or a **norm‑only** layer is present near candidate semantic
 * numeric_health clean ✓
 * copy_mask plausible ✓
 * milestones.csv or evaluation_pack.citations used for quotes ✓
+* gate_stability_small_scale reported ✓
+* position_window stability reported ✓
 
 LIMITATIONS AND DATA QUIRKS
 Keep to facts that reduce confidence: non‑zero final KL (head calibration), norm‑only early semantics, high artefact tier, large repeatability variance, alignment fallbacks, unusually high rest_mass after L_semantic. Prefer rank milestones for any cross‑model claims; treat KL trends qualitatively.
