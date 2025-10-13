@@ -825,6 +825,9 @@
       "tau": 0.33,
       "semantic_margin": {
         "delta_abs": 0.002
+      },
+      "semantic_gate": {
+        "delta_top2_logit": 0.5
       }
     },
     "answer_margin_unit": "logit",
@@ -7368,7 +7371,10 @@
       "L_copy_strict_frac": null,
       "L_copy_soft_k1_frac": null,
       "L_copy_soft_k2_frac": null,
-      "L_copy_soft_k3_frac": null
+      "L_copy_soft_k3_frac": null,
+      "L_semantic_run2_frac": null,
+      "L_semantic_strong_frac": null,
+      "L_semantic_strong_run2_frac": null
     },
     "L_semantic_margin_ok": 80,
     "semantic_margin": {
@@ -7377,6 +7383,17 @@
       "L_semantic_margin_ok_norm": 80,
       "margin_ok_at_L_semantic_norm": true,
       "p_answer_at_L_semantic_norm": 0.3394583463668823
+    },
+    "semantic_gate": {
+      "delta_top2_logit": 0.5,
+      "L_semantic_top2_ok_norm": null,
+      "L_semantic_top2_ok_norm_frac": null,
+      "gap_at_L_semantic_norm": null,
+      "delta_abs": 0.002,
+      "L_semantic_run2": null,
+      "L_semantic_strong": null,
+      "L_semantic_strong_run2": null,
+      "run2_overlaps_confirmed_window": null
     },
     "raw_lens_window": {
       "radius": 4,
@@ -9621,7 +9638,10 @@
   },
   "control_summary": {
     "first_control_margin_pos": 0,
-    "max_control_margin": 0.2070367018786783
+    "max_control_margin": 0.2070367018786783,
+    "first_control_strong_pos": null,
+    "max_control_top2_logit_gap": null,
+    "delta_top2_logit_ctl": 0.5
   },
   "tuned_lens": {
     "status": "missing",
@@ -9635,6 +9655,17 @@
       "L_semantic_margin_ok_norm": 80,
       "margin_ok_at_L_semantic_norm": true,
       "p_answer_at_L_semantic_norm": 0.3394583463668823
+    },
+    "semantic_gate": {
+      "delta_abs": 0.002,
+      "delta_top2_logit": 0.5,
+      "L_semantic_top2_ok_norm": null,
+      "L_semantic_top2_ok_norm_frac": null,
+      "gap_at_L_semantic_norm": null,
+      "L_semantic_run2": null,
+      "L_semantic_strong": null,
+      "L_semantic_strong_run2": null,
+      "run2_overlaps_confirmed_window": null
     },
     "micro_suite": {
       "n": 5,

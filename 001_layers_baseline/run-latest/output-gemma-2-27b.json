@@ -825,6 +825,9 @@
       "tau": 0.33,
       "semantic_margin": {
         "delta_abs": 0.002
+      },
+      "semantic_gate": {
+        "delta_top2_logit": 0.5
       }
     },
     "answer_margin_unit": "logit",
@@ -5758,7 +5761,10 @@
       "L_copy_strict_frac": 0.0,
       "L_copy_soft_k1_frac": 0.0,
       "L_copy_soft_k2_frac": null,
-      "L_copy_soft_k3_frac": null
+      "L_copy_soft_k3_frac": null,
+      "L_semantic_run2_frac": null,
+      "L_semantic_strong_frac": null,
+      "L_semantic_strong_run2_frac": null
     },
     "L_semantic_margin_ok": 46,
     "semantic_margin": {
@@ -5768,6 +5774,17 @@
       "margin_ok_at_L_semantic_norm": true,
       "p_answer_at_L_semantic_norm": 0.9840677976608276,
       "L_semantic_confirmed_margin_ok_norm": 46
+    },
+    "semantic_gate": {
+      "delta_top2_logit": 0.5,
+      "L_semantic_top2_ok_norm": null,
+      "L_semantic_top2_ok_norm_frac": null,
+      "gap_at_L_semantic_norm": null,
+      "delta_abs": 0.002,
+      "L_semantic_run2": null,
+      "L_semantic_strong": null,
+      "L_semantic_strong_run2": null,
+      "run2_overlaps_confirmed_window": null
     },
     "raw_lens_window": {
       "radius": 4,
@@ -7006,6 +7023,16 @@
             "L_semantic_margin_ok_norm": null,
             "margin_ok_at_L_semantic_norm": true,
             "p_answer_at_L_semantic_norm": 0.9840677976608276
+          },
+          "semantic_gate": {
+            "delta_top2_logit": 0.5,
+            "L_semantic_top2_ok_norm": null,
+            "L_semantic_top2_ok_norm_frac": null,
+            "gap_at_L_semantic_norm": null,
+            "delta_abs": 0.002,
+            "L_semantic_run2": null,
+            "L_semantic_strong": null,
+            "L_semantic_strong_run2": null
           }
         },
         {
@@ -7127,6 +7154,16 @@
             "L_semantic_margin_ok_norm": null,
             "margin_ok_at_L_semantic_norm": true,
             "p_answer_at_L_semantic_norm": 0.9998679161071777
+          },
+          "semantic_gate": {
+            "delta_top2_logit": 0.5,
+            "L_semantic_top2_ok_norm": null,
+            "L_semantic_top2_ok_norm_frac": null,
+            "gap_at_L_semantic_norm": null,
+            "delta_abs": 0.002,
+            "L_semantic_run2": null,
+            "L_semantic_strong": null,
+            "L_semantic_strong_run2": null
           }
         },
         {
@@ -7248,6 +7285,16 @@
             "L_semantic_margin_ok_norm": null,
             "margin_ok_at_L_semantic_norm": true,
             "p_answer_at_L_semantic_norm": 0.991089940071106
+          },
+          "semantic_gate": {
+            "delta_top2_logit": 0.5,
+            "L_semantic_top2_ok_norm": null,
+            "L_semantic_top2_ok_norm_frac": null,
+            "gap_at_L_semantic_norm": null,
+            "delta_abs": 0.002,
+            "L_semantic_run2": null,
+            "L_semantic_strong": null,
+            "L_semantic_strong_run2": null
           }
         },
         {
@@ -7369,6 +7416,16 @@
             "L_semantic_margin_ok_norm": null,
             "margin_ok_at_L_semantic_norm": true,
             "p_answer_at_L_semantic_norm": 0.9999790191650391
+          },
+          "semantic_gate": {
+            "delta_top2_logit": 0.5,
+            "L_semantic_top2_ok_norm": null,
+            "L_semantic_top2_ok_norm_frac": null,
+            "gap_at_L_semantic_norm": null,
+            "delta_abs": 0.002,
+            "L_semantic_run2": null,
+            "L_semantic_strong": null,
+            "L_semantic_strong_run2": null
           }
         },
         {
@@ -7490,6 +7547,16 @@
             "L_semantic_margin_ok_norm": null,
             "margin_ok_at_L_semantic_norm": true,
             "p_answer_at_L_semantic_norm": 0.9984545707702637
+          },
+          "semantic_gate": {
+            "delta_top2_logit": 0.5,
+            "L_semantic_top2_ok_norm": null,
+            "L_semantic_top2_ok_norm_frac": null,
+            "gap_at_L_semantic_norm": null,
+            "delta_abs": 0.002,
+            "L_semantic_run2": null,
+            "L_semantic_strong": null,
+            "L_semantic_strong_run2": null
           }
         },
         {
@@ -7611,6 +7678,16 @@
             "L_semantic_margin_ok_norm": null,
             "margin_ok_at_L_semantic_norm": true,
             "p_answer_at_L_semantic_norm": 0.9999936819076538
+          },
+          "semantic_gate": {
+            "delta_top2_logit": 0.5,
+            "L_semantic_top2_ok_norm": null,
+            "L_semantic_top2_ok_norm_frac": null,
+            "gap_at_L_semantic_norm": null,
+            "delta_abs": 0.002,
+            "L_semantic_run2": null,
+            "L_semantic_strong": null,
+            "L_semantic_strong_run2": null
           }
         },
         {
@@ -7732,6 +7809,16 @@
             "L_semantic_margin_ok_norm": null,
             "margin_ok_at_L_semantic_norm": true,
             "p_answer_at_L_semantic_norm": 0.9978296160697937
+          },
+          "semantic_gate": {
+            "delta_top2_logit": 0.5,
+            "L_semantic_top2_ok_norm": null,
+            "L_semantic_top2_ok_norm_frac": null,
+            "gap_at_L_semantic_norm": null,
+            "delta_abs": 0.002,
+            "L_semantic_run2": null,
+            "L_semantic_strong": null,
+            "L_semantic_strong_run2": null
           }
         },
         {
@@ -7853,6 +7940,16 @@
             "L_semantic_margin_ok_norm": null,
             "margin_ok_at_L_semantic_norm": true,
             "p_answer_at_L_semantic_norm": 0.9999860525131226
+          },
+          "semantic_gate": {
+            "delta_top2_logit": 0.5,
+            "L_semantic_top2_ok_norm": null,
+            "L_semantic_top2_ok_norm_frac": null,
+            "gap_at_L_semantic_norm": null,
+            "delta_abs": 0.002,
+            "L_semantic_run2": null,
+            "L_semantic_strong": null,
+            "L_semantic_strong_run2": null
           }
         },
         {
@@ -7974,6 +8071,16 @@
             "L_semantic_margin_ok_norm": null,
             "margin_ok_at_L_semantic_norm": true,
             "p_answer_at_L_semantic_norm": 0.9913043975830078
+          },
+          "semantic_gate": {
+            "delta_top2_logit": 0.5,
+            "L_semantic_top2_ok_norm": null,
+            "L_semantic_top2_ok_norm_frac": null,
+            "gap_at_L_semantic_norm": null,
+            "delta_abs": 0.002,
+            "L_semantic_run2": null,
+            "L_semantic_strong": null,
+            "L_semantic_strong_run2": null
           }
         },
         {
@@ -8095,6 +8202,16 @@
             "L_semantic_margin_ok_norm": null,
             "margin_ok_at_L_semantic_norm": true,
             "p_answer_at_L_semantic_norm": 0.9999591112136841
+          },
+          "semantic_gate": {
+            "delta_top2_logit": 0.5,
+            "L_semantic_top2_ok_norm": null,
+            "L_semantic_top2_ok_norm_frac": null,
+            "gap_at_L_semantic_norm": null,
+            "delta_abs": 0.002,
+            "L_semantic_run2": null,
+            "L_semantic_strong": null,
+            "L_semantic_strong_run2": null
           }
         },
         {
@@ -8216,6 +8333,16 @@
             "L_semantic_margin_ok_norm": null,
             "margin_ok_at_L_semantic_norm": true,
             "p_answer_at_L_semantic_norm": 0.991089940071106
+          },
+          "semantic_gate": {
+            "delta_top2_logit": 0.5,
+            "L_semantic_top2_ok_norm": null,
+            "L_semantic_top2_ok_norm_frac": null,
+            "gap_at_L_semantic_norm": null,
+            "delta_abs": 0.002,
+            "L_semantic_run2": null,
+            "L_semantic_strong": null,
+            "L_semantic_strong_run2": null
           }
         }
       ]
@@ -8788,7 +8915,10 @@
   },
   "control_summary": {
     "first_control_margin_pos": 0,
-    "max_control_margin": 0.9910899400710897
+    "max_control_margin": 0.9910899400710897,
+    "first_control_strong_pos": 46,
+    "max_control_top2_logit_gap": 4.71173095703125,
+    "delta_top2_logit_ctl": 0.5
   },
   "tuned_lens": {
     "status": "loaded",
@@ -8913,6 +9043,16 @@
           "L_semantic_margin_ok_norm": null,
           "margin_ok_at_L_semantic_norm": true,
           "p_answer_at_L_semantic_norm": 0.9840677976608276
+        },
+        "semantic_gate": {
+          "delta_top2_logit": 0.5,
+          "L_semantic_top2_ok_norm": null,
+          "L_semantic_top2_ok_norm_frac": null,
+          "gap_at_L_semantic_norm": null,
+          "delta_abs": 0.002,
+          "L_semantic_run2": null,
+          "L_semantic_strong": null,
+          "L_semantic_strong_run2": null
         }
       },
       {
@@ -9034,6 +9174,16 @@
           "L_semantic_margin_ok_norm": null,
           "margin_ok_at_L_semantic_norm": true,
           "p_answer_at_L_semantic_norm": 0.9998679161071777
+        },
+        "semantic_gate": {
+          "delta_top2_logit": 0.5,
+          "L_semantic_top2_ok_norm": null,
+          "L_semantic_top2_ok_norm_frac": null,
+          "gap_at_L_semantic_norm": null,
+          "delta_abs": 0.002,
+          "L_semantic_run2": null,
+          "L_semantic_strong": null,
+          "L_semantic_strong_run2": null
         }
       },
       {
@@ -9155,6 +9305,16 @@
           "L_semantic_margin_ok_norm": null,
           "margin_ok_at_L_semantic_norm": true,
           "p_answer_at_L_semantic_norm": 0.991089940071106
+        },
+        "semantic_gate": {
+          "delta_top2_logit": 0.5,
+          "L_semantic_top2_ok_norm": null,
+          "L_semantic_top2_ok_norm_frac": null,
+          "gap_at_L_semantic_norm": null,
+          "delta_abs": 0.002,
+          "L_semantic_run2": null,
+          "L_semantic_strong": null,
+          "L_semantic_strong_run2": null
         }
       },
       {
@@ -9276,6 +9436,16 @@
           "L_semantic_margin_ok_norm": null,
           "margin_ok_at_L_semantic_norm": true,
           "p_answer_at_L_semantic_norm": 0.9999790191650391
+        },
+        "semantic_gate": {
+          "delta_top2_logit": 0.5,
+          "L_semantic_top2_ok_norm": null,
+          "L_semantic_top2_ok_norm_frac": null,
+          "gap_at_L_semantic_norm": null,
+          "delta_abs": 0.002,
+          "L_semantic_run2": null,
+          "L_semantic_strong": null,
+          "L_semantic_strong_run2": null
         }
       },
       {
@@ -9397,6 +9567,16 @@
           "L_semantic_margin_ok_norm": null,
           "margin_ok_at_L_semantic_norm": true,
           "p_answer_at_L_semantic_norm": 0.9984545707702637
+        },
+        "semantic_gate": {
+          "delta_top2_logit": 0.5,
+          "L_semantic_top2_ok_norm": null,
+          "L_semantic_top2_ok_norm_frac": null,
+          "gap_at_L_semantic_norm": null,
+          "delta_abs": 0.002,
+          "L_semantic_run2": null,
+          "L_semantic_strong": null,
+          "L_semantic_strong_run2": null
         }
       },
       {
@@ -9518,6 +9698,16 @@
           "L_semantic_margin_ok_norm": null,
           "margin_ok_at_L_semantic_norm": true,
           "p_answer_at_L_semantic_norm": 0.9999936819076538
+        },
+        "semantic_gate": {
+          "delta_top2_logit": 0.5,
+          "L_semantic_top2_ok_norm": null,
+          "L_semantic_top2_ok_norm_frac": null,
+          "gap_at_L_semantic_norm": null,
+          "delta_abs": 0.002,
+          "L_semantic_run2": null,
+          "L_semantic_strong": null,
+          "L_semantic_strong_run2": null
         }
       },
       {
@@ -9639,6 +9829,16 @@
           "L_semantic_margin_ok_norm": null,
           "margin_ok_at_L_semantic_norm": true,
           "p_answer_at_L_semantic_norm": 0.9978296160697937
+        },
+        "semantic_gate": {
+          "delta_top2_logit": 0.5,
+          "L_semantic_top2_ok_norm": null,
+          "L_semantic_top2_ok_norm_frac": null,
+          "gap_at_L_semantic_norm": null,
+          "delta_abs": 0.002,
+          "L_semantic_run2": null,
+          "L_semantic_strong": null,
+          "L_semantic_strong_run2": null
         }
       },
       {
@@ -9760,6 +9960,16 @@
           "L_semantic_margin_ok_norm": null,
           "margin_ok_at_L_semantic_norm": true,
           "p_answer_at_L_semantic_norm": 0.9999860525131226
+        },
+        "semantic_gate": {
+          "delta_top2_logit": 0.5,
+          "L_semantic_top2_ok_norm": null,
+          "L_semantic_top2_ok_norm_frac": null,
+          "gap_at_L_semantic_norm": null,
+          "delta_abs": 0.002,
+          "L_semantic_run2": null,
+          "L_semantic_strong": null,
+          "L_semantic_strong_run2": null
         }
       },
       {
@@ -9881,6 +10091,16 @@
           "L_semantic_margin_ok_norm": null,
           "margin_ok_at_L_semantic_norm": true,
           "p_answer_at_L_semantic_norm": 0.9913043975830078
+        },
+        "semantic_gate": {
+          "delta_top2_logit": 0.5,
+          "L_semantic_top2_ok_norm": null,
+          "L_semantic_top2_ok_norm_frac": null,
+          "gap_at_L_semantic_norm": null,
+          "delta_abs": 0.002,
+          "L_semantic_run2": null,
+          "L_semantic_strong": null,
+          "L_semantic_strong_run2": null
         }
       },
       {
@@ -10002,6 +10222,16 @@
           "L_semantic_margin_ok_norm": null,
           "margin_ok_at_L_semantic_norm": true,
           "p_answer_at_L_semantic_norm": 0.9999591112136841
+        },
+        "semantic_gate": {
+          "delta_top2_logit": 0.5,
+          "L_semantic_top2_ok_norm": null,
+          "L_semantic_top2_ok_norm_frac": null,
+          "gap_at_L_semantic_norm": null,
+          "delta_abs": 0.002,
+          "L_semantic_run2": null,
+          "L_semantic_strong": null,
+          "L_semantic_strong_run2": null
         }
       },
       {
@@ -10123,6 +10353,16 @@
           "L_semantic_margin_ok_norm": null,
           "margin_ok_at_L_semantic_norm": true,
           "p_answer_at_L_semantic_norm": 0.991089940071106
+        },
+        "semantic_gate": {
+          "delta_top2_logit": 0.5,
+          "L_semantic_top2_ok_norm": null,
+          "L_semantic_top2_ok_norm_frac": null,
+          "gap_at_L_semantic_norm": null,
+          "delta_abs": 0.002,
+          "L_semantic_run2": null,
+          "L_semantic_strong": null,
+          "L_semantic_strong_run2": null
         }
       }
     ],
@@ -10371,6 +10611,17 @@
       "margin_ok_at_L_semantic_norm": true,
       "p_answer_at_L_semantic_norm": 0.9840677976608276,
       "L_semantic_confirmed_margin_ok_norm": 46
+    },
+    "semantic_gate": {
+      "delta_abs": 0.002,
+      "delta_top2_logit": 0.5,
+      "L_semantic_top2_ok_norm": null,
+      "L_semantic_top2_ok_norm_frac": null,
+      "gap_at_L_semantic_norm": null,
+      "L_semantic_run2": null,
+      "L_semantic_strong": null,
+      "L_semantic_strong_run2": null,
+      "run2_overlaps_confirmed_window": null
     },
     "micro_suite": {
       "n": 5,
