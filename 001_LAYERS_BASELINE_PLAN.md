@@ -1778,7 +1778,7 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 
 ---
 
-### [ ] 1.53. Formalize the last‑layer calibration guardrail (thresholded; no scope change)
+### [x] 1.53. Formalize the last‑layer calibration guardrail (thresholded; no scope change)
 
 **Why.** §1.6 logs last‑layer lens vs final‑head KL and a temperature fit, and §1.22 routes this into `measurement_guidance`. Making the **gate thresholds explicit** prevents drift and harmonizes evaluator behavior.
 
@@ -1806,6 +1806,8 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 
 1. Implement the gate computation at the end of §1.6 after `temp_est` is fit and `kl_after_temp_bits` computed.
 2. Set/merge the booleans in `measurement_guidance` as in §1.22. **No CSV changes; no extra forwards.**
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

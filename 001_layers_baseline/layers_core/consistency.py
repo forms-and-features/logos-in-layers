@@ -100,8 +100,21 @@ def compute_last_layer_consistency(
     except Exception:
         pass
 
+    kl_to_final_bits = _finite(m.get("kl_to_final_bits"))
+    kl_after_temp_bits = _finite(best_kl)
+    threshold_bits = 0.25
+    delta_temp_bits = None
+    if kl_to_final_bits is not None and kl_after_temp_bits is not None:
+        delta_temp_bits = float(kl_to_final_bits - kl_after_temp_bits)
+
+    warn_gate = False
+    if kl_to_final_bits is not None and kl_to_final_bits >= threshold_bits:
+        warn_gate = True
+    if delta_temp_bits is not None and delta_temp_bits >= threshold_bits:
+        warn_gate = True
+
     out = {
-        "kl_to_final_bits": _finite(m.get("kl_to_final_bits")),
+        "kl_to_final_bits": kl_to_final_bits,
         "top1_agree": bool(lens_top1_id == int(final_top1_id)),
         "p_top1_lens": _finite(m.get("p_top1")),
         "p_top1_model": _finite(final_probs[int(final_top1_id)].item()),
@@ -109,7 +122,7 @@ def compute_last_layer_consistency(
         "answer_rank_lens": m.get("answer_rank"),
         # Temperature probe: best scalar s and KL after rescale
         "temp_est": _finite(best_s),
-        "kl_after_temp_bits": _finite(best_kl),
+        "kl_after_temp_bits": kl_after_temp_bits,
         # Config-reported head transforms and KL after applying them
         "cfg_transform": cfg_transform,
         "kl_after_transform_bits": {
@@ -118,8 +131,12 @@ def compute_last_layer_consistency(
             "scale_then_softcap": _finite(kl_after_scale_then_softcap),
         },
         # Advisory warning for family-agnostic visibility
-        "warn_high_last_layer_kl": bool(
-            m.get("kl_to_final_bits") is not None and m.get("kl_to_final_bits") > 0.5
-        ),
+        "warn_high_last_layer_kl": bool(warn_gate),
+        "gates": {
+            "warn_high_last_layer_kl": bool(warn_gate),
+            "threshold_bits": threshold_bits,
+        },
     }
+    if delta_temp_bits is not None:
+        out["gates"]["delta_kl_temp_bits"] = delta_temp_bits
     return out

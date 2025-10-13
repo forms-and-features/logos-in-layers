@@ -67,3 +67,59 @@ def test_handles_none_transforms():
     kt = out.get("kl_after_transform_bits", {})
     assert kt.get("scale") is None and kt.get("softcap") is None and kt.get("scale_then_softcap") is None
 
+
+def test_warn_gate_triggers_with_threshold():
+    torch.manual_seed(0)
+    base_logits = torch.tensor([1.5, 0.2, -0.7, -1.0], dtype=torch.float32)
+    final_probs = torch.softmax(base_logits, dim=0)
+    final_top1_id = int(torch.argmax(final_probs).item())
+
+    # Scale logits to induce calibration mismatch relative to final head
+    last_logits = 3.0 * base_logits
+
+    out = compute_last_layer_consistency(
+        last_logits=last_logits,
+        final_probs=final_probs,
+        final_top1_id=final_top1_id,
+        first_ans_id=None,
+        head_scale_cfg=None,
+        head_softcap_cfg=None,
+        topk_cum=5,
+    )
+
+    assert out["kl_to_final_bits"] is not None
+    assert out["kl_to_final_bits"] >= 0.25
+    assert out["warn_high_last_layer_kl"] is True
+    gates = out.get("gates")
+    assert isinstance(gates, dict)
+    assert gates.get("warn_high_last_layer_kl") is True
+    assert math.isclose(gates.get("threshold_bits"), 0.25, rel_tol=1e-6, abs_tol=1e-6)
+    assert "delta_kl_temp_bits" in gates
+    assert gates["delta_kl_temp_bits"] >= 0.0
+
+
+def test_warn_gate_cleared_when_below_threshold():
+    torch.manual_seed(1)
+    base_logits = torch.tensor([0.8, 0.2, -0.4, -0.6], dtype=torch.float32)
+    final_probs = torch.softmax(base_logits, dim=0)
+    final_top1_id = int(torch.argmax(final_probs).item())
+
+    # Identical logits should be perfectly calibrated
+    last_logits = base_logits.clone()
+
+    out = compute_last_layer_consistency(
+        last_logits=last_logits,
+        final_probs=final_probs,
+        final_top1_id=final_top1_id,
+        first_ans_id=None,
+        head_scale_cfg=None,
+        head_softcap_cfg=None,
+        topk_cum=5,
+    )
+
+    assert out["kl_to_final_bits"] is not None
+    assert out["kl_to_final_bits"] < 0.25
+    assert out["warn_high_last_layer_kl"] is False
+    gates = out.get("gates")
+    assert isinstance(gates, dict)
+    assert gates.get("warn_high_last_layer_kl") is False
