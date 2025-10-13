@@ -5,7 +5,11 @@ import _pathfix  # noqa: F401
 import torch
 import pytest
 
-from layers_core.tuned_audit import build_tuned_audit_summary, build_provenance_snapshot
+from layers_core.tuned_audit import (
+    build_tuned_audit_summary,
+    build_provenance_snapshot,
+    compute_position_window_stability,
+)
 
 
 def _make_probs(logits):
@@ -96,3 +100,54 @@ def test_build_provenance_snapshot_extracts_fields():
     assert snapshot["preconditioner"] == {"whiten": True, "orthogonal_rotation": True}
     assert snapshot["temperatures_stats"]["min"] == pytest.approx(0.6)
     assert snapshot["fit_total_tokens_est"] == pytest.approx(2048 * 50)
+
+
+def test_compute_position_window_stability_basic():
+    positional_rows = [
+        {"pos_frac": 0.20, "pos_index": 2, "layer": 10, "answer_rank_baseline": 1},
+        {"pos_frac": 0.40, "pos_index": 4, "layer": 10, "answer_rank_baseline": 3},
+        {"pos_frac": 0.20, "pos_index": 2, "layer": 11, "answer_rank_baseline": 2},
+        {"pos_frac": 0.40, "pos_index": 4, "layer": 11, "answer_rank_baseline": 1},
+    ]
+    pos_grid_entries = [
+        {"pos_index": 2, "pos_frac": 0.20},
+        {"pos_index": 4, "pos_frac": 0.40},
+    ]
+
+    summary, low_flag = compute_position_window_stability(
+        positional_rows,
+        pos_grid_entries,
+        semantic_layer=10,
+        run2_layer=10,
+    )
+
+    assert summary is not None
+    assert summary["grid"] == [0.2, 0.4]
+    assert summary["L_semantic_norm"] == 10
+    assert summary["n_positions"] == 2
+    assert summary["rank1_frac"] == pytest.approx(0.5)
+    assert summary["rank1_frac_strong_run2"] == pytest.approx(1.0)
+    assert low_flag is False
+
+
+def test_compute_position_window_stability_handles_low_fraction():
+    positional_rows = [
+        {"pos_frac": 0.20, "pos_index": 2, "layer": 10, "answer_rank_baseline": 5},
+        {"pos_frac": 0.40, "pos_index": 4, "layer": 10, "answer_rank_baseline": 4},
+    ]
+    pos_grid_entries = [
+        {"pos_index": 2, "pos_frac": 0.20},
+        {"pos_index": 4, "pos_frac": 0.40},
+    ]
+
+    summary, low_flag = compute_position_window_stability(
+        positional_rows,
+        pos_grid_entries,
+        semantic_layer=10,
+        run2_layer=None,
+    )
+
+    assert summary is not None
+    assert summary["rank1_frac"] is not None
+    assert summary["rank1_frac"] == pytest.approx(0.0)
+    assert low_flag is True

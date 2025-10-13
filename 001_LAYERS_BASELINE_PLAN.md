@@ -1744,7 +1744,7 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 
 ---
 
-### [ ] 1.52. Position‑window stability of semantic onset (reuse positions audit; no new forwards)
+### [x] 1.52. Position‑window stability of semantic onset (reuse positions audit; no new forwards)
 
 **Why.** A one‑position “semantic onset” can be fragile to position within the sequence window. A small **position grid** check at the reported onset layer provides a stability scalar with near‑zero runtime cost by reusing the existing positions audit.
 
@@ -1773,6 +1773,8 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 
 1. After §1.43 writes `output--positions-tuned-audit.csv`, filter rows for the **baseline** columns at the chosen L (and L+1 for run‑of‑two). Count the fraction of positions where `answer_rank_baseline == 1`.
 2. Write the **compact JSON** block under `summary.position_window`. **No extra forwards.**
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

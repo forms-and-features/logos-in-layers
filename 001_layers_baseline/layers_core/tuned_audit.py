@@ -248,6 +248,111 @@ def build_provenance_snapshot(provenance: Optional[Dict[str, Any]]) -> Optional[
     return snapshot
 
 
+def compute_position_window_stability(
+    positional_rows: Sequence[Dict[str, Any]],
+    pos_grid_entries: Sequence[Dict[str, Any]],
+    *,
+    semantic_layer: Optional[int],
+    run2_layer: Optional[int] = None,
+) -> Tuple[Optional[Dict[str, Any]], bool]:
+    """Return summary stats for position-grid stability at semantic onset.
+
+    Args:
+        positional_rows: Rows emitted by the tuned positions audit.
+        pos_grid_entries: Grid metadata with `pos_index` / `pos_frac`.
+        semantic_layer: Baseline semantic onset layer (norm lens).
+        run2_layer: Starting layer for the semantic run-of-two band.
+
+    Returns:
+        (summary_dict or None, low_stability_flag)
+    """
+
+    def _to_int(val: Any) -> Optional[int]:
+        try:
+            if val is None:
+                return None
+            return int(val)
+        except (TypeError, ValueError):
+            return None
+
+    def _is_rank_one(row: Dict[str, Any]) -> bool:
+        return _to_int(row.get("answer_rank_baseline")) == 1
+
+    if not isinstance(semantic_layer, int):
+        return None, False
+
+    grid_fractions: List[float] = []
+    grid_positions: set[int] = set()
+    for entry in pos_grid_entries or []:
+        pos_idx = _to_int(entry.get("pos_index"))
+        frac = entry.get("pos_frac")
+        if pos_idx is None:
+            continue
+        grid_positions.add(pos_idx)
+        try:
+            if frac is not None:
+                grid_fractions.append(float(frac))
+        except (TypeError, ValueError):
+            continue
+    if grid_fractions:
+        grid_fractions = sorted({float(f) for f in grid_fractions})
+    else:
+        grid_fractions = []
+
+    rows_at_semantic = [
+        row for row in positional_rows or []
+        if _to_int(row.get("layer")) == semantic_layer
+    ]
+    by_pos: Dict[int, Dict[str, Any]] = {}
+    for row in rows_at_semantic:
+        pos_idx = _to_int(row.get("pos_index"))
+        if pos_idx is None:
+            continue
+        by_pos[pos_idx] = row
+
+    if grid_positions:
+        # Restrict to known grid positions when available.
+        by_pos = {idx: row for idx, row in by_pos.items() if idx in grid_positions}
+
+    n_positions = len(by_pos)
+    rank1_frac: Optional[float] = None
+    if n_positions > 0:
+        passes = sum(1 for row in by_pos.values() if _is_rank_one(row))
+        rank1_frac = float(passes) / float(n_positions)
+
+    rank1_frac_run2: Optional[float] = None
+    if isinstance(run2_layer, int):
+        run2_layers = {int(run2_layer), int(run2_layer) + 1}
+        per_pos_pass: Dict[int, bool] = {}
+        for row in positional_rows or []:
+            layer_val = _to_int(row.get("layer"))
+            if layer_val not in run2_layers:
+                continue
+            pos_idx = _to_int(row.get("pos_index"))
+            if pos_idx is None:
+                continue
+            if grid_positions and pos_idx not in grid_positions:
+                continue
+            prev = per_pos_pass.get(pos_idx, False)
+            per_pos_pass[pos_idx] = prev or _is_rank_one(row)
+
+        if per_pos_pass:
+            denominator = len(per_pos_pass)
+            passes = sum(1 for flag in per_pos_pass.values() if flag)
+            rank1_frac_run2 = float(passes) / float(denominator)
+
+    summary = {
+        "grid": grid_fractions,
+        "L_semantic_norm": int(semantic_layer),
+        "rank1_frac": rank1_frac,
+        "n_positions": n_positions,
+        "rank1_frac_strong_run2": rank1_frac_run2,
+    }
+
+    low_stability = (rank1_frac is not None) and (rank1_frac < 0.50)
+    return summary, low_stability
+
+
 __all__ = [
     "build_tuned_audit_summary",
     "summarize_rotation_temperature",
@@ -255,5 +360,5 @@ __all__ = [
     "summarize_head_mismatch",
     "compute_tau_star_modelcal",
     "build_provenance_snapshot",
+    "compute_position_window_stability",
 ]
-

@@ -98,7 +98,11 @@ from layers_core.head_transforms import detect_head_transforms
 from layers_core.unembed import prepare_unembed_weights
 from layers_core.lenses import NormLensAdapter, TunedLensAdapter
 from layers_core.tuned_lens import load_tuned_lens
-from layers_core.tuned_audit import build_tuned_audit_summary, build_provenance_snapshot
+from layers_core.tuned_audit import (
+    build_tuned_audit_summary,
+    build_provenance_snapshot,
+    compute_position_window_stability,
+)
 from layers_core.eval_pack import build_evaluation_pack
 from layers_core.passes import run_prompt_pass
 from layers_core.contexts import UnembedContext, PrismContext
@@ -1791,6 +1795,33 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             "aggregates": micro_suite_summary,
         }
 
+        position_window_summary = None
+        low_position_stability = False
+        try:
+            positional_rows = []
+            pos_grid_entries = []
+            if isinstance(tuned_audit_data, dict):
+                positional_rows = tuned_audit_data.get("positional_rows") or []
+                pos_grid_entries = tuned_audit_data.get("pos_grid") or []
+            semantic_layer = diag.get("L_semantic")
+            semantic_gate_block = diag.get("semantic_gate") or {}
+            run2_layer = semantic_gate_block.get("L_semantic_strong_run2")
+            position_window_summary, low_position_stability = compute_position_window_stability(
+                positional_rows,
+                pos_grid_entries,
+                semantic_layer=semantic_layer,
+                run2_layer=run2_layer,
+            )
+        except Exception:
+            position_window_summary = None
+            low_position_stability = False
+
+        if position_window_summary is not None:
+            json_data.setdefault("summary", {})["position_window"] = position_window_summary
+            diag["position_window"] = position_window_summary
+            if low_position_stability:
+                diag_flags["pos_window_low_stability"] = True
+
         if not env_info.get("deterministic_algorithms", True):
             diag_flags["nondeterministic"] = True
 
@@ -1908,6 +1939,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 reasons.append("low_lens_consistency_at_semantic")
             if tuned_is_calibration_only:
                 reasons.append("tuned_is_calibration_only")
+            if diag_flags.get("pos_window_low_stability"):
+                reasons.append("pos_window_low_stability")
 
             # Advisory: gate-stability under small rescalings (PLAN §1.50)
             try:
