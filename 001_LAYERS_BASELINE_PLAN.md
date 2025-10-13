@@ -1665,7 +1665,7 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 
 ---
 
-### [ ] 1.50. Gate‑stability under small temperature rescalings (no new forwards)
+### [x] 1.50. Gate‑stability under small temperature rescalings (no new forwards)
 
 **Why.** Rank milestones are invariant to monotone rescalings of logits, but **gate criteria** (uniform‑margin δ_abs and Top‑2 logit gap δ_top2) are **not**. If a “semantic onset” passes these gates only at a narrow effective temperature, claims become calibration‑sensitive. A light, local rescaling audit ensures that “strong” gates are not knife‑edge artefacts.
 
@@ -1698,6 +1698,8 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
    * `answer_logit_gap(s) = (z_ℓ[answer] − z_ℓ[runner_up]) * s`  *(runner‑up is taken at the base scale; this is conservative and avoids quadrant flips; if desired, recompute runner‑up per‑scale.)*
 2. For each scale, mark **uniform‑margin pass** if `answer_minus_uniform(s) ≥ δ_abs` and **Top‑2 pass** if `answer_logit_gap(s) ≥ δ_top2_logit`. Aggregate pass‑fractions.
 3. Write the `gate_stability_small_scale` block into JSON. **No CSV schema changes.** No extra forwards; this is decode‑time arithmetic on per‑layer logits already in memory.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

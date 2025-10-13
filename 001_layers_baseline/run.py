@@ -1804,6 +1804,15 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
             if tuned_is_calibration_only:
                 reasons.append("tuned_is_calibration_only")
 
+            # Advisory: gate-stability under small rescalings (PLAN §1.50)
+            try:
+                gs = (diag.get("gate_stability_small_scale") or {})
+                min_both = gs.get("min_both_gates_pass_frac")
+                if min_both is not None and float(min_both) < 0.75:
+                    reasons.append("scale_sensitive_semantic_gate")
+            except Exception:
+                pass
+
             reasons = list(dict.fromkeys(reasons))
 
             prefer_ranks = bool(reasons)

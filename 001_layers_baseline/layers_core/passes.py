@@ -1279,6 +1279,167 @@ def run_prompt_pass(
             )
             summary_diag.setdefault("answer_margin_unit", "logit")
 
+            # Gate-stability under small temperature rescalings (PLAN §1.50)
+            # Only for the primary positive/original pass; no extra forwards.
+            try:
+                if prompt_id == "pos" and prompt_variant == "orig" and isinstance(first_ans_token_id, int):
+                    scales = [0.90, 0.95, 1.05, 1.10]
+
+                    def _layer_gate_pass_fractions(layer_idx: int) -> Optional[Dict[str, float]]:
+                        if not isinstance(layer_idx, int):
+                            return None
+                        z = norm_logits_window.get(layer_idx)
+                        if z is None or z.numel() == 0:
+                            return None
+                        try:
+                            z_f = z.detach().to(dtype=torch.float32)
+                        except Exception:
+                            z_f = z.float()
+                        vocab = int(z_f.shape[-1]) if z_f.ndim == 1 else int(z_f.view(-1).shape[0])
+                        # Uniform baseline
+                        _p_uniform = p_uniform if (p_uniform is not None) else (1.0 / float(vocab) if vocab > 0 else None)
+                        if _p_uniform is None:
+                            return None
+                        # Base runner-up logit among non-answer ids (conservative; hold fixed across scales)
+                        ans_id = int(first_ans_token_id)
+                        try:
+                            # Build masked view to get the best competing logit
+                            mask = torch.ones_like(z_f, dtype=torch.bool)
+                            if 0 <= ans_id < z_f.shape[-1]:
+                                mask[ans_id] = False
+                            else:
+                                return None
+                            rival_vals = z_f[mask]
+                            if rival_vals.numel() == 0:
+                                return None
+                            rival_max = float(torch.max(rival_vals).item())
+                        except Exception:
+                            return None
+                        z_ans = float(z_f[ans_id].item())
+                        base_gap = z_ans - rival_max
+                        # Thresholds
+                        delta_abs = float(SEMANTIC_MARGIN_DELTA)
+                        delta_top2 = 0.5
+
+                        um_pass = 0
+                        t2_pass = 0
+                        both_pass = 0
+                        for s in scales:
+                            try:
+                                z_s = z_f * float(s)
+                                P_s = torch.softmax(z_s, dim=0)
+                                p_ans = float(P_s[ans_id].item())
+                                um_ok = (p_ans - float(_p_uniform)) >= delta_abs
+                                t2_ok = (float(s) * base_gap) >= delta_top2
+                                if um_ok:
+                                    um_pass += 1
+                                if t2_ok:
+                                    t2_pass += 1
+                                if um_ok and t2_ok:
+                                    both_pass += 1
+                            except Exception:
+                                # Count as fail on any numeric issue
+                                pass
+                        n = float(len(scales)) if scales else 1.0
+                        return {
+                            "uniform_margin_pass_frac": (float(um_pass) / n),
+                            "top2_gap_pass_frac": (float(t2_pass) / n),
+                            "both_gates_pass_frac": (float(both_pass) / n),
+                        }
+
+                    per_target: Dict[str, Dict[str, float] | Dict[str, Any]] = {}
+                    # Targets available at this stage (confirmed may be added later in run.py)
+                    L_sem = summary_diag.get("L_semantic")
+                    if isinstance(L_sem, int):
+                        fracs = _layer_gate_pass_fractions(L_sem)
+                        if fracs is not None:
+                            per_target["L_semantic_norm"] = {"layer": int(L_sem), **fracs}
+
+                    sem_gate = summary_diag.get("semantic_gate") or {}
+                    L_strong = sem_gate.get("L_semantic_strong")
+                    if isinstance(L_strong, int):
+                        fracs = _layer_gate_pass_fractions(L_strong)
+                        if fracs is not None:
+                            per_target["L_semantic_strong"] = {"layer": int(L_strong), **fracs}
+
+                    L_run2 = sem_gate.get("L_semantic_strong_run2")
+                    if isinstance(L_run2, int):
+                        # Require both L and L+1 to pass at the same scale
+                        fr_L = _layer_gate_pass_fractions(L_run2)
+                        fr_L1 = _layer_gate_pass_fractions(L_run2 + 1)
+                        if fr_L is not None and fr_L1 is not None:
+                            # Combine conservatively: min of per-scale pass indicators → via fractions
+                            # For independence of s, recompute with AND across scales
+                            # Repeat the check using raw logits to ensure strict AND across L and L+1
+                            z0 = norm_logits_window.get(L_run2)
+                            z1 = norm_logits_window.get(L_run2 + 1)
+                            if z0 is not None and z1 is not None:
+                                try:
+                                    z0f = z0.detach().float(); z1f = z1.detach().float()
+                                except Exception:
+                                    z0f = z0.float(); z1f = z1.float()
+                                ans_id = int(first_ans_token_id)
+                                mask0 = torch.ones_like(z0f, dtype=torch.bool); mask1 = torch.ones_like(z1f, dtype=torch.bool)
+                                if 0 <= ans_id < z0f.shape[-1] and 0 <= ans_id < z1f.shape[-1]:
+                                    mask0[ans_id] = False; mask1[ans_id] = False
+                                    r0 = float(torch.max(z0f[mask0]).item()); r1 = float(torch.max(z1f[mask1]).item())
+                                    base_gap0 = float(z0f[ans_id].item()) - r0
+                                    base_gap1 = float(z1f[ans_id].item()) - r1
+                                    delta_abs = float(SEMANTIC_MARGIN_DELTA)
+                                    delta_top2 = 0.5
+                                    # Uniform baseline (recompute if needed)
+                                    try:
+                                        vocab = int(z0f.shape[-1])
+                                    except Exception:
+                                        vocab = 0
+                                    puni = p_uniform if (p_uniform is not None) else (1.0 / float(vocab) if vocab > 0 else None)
+                                    if puni is None:
+                                        fr_run2 = None
+                                    else:
+                                        both_both = 0
+                                        for s in scales:
+                                            try:
+                                                P0 = torch.softmax(z0f * float(s), dim=0)
+                                                P1 = torch.softmax(z1f * float(s), dim=0)
+                                                um0 = float(P0[ans_id].item()) - float(puni) >= delta_abs
+                                                um1 = float(P1[ans_id].item()) - float(puni) >= delta_abs
+                                                t20 = float(s) * base_gap0 >= delta_top2
+                                                t21 = float(s) * base_gap1 >= delta_top2
+                                                if um0 and um1 and t20 and t21:
+                                                    both_both += 1
+                                            except Exception:
+                                                pass
+                                        n = float(len(scales)) if scales else 1.0
+                                        fr_run2 = float(both_both) / n
+                                else:
+                                    fr_run2 = None
+                            else:
+                                fr_run2 = None
+                            if fr_run2 is not None:
+                                per_target["L_semantic_strong_run2"] = {"layer": int(L_run2),
+                                                                         "uniform_margin_pass_frac": None,
+                                                                         "top2_gap_pass_frac": None,
+                                                                         "both_gates_pass_frac": fr_run2}
+
+                    if per_target:
+                        try:
+                            min_both = None
+                            for entry in per_target.values():
+                                val = entry.get("both_gates_pass_frac") if isinstance(entry, dict) else None
+                                if val is None:
+                                    continue
+                                min_both = val if min_both is None else min(min_both, float(val))
+                        except Exception:
+                            min_both = None
+                        summary_diag["gate_stability_small_scale"] = {
+                            "scales": scales,
+                            "per_target": per_target,
+                            "min_both_gates_pass_frac": min_both,
+                        }
+            except Exception:
+                # Best-effort diagnostic; ignore on failure
+                pass
+
             raw_summary_block = (json_data.get("raw_lens_check") or {}).get("summary") or {}
             radius = 4
             try:
