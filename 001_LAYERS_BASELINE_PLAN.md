@@ -1703,7 +1703,7 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 
 ---
 
-### [ ] 1.51. Lens‑consistency invariants across views (read‑only; no new forwards)
+### [x] 1.51. Lens‑consistency invariants across views (read‑only; no new forwards)
 
 **Why.** Large KL or entropy gaps can be driven by tail mass. A **set‑ and rank‑level** agreement between lenses at candidate layers makes “early meaning” claims more auditable and ties Tuned‑Lens and Raw‑vs‑Norm diagnostics to a single invariant criterion.
 
@@ -1739,6 +1739,8 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 1. **Norm vs Raw:** reuse per‑layer probability vectors emitted for **raw‑vs‑norm full sidecar** (§1.24, §1.37–§1.38). Compute top‑K sets/ranks at the specified target layers only.
 2. **Norm vs Tuned:** read tuned sidecar vectors (already produced in §1.12/§1.21/§1.43) at the same layers; derive top‑K sets and top‑50 ranks for Spearman.
 3. Persist the **compact JSON** block only; optionally mirror two candidate‑layer rows into `output--artifact-audit.csv` footer for quick quoting. **No new forwards.**
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

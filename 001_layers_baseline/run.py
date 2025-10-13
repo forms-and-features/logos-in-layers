@@ -1393,6 +1393,60 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 confirmed_layer = conf.get("L_semantic_confirmed")
                 diag["L_semantic_confirmed"] = confirmed_layer
                 try:
+                    lens_consistency_block = diag.get("lens_consistency")
+                    if isinstance(lens_consistency_block, dict) and isinstance(confirmed_layer, int):
+                        targets_list = list(lens_consistency_block.get("targets") or [])
+                        if "L_semantic_confirmed" not in targets_list:
+                            targets_list.append("L_semantic_confirmed")
+                            lens_consistency_block["targets"] = targets_list
+
+                            def _append_entry(block_key: str) -> None:
+                                pair_block = lens_consistency_block.get(block_key)
+                                if not isinstance(pair_block, dict):
+                                    return
+                                entries = list(pair_block.get("at_targets") or [])
+                                metrics_template = None
+                                for entry in entries:
+                                    if entry.get("layer") == confirmed_layer:
+                                        metrics_template = {
+                                            "jaccard@10": entry.get("jaccard@10"),
+                                            "jaccard@50": entry.get("jaccard@50"),
+                                            "spearman_top50": entry.get("spearman_top50"),
+                                        }
+                                        break
+                                new_entry = {"layer": confirmed_layer}
+                                if metrics_template is not None:
+                                    new_entry.update(metrics_template)
+                                else:
+                                    new_entry.update({"jaccard@10": None, "jaccard@50": None, "spearman_top50": None})
+                                entries.append(new_entry)
+                                pair_block["at_targets"] = entries
+
+                                def _median(vals):
+                                    nums = [float(v) for v in vals if isinstance(v, (int, float))]
+                                    if not nums:
+                                        return None
+                                    nums.sort()
+                                    n = len(nums)
+                                    mid = n // 2
+                                    if n % 2 == 1:
+                                        return nums[mid]
+                                    return (nums[mid - 1] + nums[mid]) / 2.0
+
+                                metrics_vals = {"jaccard@10": [], "jaccard@50": [], "spearman_top50": []}
+                                for entry in entries:
+                                    for key in metrics_vals:
+                                        val = entry.get(key)
+                                        if isinstance(val, (int, float)):
+                                            metrics_vals[key].append(float(val))
+                                pair_block["p50"] = {key: _median(vals) for key, vals in metrics_vals.items()}
+
+                            _append_entry("norm_vs_raw")
+                            if "norm_vs_tuned" in lens_consistency_block:
+                                _append_entry("norm_vs_tuned")
+                except Exception:
+                    pass
+                try:
                     margin_block = diag.setdefault("semantic_margin", {})
                     margin_ok_layer = margin_block.get("L_semantic_margin_ok_norm")
                     if confirmed_layer is not None and margin_ok_layer is not None and int(confirmed_layer) == int(margin_ok_layer):
@@ -1452,6 +1506,55 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 diag.setdefault("raw_lens_full", {})["score_error"] = str(e)
             except Exception:
                 pass
+
+        try:
+            lens_block = diag.get("lens_consistency")
+            targets_seq = lens_block.get("targets") if isinstance(lens_block, dict) else None
+            if isinstance(targets_seq, list) and targets_seq:
+                semantic_indices = [
+                    idx for idx, name in enumerate(targets_seq)
+                    if isinstance(name, str) and "semantic" in name.lower()
+                ]
+                if semantic_indices:
+                    def _entries_for(key: str):
+                        if not isinstance(lens_block.get(key), dict):
+                            return []
+                        entries = lens_block[key].get("at_targets")
+                        return entries if isinstance(entries, list) else []
+
+                    entries_raw = _entries_for("norm_vs_raw")
+                    entries_tuned = _entries_for("norm_vs_tuned")
+
+                    def _metric_below_threshold(entry_list, idx, threshold=0.30):
+                        if idx >= len(entry_list):
+                            return False
+                        entry = entry_list[idx] or {}
+                        j10 = entry.get("jaccard@10")
+                        spearman = entry.get("spearman_top50")
+                        try:
+                            if j10 is not None and float(j10) < threshold:
+                                return True
+                        except Exception:
+                            pass
+                        try:
+                            if spearman is not None and float(spearman) < threshold:
+                                return True
+                        except Exception:
+                            pass
+                        return False
+
+                    low_consistency = False
+                    for idx in semantic_indices:
+                        if _metric_below_threshold(entries_raw, idx):
+                            low_consistency = True
+                            break
+                        if _metric_below_threshold(entries_tuned, idx):
+                            low_consistency = True
+                            break
+                    if low_consistency:
+                        diag_flags["low_lens_consistency_at_semantic"] = True
+        except Exception:
+            pass
 
         # ---------------- Micro-suite aggregation (001_LAYERS_BASELINE_PLAN §1.46) ---
         pure_records_all = json_data.get("pure_next_token_records", [])
@@ -1801,6 +1904,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 reasons.append("layer_map_missing")
             if diag_flags.get("rank_only_near_uniform"):
                 reasons.append("rank_only_near_uniform")
+            if diag_flags.get("low_lens_consistency_at_semantic"):
+                reasons.append("low_lens_consistency_at_semantic")
             if tuned_is_calibration_only:
                 reasons.append("tuned_is_calibration_only")
 

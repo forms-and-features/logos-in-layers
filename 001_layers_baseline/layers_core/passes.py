@@ -167,6 +167,7 @@ def run_prompt_pass(
 
     norm_logits_window: Dict[int, torch.Tensor] = {}
     raw_resid_window: Dict[int, torch.Tensor] = {}
+    tuned_logits_window: Dict[int, torch.Tensor] = {}
     collected_by_layer: Dict[int, Dict[str, Any]] = {}
     norm_arch = detect_model_architecture(model)
     norm_strategy = "post_ln2" if norm_arch == "post_norm" else "next_ln1"
@@ -662,6 +663,10 @@ def run_prompt_pass(
                     )
                 )
                 tuned_collected_records.append(tuned_collected)
+                try:
+                    tuned_logits_window[0] = tuned_logits_all_L0[last_pos].detach().cpu()
+                except Exception:
+                    pass
 
             # Optional raw-vs-norm sample at L0
             if enable_raw_lens_sampling and RAW_LENS_MODE != "off":
@@ -1079,6 +1084,10 @@ def run_prompt_pass(
                         )
                     )
                     tuned_collected_records.append(tuned_collected)
+                    try:
+                        tuned_logits_window[layer + 1] = tuned_logits_all[last_pos].detach().cpu()
+                    except Exception:
+                        pass
 
                     if audit_data is not None and tuned_logits_all is not None:
                         kl_baseline = _float_or_none(collected.get("kl_to_final_bits"))
@@ -1590,6 +1599,176 @@ def run_prompt_pass(
             summary_diag["numeric_health"] = numeric_summary
 
             summary_diag["repeatability"] = _compute_repeatability_metrics()
+
+            if prompt_id == "pos" and prompt_variant == "orig":
+                def _softmax_cpu(tensor: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
+                    if tensor is None:
+                        return None
+                    try:
+                        vec = tensor.detach().to(dtype=torch.float32, device="cpu")
+                    except Exception:
+                        return None
+                    if vec.numel() == 0:
+                        return None
+                    return torch.softmax(vec, dim=0)
+
+                def _raw_probs_for_layer(layer_idx: int) -> Optional[torch.Tensor]:
+                    raw_vec = raw_resid_window.get(layer_idx)
+                    if raw_vec is None or unembed_ctx.W is None:
+                        return None
+                    try:
+                        device = unembed_ctx.W.device if hasattr(unembed_ctx.W, "device") else torch.device("cpu")
+                        resid_vec = raw_vec.to(dtype=torch.float32, device=device).unsqueeze(0)
+                        resid_cast = safe_cast_for_unembed(resid_vec, unembed_ctx.W, force_fp32_unembed=unembed_ctx.force_fp32)
+                        logits = unembed_mm(resid_cast, unembed_ctx.W, unembed_ctx.b).squeeze(0).float().cpu()
+                    except Exception:
+                        return None
+                    if logits.numel() == 0:
+                        return None
+                    return torch.softmax(logits, dim=0)
+
+                def _tuned_probs_for_layer(layer_idx: int) -> Optional[torch.Tensor]:
+                    return _softmax_cpu(tuned_logits_window.get(layer_idx))
+
+                def _norm_probs_for_layer(layer_idx: int) -> Optional[torch.Tensor]:
+                    return _softmax_cpu(norm_logits_window.get(layer_idx))
+
+                def _topk_id_set(probs: Optional[torch.Tensor], k: int) -> Optional[Set[int]]:
+                    if probs is None or probs.numel() == 0:
+                        return None
+                    k_eff = max(1, min(int(k), probs.shape[0]))
+                    try:
+                        indices = torch.topk(probs, k_eff, largest=True, sorted=False).indices
+                    except Exception:
+                        return None
+                    return {int(idx) for idx in indices.tolist()}
+
+                def _jaccard(a: Optional[Set[int]], b: Optional[Set[int]]) -> Optional[float]:
+                    if a is None or b is None:
+                        return None
+                    if not a and not b:
+                        return 1.0
+                    if not a or not b:
+                        return 0.0
+                    union = a | b
+                    if not union:
+                        return None
+                    return float(len(a & b) / len(union))
+
+                def _spearman_topk(norm_probs: Optional[torch.Tensor], other_probs: Optional[torch.Tensor], k: int = 50) -> Optional[float]:
+                    if norm_probs is None or other_probs is None:
+                        return None
+                    vocab = norm_probs.shape[0]
+                    if vocab == 0:
+                        return None
+                    k_eff = max(1, min(int(k), vocab))
+                    try:
+                        topk_norm = torch.topk(norm_probs, k_eff, largest=True, sorted=True)
+                    except Exception:
+                        return None
+                    indices = topk_norm.indices
+                    if indices.numel() < 2:
+                        return None
+                    ranks_norm = torch.arange(1, indices.numel() + 1, dtype=torch.float32)
+                    try:
+                        other_order = torch.argsort(other_probs, descending=True)
+                    except Exception:
+                        return None
+                    if other_order.numel() == 0:
+                        return None
+                    rank_lookup = {int(idx): int(pos + 1) for pos, idx in enumerate(other_order.tolist())}
+                    ranks_other = torch.tensor([rank_lookup.get(int(idx), vocab) for idx in indices], dtype=torch.float32)
+                    if ranks_other.numel() < 2:
+                        return None
+                    x = ranks_norm
+                    y = ranks_other
+                    x_mean = torch.mean(x)
+                    y_mean = torch.mean(y)
+                    x_diff = x - x_mean
+                    y_diff = y - y_mean
+                    denom = torch.sqrt(torch.sum(x_diff * x_diff) * torch.sum(y_diff * y_diff))
+                    if denom <= 0 or not torch.isfinite(denom):
+                        return None
+                    spearman = torch.sum(x_diff * y_diff) / denom
+                    return float(torch.clamp(spearman, -1.0, 1.0).item())
+
+                def _median(values: List[float]) -> Optional[float]:
+                    vals = [float(v) for v in values if v is not None]
+                    if not vals:
+                        return None
+                    vals.sort()
+                    n = len(vals)
+                    mid = n // 2
+                    if n % 2 == 1:
+                        return vals[mid]
+                    return (vals[mid - 1] + vals[mid]) / 2.0
+
+                candidate_pairs: List[Tuple[str, int]] = []
+
+                def _add_target(name: str, value: Any):
+                    if isinstance(value, int):
+                        candidate_pairs.append((name, value))
+
+                _add_target("first_rank_le_10", summary_diag.get("first_rank_le_10"))
+                _add_target("first_rank_le_5", summary_diag.get("first_rank_le_5"))
+                _add_target("L_semantic_norm", summary_diag.get("L_semantic"))
+                sem_gate_block = summary_diag.get("semantic_gate") or {}
+                _add_target("L_semantic_strong", sem_gate_block.get("L_semantic_strong"))
+                _add_target("L_semantic_strong_run2", sem_gate_block.get("L_semantic_strong_run2"))
+
+                if candidate_pairs:
+                    norm_vs_raw_entries: List[Dict[str, Optional[float]]] = []
+                    norm_vs_tuned_entries: List[Dict[str, Optional[float]]] = []
+
+                    for _, layer_idx in candidate_pairs:
+                        norm_probs = _norm_probs_for_layer(layer_idx)
+                        raw_probs = _raw_probs_for_layer(layer_idx)
+                        tuned_probs = _tuned_probs_for_layer(layer_idx) if tuned_enabled else None
+
+                        norm_top10 = _topk_id_set(norm_probs, 10)
+                        norm_top50 = _topk_id_set(norm_probs, 50)
+                        raw_top10 = _topk_id_set(raw_probs, 10)
+                        raw_top50 = _topk_id_set(raw_probs, 50)
+                        tuned_top10 = _topk_id_set(tuned_probs, 10)
+                        tuned_top50 = _topk_id_set(tuned_probs, 50)
+
+                        norm_vs_raw_entries.append({
+                            "layer": layer_idx,
+                            "jaccard@10": _jaccard(norm_top10, raw_top10),
+                            "jaccard@50": _jaccard(norm_top50, raw_top50),
+                            "spearman_top50": _spearman_topk(norm_probs, raw_probs, 50),
+                        })
+
+                        if tuned_enabled:
+                            norm_vs_tuned_entries.append({
+                                "layer": layer_idx,
+                                "jaccard@10": _jaccard(norm_top10, tuned_top10),
+                                "jaccard@50": _jaccard(norm_top50, tuned_top50),
+                                "spearman_top50": _spearman_topk(norm_probs, tuned_probs, 50),
+                            })
+
+                    def _build_p50(entries: List[Dict[str, Optional[float]]]) -> Dict[str, Optional[float]]:
+                        metrics = {"jaccard@10": [], "jaccard@50": [], "spearman_top50": []}
+                        for entry in entries:
+                            for key in metrics:
+                                val = entry.get(key)
+                                if isinstance(val, float):
+                                    metrics[key].append(val)
+                        return {metric: _median(vals) for metric, vals in metrics.items()}
+
+                    lens_consistency_block: Dict[str, Any] = {
+                        "targets": [name for name, _ in candidate_pairs],
+                        "norm_vs_raw": {
+                            "at_targets": norm_vs_raw_entries,
+                            "p50": _build_p50(norm_vs_raw_entries),
+                        },
+                    }
+                    if tuned_enabled and norm_vs_tuned_entries:
+                        lens_consistency_block["norm_vs_tuned"] = {
+                            "at_targets": norm_vs_tuned_entries,
+                            "p50": _build_p50(norm_vs_tuned_entries),
+                        }
+                    summary_diag["lens_consistency"] = lens_consistency_block
 
             if tuned_enabled and tuned_summaries is not None:
                 summary_tuned = summarize_pure_records(

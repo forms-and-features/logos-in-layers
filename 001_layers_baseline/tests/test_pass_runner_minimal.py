@@ -156,6 +156,12 @@ def test_run_prompt_pass_minimal():
     assert any(rec.get("layer", -1) >= 1 for rec in json_data["pure_next_token_records"])  # pure-next-token
     assert isinstance(summary, dict) and "L_copy" in summary and "L_semantic" in summary
     assert "raw_lens_window" in summary
+    lens_consistency = summary.get("lens_consistency")
+    if lens_consistency is not None:
+        assert isinstance(lens_consistency.get("targets"), list)
+        assert "norm_vs_raw" in lens_consistency
+        nvr = lens_consistency.get("norm_vs_raw", {})
+        assert isinstance(nvr.get("at_targets"), list)
     window_records = json_data.get("raw_lens_window_records", [])
     assert isinstance(window_records, list)
     repeat_diag = summary.get("repeatability")
