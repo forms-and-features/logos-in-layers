@@ -1809,6 +1809,85 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 
 ✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
+### [ ] 1.54. **Always‑on Repeatability Gate (forward‑of‑two; no CLI)**
+
+**Why.** Near‑threshold rank‑1 “onsets” can flip because of nondeterministic kernels, tiny numeric drift, or temperature‑sensitive gates. A **second, independent forward** on the same prompts provides a minimal, audit‑ready repeatability check that upgrades “one‑off” claims to **repeatable** findings without widening the micro‑suite.
+
+**What.** Add a **forward‑of‑two** repeatability pass and a compact gate:
+
+* Run a **second forward** over the exact same prompts (same context, same decode sites).
+* Derive repeatability on key milestones: `L_semantic_norm`, `L_semantic_strong`, `L_semantic_strong_run2`, and (if present) `L_semantic_confirmed`.
+* **Gate rule (defaults):** *pass* iff the preferred semantic milestone (priority: `L_semantic_strong_run2` → `L_semantic_strong` → `L_semantic_confirmed` → `L_semantic_norm`) **matches** between the two forwards within **±1 layer** **and** the **Top‑K sets** (K=10) at that layer have **Jaccard ≥ 0.5**. Otherwise *fail*.
+* Persist a **summary** and wire to measurement guidance.
+
+**How.**
+
+1. **Execution.** After the primary sweep completes (first forward), run a **second forward** with `torch.no_grad()` and identical inputs. Re‑capture per‑layer pure next‑token logits under the **primary lens** (norm) and compute the same per‑layer ranks and gates already used by the sweep.
+   *Cost control:* If `provenance.env.deterministic_algorithms == true` **and** `diagnostics.repeatability.max_rank_dev == 0` (from §1.39), **skip** the second forward automatically (record `mode="skipped_deterministic"`).
+2. **JSON (`diagnostics.repeatability_forward`).**
+
+   ```json
+   {
+     "enabled": true,
+     "mode": "auto|always|skipped_deterministic",
+     "tolerance_layers": 1,
+     "topk_k": 10,
+     "milestones": {
+       "primary": "L_semantic_strong_run2|L_semantic_strong|L_semantic_confirmed|L_semantic_norm",
+       "pass1": { "layer": L1 },
+       "pass2": { "layer": L2 },
+       "delta_layers": |L2-L1|
+     },
+     "topk_jaccard_at_primary_layer": 0.00,
+     "gate": { "repeatability_forward_pass": true|false }
+   }
+   ```
+3. **Measurement guidance.** If the gate **fails**, append `"repeatability_forward_disagreement"` to `measurement_guidance.reasons` and set `prefer_ranks=true`, `suppress_abs_probs=true`.
+4. Controls (no new CLI). Environment override only: LOGOS_REPEAT_FORWARD ∈ {auto|always|off}, default auto.
+
+---
+
+### [ ] 1.55. **Decoding‑Point Ablation for Pre‑Norm Stacks (post‑block decoded with `ln2` vs `next ln1`)**
+
+**Why.** In **pre‑norm** architectures, decoding the same post‑block residual with **different normalizers** (same‑block `ln2` vs **next‑block** `ln1`) can shift calibrations and, occasionally, **rank‑1 onset**. A tiny, targeted ablation verifies that semantic onsets are **not an artefact** of a normalization choice.
+
+**What.** For **pre‑norm** models only, decode the **same post‑block residual** at a few target layers with **two normalizers**:
+
+* **A (same‑block ln2):** apply the block’s `ln2` to the post‑block residual, then unembed.
+* **B (next‑block ln1):** apply the **next** block’s `ln1` to the same residual, then unembed.
+  Record **agreement** on (i) `answer_rank==1`, (ii) `Top‑K Jaccard@10/@50`, and (iii) `Spearman` over top‑50 ranks at the **semantic target(s)**.
+
+**How.**
+
+1. **Targets (per run, if present):** `L_semantic_norm`, `L_semantic_strong`, `L_semantic_strong_run2` (test both L and L+1), and `first_rank_le_5`.
+2. **Computation (no extra forward).** Reuse the **cached post‑block residual**; apply **ln2** and **next ln1** modules offline (fp32 stats as in §1.1), then compute probabilities and metrics at each target layer.
+3. **JSON (`diagnostics.decoding_point`).**
+
+   ```json
+   {
+     "arch": "pre_norm|post_norm",
+     "tested": true|false,
+     "strategies": ["post_ln2","next_ln1"],
+     "targets": [ {"name":"L_semantic_norm","layer": L}, ... ],
+     "per_target": [
+       {
+         "layer": L,
+         "rank1_agree": true|false,
+         "delta_answer_rank": int,                // rankA - rankB (answer)
+         "jaccard@10": 0.00,
+         "jaccard@50": 0.00,
+         "spearman_top50": 0.00,
+         "top1_token_agree": true|false
+       }
+     ],
+     "gate": { "decoding_point_consistent": true|false }
+   }
+   ```
+
+   *Gate rule:* **pass** iff `rank1_agree=true` at all targets **and** `jaccard@10 ≥ 0.5` at the preferred semantic target; else **fail**.
+4. **Measurement guidance.** If the gate **fails** (and `arch="pre_norm"`), append `"decoding_point_sensitive"` to `measurement_guidance.reasons` and prefer **confirmed/strong** milestones for reporting.
+5. **Provenance.** Extend `diagnostics.normalization_provenance.strategy` notes with `"ablation": "post_ln2_vs_next_ln1@targets"`.
+
 ---
 
 #### Wrap‑up

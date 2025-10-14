@@ -15,6 +15,8 @@ INPUTS
   * `gold_answer` { `string`, `pieces`, `first_id`, `answer_ids`, `variant` } and `diagnostics.gold_alignment` (+ `gold_alignment_rate`, if present)
   * `diagnostics.raw_lens_full.score.lens_artifact_score_v2`, `js_divergence_p50`, `l1_prob_diff_p50`, `first_js_le_0.1`, `first_l1_le_0.5`
   * `diagnostics.topk_overlap` { `jaccard_raw_norm_p50`, `first_jaccard_raw_norm_ge_0.5` }
+  * diagnostics.repeatability_forward (NEW: forward-of-two repeatability; agreement on preferred semantic milestone; topk_jaccard_at_primary_layer; gate.repeatability_forward_pass)
+  * diagnostics.decoding_point (NEW: pre-norm decoding-point ablation: post_ln2 vs next_ln1; per-target rank1_agree, jaccard@10/@50, spearman_top50; gate.decoding_point_consistent)
   * `diagnostics.repeatability` { `max_rank_dev`, `p95_rank_dev`, `top1_flip_rate` }
   * `diagnostics.norm_trajectory` { `shape`, `slope`, `r2`, `n_spikes` }
   * diagnostics.lens_consistency (NEW: jaccard@10/@50 and spearman_top50 at candidate layers)
@@ -58,6 +60,12 @@ CAVEATS / RULES
 * Stability gate (run‑of‑two): when L_semantic_run2 (or L_semantic_strong_run2) exists, **prefer** it over single‑layer onsets; otherwise annotate one‑layer onsets as potentially unstable.
 * Gate‑stability (advisory): If diagnostics.gate_stability_small_scale.min_both_gates_pass_frac < 0.75 (or both_gates_pass_frac at the reported layer < 0.75), mark the onset as calibration‑sensitive; prefer L_semantic_strong_run2 or confirmed semantics for headline reporting; avoid absolute‑p claims.
 * Lens‑consistency (advisory): If diagnostics.lens_consistency shows jaccard@10 < 0.30 or spearman_top50 < 0.30 at a semantic target, downgrade confidence and lean on rank/KL milestones.
+* Repeatability (forward-of-two) gate: If diagnostics.repeatability_forward.gate.repeatability_forward_pass == false
+  or diagnostics.repeatability_forward.milestones.delta_layers > 1, mark the onset as **not repeatable** and prefer
+  L_semantic_strong_run2 or L_semantic_confirmed for headline reporting; avoid absolute‑p claims.
+* Decoding‑point gate (pre‑norm only): If diagnostics.decoding_point.arch == "pre_norm" and
+  diagnostics.decoding_point.gate.decoding_point_consistent == false, mark the onset as **decoding‑point sensitive**;
+  prefer strong/confirmed milestones and normalized‑depth timing.
 * Position‑window stability (advisory): If summary.position_window.rank1_frac < 0.50, annotate the onset as position‑fragile and avoid generalization beyond the measured next‑token position.
 * When `summary.micro_suite` or `evaluation_pack.micro_suite` is present, report the **medians** (and IQR when helpful) across the fact battery, note any `n_missing` facts, and highlight notable fact-level outliers (cite the relevant fact rows). Use these aggregates to discuss robustness of collapse and semantics depths rather than relying solely on the baseline fact.
 * If `suppress_abs_probs=true` or artefact tier is high, do **not** quote numeric probabilities (`p_answer`, `p_top1`, etc.). Use ranks/KL and qualitative statements only.
@@ -81,10 +89,14 @@ Verify prerequisites and quote minimal evidence (≤2 lines per bullet, include 
 * **Per‑layer normalizer effect:** early `resid_norm_ratio` / `delta_resid_cos` spikes absent before L_semantic (or flagged).
 * **Unembed bias:** `diagnostics.unembed_bias.present` and `l2_norm`; note cosines are bias‑free.
 * **Environment & determinism:** `provenance.env` (device, torch, `deterministic_algorithms`, seed). If false, add reproducibility caution.
+* **Repeatability (forward-of-two)**: quote diagnostics.repeatability_forward (mode, pass1.layer, pass2.layer, delta_layers,
+  topk_jaccard_at_primary_layer, gate.repeatability_forward_pass); add a caution if the gate fails.
+* **Decoding‑point ablation (pre‑norm stacks)**: quote diagnostics.decoding_point.gate.decoding_point_consistent and list at least one target’s metrics
+  (rank1_agree and jaccard@10). If the gate fails, annotate normalization‑choice sensitivity for early semantics.
 * **Numeric health:** `diagnostics.numeric_health.any_nan/any_inf` and `layers_flagged` (overlaps with candidate layers?).
 * **Copy mask:** `diagnostics.copy_mask.size` and sample; confirm plausibility for tokenizer.
 * **Gold alignment:** quote `diagnostics.gold_alignment` (and `gold_alignment_rate` if present).
-* **Repeatability1.39):** quote `{max_rank_dev, p95_rank_dev, top1_flip_rate}` and note flag if high.
+* **Repeatability (decode micro‑check §1.39) and forward-of-two (§1.54):** quote `{max_rank_dev, p95_rank_dev, top1_flip_rate}` and note flag if high.
 * **Norm trajectory:** `shape` (and slope/r2 if helpful).
 * **Measurement guidance:** quote `measurement_guidance` (prefer_ranks/suppress_abs_probs; preferred lens; use_confirmed_semantics).
 * **Semantic margin**: quote `summary.semantic_margin` (δ_abs, p_uniform) and state whether `margin_ok_at_L_semantic_norm` is true/false.
@@ -95,7 +107,7 @@ Verify prerequisites and quote minimal evidence (≤2 lines per bullet, include 
 3. **Quantitative findings (layer‑by‑layer)**
 Build a short table from **positive** rows only (`prompt_id=pos`, `prompt_variant=orig`): “L 0 — entropy X bits, top‑1 ‘token’ …”
 
-* Bold the **semantic layer** as follows (in order of preference): L_semantic_strong_run2; else L_semantic_strong; else L_semantic_confirmed (prefer margin_ok when present); else L_semantic_norm (label “weak” if either uniform or Top‑2 margin gates fail).
+* Bold the **semantic layer** as follows (in order of preference): L_semantic_strong_run2; else L_semantic_strong; else L_semantic_confirmed (prefer margin_ok when present); else L_semantic_norm (label “weak” if either uniform or Top‑2 margin gates fail). When arch == "pre_norm" and diagnostics.decoding_point.gate.decoding_point_consistent == false at the reported layer, append “(decoding‑point sensitive)” to the semantic onset citation and prefer L_semantic_strong_run2 or confirmed semantics if available.
 * Report control margins (`control_summary.first_control_margin_pos`, `max_control_margin`) and control strength (`first_control_strong_pos` if present).
 * ** Micro‑suite (if present): report **median** `L_semantic_confirmed` (or `L_semantic_norm` when confirmed is absent) and **median** Δ̂ across facts; include one fact‑specific citation (row index) for concreteness.
 * **Entropy drift:** `(entropy_bits − teacher_entropy_bits)` at representative depths (or via `summary.entropy` / `evaluation_pack.entropy`).

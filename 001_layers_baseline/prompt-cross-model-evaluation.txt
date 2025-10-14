@@ -10,6 +10,8 @@ INPUTS
   * diagnostics.raw_lens_window / diagnostics.raw_lens_full
   * diagnostics.normalization_provenance, diagnostics.numeric_health, diagnostics.copy_mask
   * diagnostics.lens_consistency (jaccard@10/@50 and spearman_top50 at candidate layers)
+  * diagnostics.repeatability_forward (NEW: forward-of-two repeatability; preferred semantic milestone agreement, delta_layers, topk_jaccard_at_primary_layer; gate.repeatability_forward_pass)
+  * diagnostics.decoding_point (NEW: pre-norm decoding-point ablation: post_ln2 vs next_ln1 at targets; jaccard@10/@50, spearman_top50; gate.decoding_point_consistent)
   * diagnostics.gate_stability_small_scale (gate pass‑fractions under small rescalings)
   * measurement_guidance { prefer_ranks, suppress_abs_probs, reasons[], preferred_lens_for_reporting?, use_confirmed_semantics? }
   * tuned_lens.audit_summary (if present): rotation_vs_temperature, positional, head_mismatch, tuned_is_calibration_only, preferred_semantics_lens_hint
@@ -52,6 +54,12 @@ RULES
 - Do **not** recompute JS/Jaccard/KL/entropy from scratch; read values from the provided JSON/CSVs.
 - Gate‑stability (advisory): If diagnostics.gate_stability_small_scale.min_both_gates_pass_frac < 0.75 (or the target L has both_gates_pass_frac < 0.75), treat the onset as **calibration‑sensitive**; prefer L_semantic_strong_run2 or confirmed semantics and avoid absolute‑p narratives.
 - Lens‑consistency (advisory): If diagnostics.lens_consistency reports jaccard@10 < 0.30 or spearman_top50 < 0.30 at any semantic target, downgrade confidence in early semantics and lean on rank/KL milestones.
+- Repeatability (forward-of-two) gate: If diagnostics.repeatability_forward.gate.repeatability_forward_pass == false
+  or diagnostics.repeatability_forward.milestones.delta_layers > 1, treat the reported semantic onset as **not repeatable**.
+  Prefer L_semantic_strong_run2 or L_semantic_confirmed for headline timing; avoid absolute‑p narratives; annotate "repeatability_forward_disagreement".
+- Decoding‑point gate (pre‑norm only): If diagnostics.decoding_point.arch == "pre_norm" and
+  diagnostics.decoding_point.gate.decoding_point_consistent == false at a semantic target,
+  treat early onset as **normalization‑choice sensitive**. Prefer strong/confirmed milestones and normalized‑depth comparisons; annotate "decoding_point_sensitive".
 - Position‑window stability (advisory): If summary.position_window.rank1_frac < 0.50, annotate semantic onset as **position‑fragile** and avoid broad generalization beyond the measured position.
 
 Final-row caveat (head calibration): When comparing final rows across models, prefer rank/KL thresholds. If a model’s JSON has `warn_high_last_layer_kl = true`, treat final probability differences as head‑calibration artefacts and do not infer regressions. Known pattern: the Gemma family often shows non‑zero last‑layer KL due to a calibrated final head; be on the lookout for similar signatures in other families. If `raw_lens_check.summary.lens_artifact_risk` is `high` or `first_norm_only_semantic_layer` is present, downgrade confidence in pre‑final “early semantics” and lean on rank milestones over probabilities.
@@ -109,7 +117,9 @@ Write concise but thorough paragraphs that correlate quantitative patterns acros
    Note norm strategy (post_ln2 vs next_ln1), early spikes (resid_norm_ratio / delta_resid_cos), and any numeric health flags overlapping candidate layers.
 
 7. Repeatability
-   Quote `diagnostics.repeatability` (max_rank_dev, p95_rank_dev, top1_flip_rate); if flagged high variance, treat near‑threshold rank differences cautiously.
+   Quote diagnostics.repeatability {max_rank_dev, p95_rank_dev, top1_flip_rate} **and** diagnostics.repeatability_forward
+   {milestones.pass1.layer, milestones.pass2.layer, delta_layers, topk_jaccard_at_primary_layer, gate.repeatability_forward_pass}.
+   If forward-of-two fails or is absent, state this explicitly and downgrade near-threshold claims per RULES.
 
 8. Family patterns
    Within families (e.g., Qwen, Gemma), summarize consistencies/differences in collapse depth, artefact tier, tuned audit, and control margins.
