@@ -839,6 +839,8 @@
     "flags": {
       "rank_only_near_uniform": true,
       "repeatability_skipped": "deterministic_env",
+      "low_lens_consistency_at_semantic": true,
+      "pos_window_low_stability": true,
       "normalization_spike": true
     },
     "prism_summary": {
@@ -7127,6 +7129,23 @@
       "L_semantic_strong_run2": null,
       "run2_overlaps_confirmed_window": true
     },
+    "gate_stability_small_scale": {
+      "scales": [
+        0.9,
+        0.95,
+        1.05,
+        1.1
+      ],
+      "per_target": {
+        "L_semantic_norm": {
+          "layer": 25,
+          "uniform_margin_pass_frac": 0.0,
+          "top2_gap_pass_frac": 0.0,
+          "both_gates_pass_frac": 0.0
+        }
+      },
+      "min_both_gates_pass_frac": 0.0
+    },
     "raw_lens_window": {
       "radius": 4,
       "center_layers": [
@@ -7774,6 +7793,80 @@
       "status": "skipped",
       "reason": "deterministic_env"
     },
+    "lens_consistency": {
+      "targets": [
+        "first_rank_le_10",
+        "first_rank_le_5",
+        "L_semantic_norm",
+        "L_semantic_confirmed"
+      ],
+      "norm_vs_raw": {
+        "at_targets": [
+          {
+            "layer": 24,
+            "jaccard@10": 0.25,
+            "jaccard@50": 0.12359550561797752,
+            "spearman_top50": -0.01080846693366766
+          },
+          {
+            "layer": 25,
+            "jaccard@10": 0.25,
+            "jaccard@50": 0.14942528735632185,
+            "spearman_top50": 0.1805015206336975
+          },
+          {
+            "layer": 25,
+            "jaccard@10": 0.25,
+            "jaccard@50": 0.14942528735632185,
+            "spearman_top50": 0.1805015206336975
+          },
+          {
+            "layer": 25,
+            "jaccard@10": 0.25,
+            "jaccard@50": 0.14942528735632185,
+            "spearman_top50": 0.1805015206336975
+          }
+        ],
+        "p50": {
+          "jaccard@10": 0.25,
+          "jaccard@50": 0.14942528735632185,
+          "spearman_top50": 0.1805015206336975
+        }
+      },
+      "norm_vs_tuned": {
+        "at_targets": [
+          {
+            "layer": 24,
+            "jaccard@10": 0.05263157894736842,
+            "jaccard@50": 0.07526881720430108,
+            "spearman_top50": 0.1807781308889389
+          },
+          {
+            "layer": 25,
+            "jaccard@10": 0.0,
+            "jaccard@50": 0.08695652173913043,
+            "spearman_top50": 0.2169160693883896
+          },
+          {
+            "layer": 25,
+            "jaccard@10": 0.0,
+            "jaccard@50": 0.08695652173913043,
+            "spearman_top50": 0.2169160693883896
+          },
+          {
+            "layer": 25,
+            "jaccard@10": 0.0,
+            "jaccard@50": 0.08695652173913043,
+            "spearman_top50": 0.2169160693883896
+          }
+        ],
+        "p50": {
+          "jaccard@10": 0.0,
+          "jaccard@50": 0.08695652173913043,
+          "spearman_top50": 0.2169160693883896
+        }
+      }
+    },
     "gold_alignment": {
       "ok": true,
       "status": "ok",
@@ -7804,7 +7897,12 @@
         "softcap": null,
         "scale_then_softcap": null
       },
-      "warn_high_last_layer_kl": false
+      "warn_high_last_layer_kl": false,
+      "gates": {
+        "warn_high_last_layer_kl": false,
+        "threshold_bits": 0.25,
+        "delta_kl_temp_bits": 0.0
+      }
     },
     "kl_to_final_bits_norm_temp@25%": {
       "layer": 8,
@@ -9582,6 +9680,20 @@
           "Canada→Ottawa": 290
         }
       }
+    },
+    "position_window": {
+      "grid": [
+        0.2,
+        0.4,
+        0.6,
+        0.8,
+        0.92,
+        0.98
+      ],
+      "L_semantic_norm": 25,
+      "rank1_frac": 0.0,
+      "n_positions": 6,
+      "rank1_frac_strong_run2": null
     },
     "norm_trajectory": {
       "shape": "spike",
@@ -11732,6 +11844,20 @@
       ],
       "n_missing": 0,
       "notes": "control is France→Paris; other positives do not add new controls"
+    },
+    "position_window": {
+      "grid": [
+        0.2,
+        0.4,
+        0.6,
+        0.8,
+        0.92,
+        0.98
+      ],
+      "L_semantic_norm": 25,
+      "rank1_frac": 0.0,
+      "n_positions": 6,
+      "rank1_frac_strong_run2": null
     }
   },
   "micro_suite": {
@@ -11815,7 +11941,10 @@
       "norm_only_semantics_window",
       "high_lens_artifact_risk",
       "normalization_spike",
-      "rank_only_near_uniform"
+      "rank_only_near_uniform",
+      "low_lens_consistency_at_semantic",
+      "pos_window_low_stability",
+      "scale_sensitive_semantic_gate"
     ],
     "notes": "Family-level head calibration; treat probabilities comparatively only within model.",
     "preferred_lens_for_reporting": "tuned",

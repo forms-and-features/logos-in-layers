@@ -7175,6 +7175,23 @@
       "L_semantic_strong_run2": null,
       "run2_overlaps_confirmed_window": false
     },
+    "gate_stability_small_scale": {
+      "scales": [
+        0.9,
+        0.95,
+        1.05,
+        1.1
+      ],
+      "per_target": {
+        "L_semantic_norm": {
+          "layer": 40,
+          "uniform_margin_pass_frac": 0.0,
+          "top2_gap_pass_frac": 0.0,
+          "both_gates_pass_frac": 0.0
+        }
+      },
+      "min_both_gates_pass_frac": 0.0
+    },
     "raw_lens_window": {
       "radius": 4,
       "center_layers": [
@@ -8640,6 +8657,47 @@
       "status": "skipped",
       "reason": "deterministic_env"
     },
+    "lens_consistency": {
+      "targets": [
+        "first_rank_le_10",
+        "first_rank_le_5",
+        "L_semantic_norm",
+        "L_semantic_confirmed"
+      ],
+      "norm_vs_raw": {
+        "at_targets": [
+          {
+            "layer": 38,
+            "jaccard@10": 0.6666666666666666,
+            "jaccard@50": 0.5625,
+            "spearman_top50": 0.5749474763870239
+          },
+          {
+            "layer": 38,
+            "jaccard@10": 0.6666666666666666,
+            "jaccard@50": 0.5625,
+            "spearman_top50": 0.5749474763870239
+          },
+          {
+            "layer": 40,
+            "jaccard@10": 0.8181818181818182,
+            "jaccard@50": 0.5625,
+            "spearman_top50": 0.657792866230011
+          },
+          {
+            "layer": 40,
+            "jaccard@10": 0.8181818181818182,
+            "jaccard@50": 0.5625,
+            "spearman_top50": 0.657792866230011
+          }
+        ],
+        "p50": {
+          "jaccard@10": 0.7424242424242424,
+          "jaccard@50": 0.5625,
+          "spearman_top50": 0.6163701713085175
+        }
+      }
+    },
     "gold_alignment": {
       "ok": true,
       "status": "ok",
@@ -8670,7 +8728,12 @@
         "softcap": null,
         "scale_then_softcap": null
       },
-      "warn_high_last_layer_kl": false
+      "warn_high_last_layer_kl": false,
+      "gates": {
+        "warn_high_last_layer_kl": false,
+        "threshold_bits": 0.25,
+        "delta_kl_temp_bits": 0.0
+      }
     },
     "kl_to_final_bits_norm_temp@25%": {
       "layer": 20,
@@ -8988,6 +9051,13 @@
           "Canada→Ottawa": 708
         }
       }
+    },
+    "position_window": {
+      "grid": [],
+      "L_semantic_norm": 40,
+      "rank1_frac": null,
+      "n_positions": 0,
+      "rank1_frac_strong_run2": null
     },
     "norm_trajectory": {
       "shape": "spike",
@@ -9474,6 +9544,13 @@
       ],
       "n_missing": 0,
       "notes": "control is France→Paris; other positives do not add new controls"
+    },
+    "position_window": {
+      "grid": [],
+      "L_semantic_norm": 40,
+      "rank1_frac": null,
+      "n_positions": 0,
+      "rank1_frac_strong_run2": null
     }
   },
   "micro_suite": {
@@ -9556,7 +9633,8 @@
     "reasons": [
       "norm_only_semantics_window",
       "normalization_spike",
-      "rank_only_near_uniform"
+      "rank_only_near_uniform",
+      "scale_sensitive_semantic_gate"
     ],
     "notes": "Family-level head calibration; treat probabilities comparatively only within model.",
     "preferred_lens_for_reporting": "norm",

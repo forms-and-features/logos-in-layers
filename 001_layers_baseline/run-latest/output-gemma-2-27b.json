@@ -838,6 +838,8 @@
     },
     "flags": {
       "repeatability_skipped": "deterministic_env",
+      "low_lens_consistency_at_semantic": true,
+      "pos_window_low_stability": true,
       "normalization_spike": true
     },
     "prism_summary": {
@@ -5786,6 +5788,23 @@
       "L_semantic_strong_run2": null,
       "run2_overlaps_confirmed_window": null
     },
+    "gate_stability_small_scale": {
+      "scales": [
+        0.9,
+        0.95,
+        1.05,
+        1.1
+      ],
+      "per_target": {
+        "L_semantic_norm": {
+          "layer": 46,
+          "uniform_margin_pass_frac": 1.0,
+          "top2_gap_pass_frac": 1.0,
+          "both_gates_pass_frac": 1.0
+        }
+      },
+      "min_both_gates_pass_frac": 1.0
+    },
     "raw_lens_window": {
       "radius": 4,
       "center_layers": [
@@ -6665,6 +6684,80 @@
       "status": "skipped",
       "reason": "deterministic_env"
     },
+    "lens_consistency": {
+      "targets": [
+        "first_rank_le_10",
+        "first_rank_le_5",
+        "L_semantic_norm",
+        "L_semantic_confirmed"
+      ],
+      "norm_vs_raw": {
+        "at_targets": [
+          {
+            "layer": 46,
+            "jaccard@10": 0.0,
+            "jaccard@50": 0.0,
+            "spearman_top50": 0.23778578639030457
+          },
+          {
+            "layer": 46,
+            "jaccard@10": 0.0,
+            "jaccard@50": 0.0,
+            "spearman_top50": 0.23778578639030457
+          },
+          {
+            "layer": 46,
+            "jaccard@10": 0.0,
+            "jaccard@50": 0.0,
+            "spearman_top50": 0.23778578639030457
+          },
+          {
+            "layer": 46,
+            "jaccard@10": 0.0,
+            "jaccard@50": 0.0,
+            "spearman_top50": 0.23778578639030457
+          }
+        ],
+        "p50": {
+          "jaccard@10": 0.0,
+          "jaccard@50": 0.0,
+          "spearman_top50": 0.23778578639030457
+        }
+      },
+      "norm_vs_tuned": {
+        "at_targets": [
+          {
+            "layer": 46,
+            "jaccard@10": 1.0,
+            "jaccard@50": 1.0,
+            "spearman_top50": 1.0
+          },
+          {
+            "layer": 46,
+            "jaccard@10": 1.0,
+            "jaccard@50": 1.0,
+            "spearman_top50": 1.0
+          },
+          {
+            "layer": 46,
+            "jaccard@10": 1.0,
+            "jaccard@50": 1.0,
+            "spearman_top50": 1.0
+          },
+          {
+            "layer": 46,
+            "jaccard@10": 1.0,
+            "jaccard@50": 1.0,
+            "spearman_top50": 1.0
+          }
+        ],
+        "p50": {
+          "jaccard@10": 1.0,
+          "jaccard@50": 1.0,
+          "spearman_top50": 1.0
+        }
+      }
+    },
     "gold_alignment": {
       "ok": true,
       "status": "ok",
@@ -6695,7 +6788,12 @@
         "softcap": null,
         "scale_then_softcap": null
       },
-      "warn_high_last_layer_kl": true
+      "warn_high_last_layer_kl": true,
+      "gates": {
+        "warn_high_last_layer_kl": true,
+        "threshold_bits": 0.25,
+        "delta_kl_temp_bits": 0.5686857875405654
+      }
     },
     "kl_to_final_bits_norm_temp@25%": {
       "layer": 12,
@@ -8473,6 +8571,20 @@
           "Canada→Ottawa": 422
         }
       }
+    },
+    "position_window": {
+      "grid": [
+        0.2,
+        0.4,
+        0.6,
+        0.8,
+        0.92,
+        0.98
+      ],
+      "L_semantic_norm": 46,
+      "rank1_frac": 0.16666666666666666,
+      "n_positions": 6,
+      "rank1_frac_strong_run2": null
     },
     "norm_trajectory": {
       "shape": "spike",
@@ -10637,6 +10749,20 @@
       ],
       "n_missing": 0,
       "notes": "control is France→Paris; other positives do not add new controls"
+    },
+    "position_window": {
+      "grid": [
+        0.2,
+        0.4,
+        0.6,
+        0.8,
+        0.92,
+        0.98
+      ],
+      "L_semantic_norm": 46,
+      "rank1_frac": 0.16666666666666666,
+      "n_positions": 6,
+      "rank1_frac_strong_run2": null
     }
   },
   "micro_suite": {
@@ -10722,7 +10848,9 @@
       "high_lens_artifact_risk",
       "high_lens_artifact_score",
       "normalization_spike",
-      "tuned_is_calibration_only"
+      "low_lens_consistency_at_semantic",
+      "tuned_is_calibration_only",
+      "pos_window_low_stability"
     ],
     "notes": "Family-level head calibration; treat probabilities comparatively only within model.",
     "preferred_lens_for_reporting": "norm",

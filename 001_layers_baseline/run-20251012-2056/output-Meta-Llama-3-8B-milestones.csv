@@ -1,0 +1,5 @@
+layer,csv_row_index,is_copy_strict,is_copy_soft_k,is_semantic_norm,is_semantic_confirmed,answer_rank,p_answer,kl_to_final_bits,entropy_bits,lens
+,,False,,False,False,,,,,norm
+,,False,,False,False,,,,,norm
+25,25,False,,True,False,1,0.00013230618787929416,11.205929304646903,16.81424903869629,norm
+25,25,False,,False,True,1,0.00013230618787929416,11.205929304646903,16.81424903869629,raw
