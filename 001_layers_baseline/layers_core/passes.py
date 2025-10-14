@@ -286,12 +286,14 @@ def run_prompt_pass(
     def _compute_repeatability_metrics() -> Dict[str, Any]:
         if not enable_repeatability_check:
             return {"status": "skipped", "reason": "disabled"}
-        if torch.are_deterministic_algorithms_enabled():
-            return {"status": "skipped", "reason": "deterministic_env"}
+        det_env = bool(torch.are_deterministic_algorithms_enabled())
 
         layer_keys = sorted(set(norm_logits_window.keys()) & set(raw_resid_window.keys()))
         if not layer_keys:
-            return {"status": "unavailable"}
+            result: Dict[str, Any] = {"status": "unavailable"}
+            if det_env:
+                result["deterministic_algorithms"] = True
+            return result
 
         rank_devs: List[float] = []
         layers_count = 0
@@ -327,19 +329,25 @@ def run_prompt_pass(
             rank_devs.append(abs(rank - 1))
 
         if layers_count == 0:
-            return {"status": "unavailable"}
+            result = {"status": "unavailable"}
+            if det_env:
+                result["deterministic_algorithms"] = True
+            return result
 
         max_dev = max(rank_devs) if rank_devs else 0.0
         p95_dev = _percentile(rank_devs, 0.95) if rank_devs else 0.0
         flip_rate = float(flips) / float(layers_count)
 
-        return {
+        result = {
             "status": "ok",
             "layers_checked": layers_count,
             "max_rank_dev": float(max_dev),
             "p95_rank_dev": float(p95_dev if p95_dev is not None else 0.0),
             "top1_flip_rate": float(flip_rate),
         }
+        if det_env:
+            result["deterministic_algorithms"] = True
+        return result
 
     p_uniform: Optional[float] = None
 

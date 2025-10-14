@@ -1809,7 +1809,7 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 
 ✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
-### [ ] 1.54. **Always‑on Repeatability Gate (forward‑of‑two; no CLI)**
+### [x] 1.54. **Always‑on Repeatability Gate (forward‑of‑two; no CLI)**
 
 **Why.** Near‑threshold rank‑1 “onsets” can flip because of nondeterministic kernels, tiny numeric drift, or temperature‑sensitive gates. A **second, independent forward** on the same prompts provides a minimal, audit‑ready repeatability check that upgrades “one‑off” claims to **repeatable** findings without widening the micro‑suite.
 
@@ -1844,6 +1844,8 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
    ```
 3. **Measurement guidance.** If the gate **fails**, append `"repeatability_forward_disagreement"` to `measurement_guidance.reasons` and set `prefer_ranks=true`, `suppress_abs_probs=true`.
 4. Controls (no new CLI). Environment override only: LOGOS_REPEAT_FORWARD ∈ {auto|always|off}, default auto.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

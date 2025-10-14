@@ -86,6 +86,7 @@ from layers_core.raw_lens import (
     init_raw_lens_check,
     summarize_raw_lens_check,
 )
+from layers_core.repeat_forward import build_repeatability_forward_summary
 from layers_core.windows import WindowManager
 from layers_core.gold import (
     compute_gold_answer_info,
@@ -336,6 +337,11 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
         
         # Raw-vs-Norm dual-lens mode (env-controlled; default: sampled checks)
         RAW_LENS_MODE = get_raw_lens_mode(config.self_test)
+        repeat_forward_env = str(os.environ.get("LOGOS_REPEAT_FORWARD", "auto") or "auto").strip().lower()
+        if repeat_forward_env not in ("auto", "always", "off"):
+            repeat_forward_env = "auto"
+        repeat_forward_tolerance = 1
+        repeat_forward_topk = 10
         clean_name = clean_model_name(model_id)
 
         # Track a last-layer consistency snapshot (lens vs model final head)
@@ -834,6 +840,112 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                         diag_flags.setdefault("repeatability_unavailable", True)
                 except Exception:
                     pass
+                repeat_forward_enabled = repeat_forward_env != "off"
+                repeat_forward_mode_effective = "off"
+                repeat_pass2_diag = None
+                repeat_pass2_records = None
+                if repeat_forward_enabled:
+                    repeat_forward_mode_effective = repeat_forward_env
+                    should_run_repeat = repeat_forward_env == "always"
+                    if repeat_forward_env == "auto":
+                        should_run_repeat = True
+                        det_alg = torch.are_deterministic_algorithms_enabled()
+                        max_dev_val = None
+                        if isinstance(repeat_diag, dict):
+                            if repeat_diag.get("status") == "ok":
+                                try:
+                                    max_dev_val = float(repeat_diag.get("max_rank_dev") or 0.0)
+                                except Exception:
+                                    max_dev_val = None
+                            elif repeat_diag.get("status") == "skipped" and repeat_diag.get("reason") == "deterministic_env":
+                                max_dev_val = 0.0
+                        if det_alg and max_dev_val == 0.0:
+                            should_run_repeat = False
+                            repeat_forward_mode_effective = "skipped_deterministic"
+                    if should_run_repeat:
+                        repeat_forward_mode_effective = repeat_forward_env
+                        repeat_window_mgr = WindowManager(getattr(config, "copy_window_k", 1), extra_window_ks=copy_soft_window_ks)
+                        repeat_json = {
+                            "records": [],
+                            "pure_next_token_records": [],
+                            "copy_flag_columns": list(copy_flag_columns),
+                            "raw_lens_check": init_raw_lens_check("off"),
+                            "raw_lens_window_records": [],
+                            "raw_lens_full_records": [],
+                        }
+                        repeat_json_prism = {
+                            "records": [],
+                            "pure_next_token_records": [],
+                            "copy_flag_columns": list(copy_flag_columns),
+                        }
+                        repeat_prism_ctx = PrismContext(stats=None, Q=None, active=False)
+                        repeat_summary_diag, _, _, _ = run_prompt_pass(
+                            model=model,
+                            context_prompt=context_prompt,
+                            ground_truth=ground_truth,
+                            prompt_id="pos",
+                            prompt_variant="orig",
+                            window_manager=repeat_window_mgr,
+                            norm_lens=norm_lens,
+                            unembed_ctx=unembed_ctx,
+                            copy_threshold=config.copy_threshold,
+                            copy_margin=config.copy_margin,
+                            entropy_collapse_threshold=getattr(config, 'entropy_collapse_threshold', 1.0),
+                            top_k_record=TOP_K_RECORD,
+                            top_k_verbose=TOP_K_VERBOSE,
+                            keep_residuals=False,
+                            out_dir=config.out_dir,
+                            copy_soft_threshold=copy_soft_threshold,
+                            copy_soft_window_ks=copy_soft_window_ks,
+                            copy_strict_label=copy_strict_label,
+                            copy_soft_labels=copy_soft_labels,
+                            copy_soft_extra_labels=copy_soft_extra_labels,
+                            RAW_LENS_MODE=RAW_LENS_MODE,
+                            json_data=repeat_json,
+                            json_data_prism=repeat_json_prism,
+                            prism_ctx=repeat_prism_ctx,
+                            decode_id_fn=decode_id,
+                            ctx_ids_list=ctx_ids,
+                            first_ans_token_id=first_ans_id,
+                            important_words=IMPORTANT_WORDS,
+                            head_scale_cfg=head_scale_cfg,
+                            head_softcap_cfg=head_softcap_cfg,
+                            clean_model_name=clean_model_name(model_id),
+                            enable_raw_lens_sampling=False,
+                            tuned_spec=None,
+                            norm_temp_taus=norm_temp_taus,
+                            copy_strict_thresholds=copy_strict_tau_list,
+                            enable_repeatability_check=False,
+                            fact_key=baseline_fact_key,
+                            fact_index=0,
+                        )
+                        repeat_pass2_diag = repeat_summary_diag
+                        repeat_pass2_records = repeat_json.get("pure_next_token_records", [])
+                    elif repeat_forward_mode_effective != "skipped_deterministic":
+                        repeat_forward_mode_effective = repeat_forward_env
+                repeat_forward_summary = build_repeatability_forward_summary(
+                    pass1_diag=diag,
+                    pass2_diag=repeat_pass2_diag,
+                    pass1_records=json_data.get("pure_next_token_records", []),
+                    pass2_records=repeat_pass2_records,
+                    prompt_id="pos",
+                    prompt_variant="orig",
+                    fact_index=0,
+                    tolerance_layers=repeat_forward_tolerance,
+                    topk_k=repeat_forward_topk,
+                )
+                repeat_forward_summary.update({
+                    "enabled": repeat_forward_enabled,
+                    "mode": repeat_forward_mode_effective,
+                    "tolerance_layers": repeat_forward_tolerance,
+                    "topk_k": repeat_forward_topk,
+                })
+                diag["repeatability_forward"] = repeat_forward_summary
+                gate_result = (repeat_forward_summary.get("gate") or {}).get("repeatability_forward_pass")
+                if gate_result is False:
+                    diag_flags["repeatability_forward_disagreement"] = True
+                if repeat_forward_mode_effective == "skipped_deterministic":
+                    diag_flags.setdefault("repeatability_forward_skipped", "deterministic_env")
                 if last_layer_consistency is not None:
                     json_data["diagnostics"]["last_layer_consistency"] = last_layer_consistency
                 # KL_temp percentile snapshots
@@ -1919,6 +2031,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 pass
             if diag_flags.get("repeatability_variance_high"):
                 reasons.append("repeatability_variance_high")
+            if diag_flags.get("repeatability_forward_disagreement"):
+                reasons.append("repeatability_forward_disagreement")
             if diag_flags.get("gold_alignment_partial"):
                 reasons.append("gold_alignment_partial")
             if diag_flags.get("nondeterministic"):
