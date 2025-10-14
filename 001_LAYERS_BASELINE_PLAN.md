@@ -1849,7 +1849,7 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
 
 ---
 
-### [ ] 1.55. **Decoding‑Point Ablation for Pre‑Norm Stacks (post‑block decoded with `ln2` vs `next ln1`)**
+### [x] 1.55. **Decoding‑Point Ablation for Pre‑Norm Stacks (post‑block decoded with `ln2` vs `next ln1`)**
 
 **Why.** In **pre‑norm** architectures, decoding the same post‑block residual with **different normalizers** (same‑block `ln2` vs **next‑block** `ln1`) can shift calibrations and, occasionally, **rank‑1 onset**. A tiny, targeted ablation verifies that semantic onsets are **not an artefact** of a normalization choice.
 
@@ -1889,6 +1889,8 @@ No new concepts, prompts remain capital‑facts; the micro‑suite only multipli
    *Gate rule:* **pass** iff `rank1_agree=true` at all targets **and** `jaccard@10 ≥ 0.5` at the preferred semantic target; else **fail**.
 4. **Measurement guidance.** If the gate **fails** (and `arch="pre_norm"`), append `"decoding_point_sensitive"` to `measurement_guidance.reasons` and prefer **confirmed/strong** milestones for reporting.
 5. **Provenance.** Extend `diagnostics.normalization_provenance.strategy` notes with `"ablation": "post_ln2_vs_next_ln1@targets"`.
+
+✅ IMPLEMENTATION STATUS: COMPLETED (active in current runs)
 
 ---
 

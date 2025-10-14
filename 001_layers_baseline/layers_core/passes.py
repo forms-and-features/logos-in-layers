@@ -25,6 +25,8 @@ from .lenses import PrismLensAdapter
 from .contexts import UnembedContext, PrismContext
 from .surface import build_prompt_vocab_ids
 from .unembed import unembed_mm
+from .decoding_point import compare_decoding_strategies
+from .repeat_forward import build_repeatability_forward_summary, resolve_preferred_semantic_milestone
 
 SURFACE_DELTA = 0.05
 GEOM_GAMMA = 0.02
@@ -1607,6 +1609,176 @@ def run_prompt_pass(
             summary_diag["numeric_health"] = numeric_summary
 
             summary_diag["repeatability"] = _compute_repeatability_metrics()
+
+            decoding_point_block: Dict[str, Any] = {
+                "arch": norm_arch,
+                "tested": False,
+                "strategies": ["post_ln2", "next_ln1"],
+                "targets": [],
+                "per_target": [],
+                "gate": {"decoding_point_consistent": None},
+            }
+
+            def _to_int_or_none(value: Any) -> Optional[int]:
+                try:
+                    return None if value is None else int(value)
+                except (TypeError, ValueError):
+                    return None
+
+            if (
+                prompt_id == "pos"
+                and prompt_variant == "orig"
+                and norm_arch == "pre_norm"
+            ):
+                n_layers_int = int(n_layers)
+                target_entries: List[Dict[str, Any]] = []
+
+                def _append_target(name: str, value: Any) -> None:
+                    layer_idx = _to_int_or_none(value)
+                    if layer_idx is None:
+                        return
+                    if layer_idx < 0 or layer_idx > n_layers_int:
+                        return
+                    entry_key = (name, layer_idx)
+                    for existing in target_entries:
+                        if existing.get("name") == name and existing.get("layer") == layer_idx:
+                            return
+                    target_entries.append({"name": name, "layer": layer_idx})
+
+                _append_target("L_semantic_norm", summary_diag.get("L_semantic"))
+                sem_gate_block = summary_diag.get("semantic_gate") or {}
+                _append_target("L_semantic_strong", sem_gate_block.get("L_semantic_strong"))
+                L_strong_run2 = _to_int_or_none(sem_gate_block.get("L_semantic_strong_run2"))
+                if L_strong_run2 is not None:
+                    _append_target("L_semantic_strong_run2", L_strong_run2)
+                    if L_strong_run2 + 1 <= n_layers_int:
+                        _append_target("L_semantic_strong_run2_plus1", L_strong_run2 + 1)
+                _append_target("first_rank_le_5", summary_diag.get("first_rank_le_5"))
+
+                decoding_point_block["targets"] = target_entries
+
+                per_target_entries: List[Dict[str, Any]] = []
+                if target_entries:
+                    final_probs_cpu = final_probs.detach().to(dtype=torch.float32, device="cpu")
+                    answer_id_int = _to_int_or_none(first_ans_token_id)
+                    for target in target_entries:
+                        layer_idx = int(target["layer"])
+                        entry: Dict[str, Any] = {"name": target["name"], "layer": layer_idx}
+                        raw_vec = raw_resid_window.get(layer_idx)
+                        baseline_logits = norm_logits_window.get(layer_idx)
+                        if raw_vec is None:
+                            entry["status"] = "missing_residual"
+                            per_target_entries.append(entry)
+                            continue
+                        if baseline_logits is None:
+                            entry["status"] = "missing_baseline_logits"
+                            per_target_entries.append(entry)
+                            continue
+                        block_idx = layer_idx - 1
+                        if block_idx < 0 or block_idx >= len(model.blocks):
+                            entry["status"] = "missing_block"
+                            per_target_entries.append(entry)
+                            continue
+                        ln2_module = getattr(model.blocks[block_idx], "ln2", None)
+                        if ln2_module is None:
+                            entry["status"] = "missing_ln2"
+                            per_target_entries.append(entry)
+                            continue
+                        if unembed_ctx.W is None:
+                            entry["status"] = "missing_unembed"
+                            per_target_entries.append(entry)
+                            continue
+                        try:
+                            with torch.no_grad():
+                                try:
+                                    norm_device = next(ln2_module.parameters()).device  # type: ignore[attr-defined]
+                                except (StopIteration, AttributeError):
+                                    norm_device = getattr(unembed_ctx.W, "device", torch.device("cpu"))
+                                raw_vec_device = raw_vec.detach().to(dtype=torch.float32, device=norm_device)
+                                resid_tensor = raw_vec_device.unsqueeze(0).unsqueeze(0)
+                                norm_tensor = apply_norm_or_skip(resid_tensor, ln2_module)
+                                norm_vec = norm_tensor[0, 0, :]
+                                cast_vec = safe_cast_for_unembed(
+                                    norm_vec.unsqueeze(0),
+                                    unembed_ctx.W,
+                                    force_fp32_unembed=unembed_ctx.force_fp32,
+                                )
+                                logits_same_ln2 = unembed_mm(
+                                    cast_vec,
+                                    unembed_ctx.W,
+                                    unembed_ctx.b,
+                                    cache=unembed_ctx.cache,
+                                ).squeeze(0)
+                                logits_next_ln1 = baseline_logits.detach()
+                            metrics = compare_decoding_strategies(
+                                logits_same_ln2=logits_same_ln2,
+                                logits_next_ln1=logits_next_ln1,
+                                final_probs=final_probs_cpu,
+                                answer_token_id=answer_id_int,
+                            )
+                            entry.update(metrics)
+                            entry["status"] = "ok"
+                        except Exception as exc:
+                            entry["status"] = "error"
+                            entry["error"] = str(exc)
+                        per_target_entries.append(entry)
+
+                    decoding_point_block["per_target"] = per_target_entries
+                    if per_target_entries:
+                        successful = [e for e in per_target_entries if e.get("status") == "ok"]
+                        decoding_point_block["tested"] = bool(successful)
+                        gate_value: Optional[bool] = None
+                        if successful:
+                            rank_values = [
+                                e.get("rank1_agree")
+                                for e in successful
+                                if e.get("rank1_agree") is not None
+                            ]
+                            if rank_values and not all(bool(val) for val in rank_values):
+                                gate_value = False
+                            else:
+                                pref_name, pref_layer = resolve_preferred_semantic_milestone(summary_diag)
+                                decoding_point_block["preferred_target"] = {
+                                    "name": pref_name,
+                                    "layer": pref_layer,
+                                }
+                                preferred_entry = None
+                                if pref_layer is not None:
+                                    for entry in successful:
+                                        if _to_int_or_none(entry.get("layer")) == int(pref_layer):
+                                            preferred_entry = entry
+                                            break
+                                if preferred_entry is None and successful:
+                                    preferred_entry = successful[0]
+                                if preferred_entry is not None:
+                                    jaccard_pref = preferred_entry.get("jaccard@10")
+                                    if jaccard_pref is None:
+                                        gate_value = False
+                                    else:
+                                        try:
+                                            gate_value = bool(float(jaccard_pref) >= 0.5)
+                                        except (TypeError, ValueError):
+                                            gate_value = False
+                                else:
+                                    gate_value = None
+                    decoding_point_block["gate"]["decoding_point_consistent"] = gate_value
+                else:
+                    decoding_point_block["tested"] = False
+                    decoding_point_block["gate"]["decoding_point_consistent"] = None
+            summary_diag["decoding_point"] = decoding_point_block
+            if (
+                decoding_point_block.get("tested")
+                and norm_arch == "pre_norm"
+            ):
+                strategy_val = summary_diag["normalization_provenance"].get("strategy")
+                if isinstance(strategy_val, dict):
+                    new_strategy = dict(strategy_val)
+                elif isinstance(strategy_val, str) and strategy_val.strip():
+                    new_strategy = {"primary": strategy_val}
+                else:
+                    new_strategy = {"primary": norm_strategy}
+                new_strategy["ablation"] = "post_ln2_vs_next_ln1@targets"
+                summary_diag["normalization_provenance"]["strategy"] = new_strategy
 
             if prompt_id == "pos" and prompt_variant == "orig":
                 def _softmax_cpu(tensor: Optional[torch.Tensor]) -> Optional[torch.Tensor]:

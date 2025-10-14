@@ -811,6 +811,10 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                     "fact_index": 0,
                     "pass_summary": pass_summary,
                 })
+                decoding_point_diag = (pass_summary.get("decoding_point") or {})
+                decoding_point_gate = (decoding_point_diag.get("gate") or {}).get("decoding_point_consistent")
+                if decoding_point_gate is False:
+                    diag_flags["decoding_point_sensitive"] = True
                 semantic_margin_info = pass_summary.get("semantic_margin") or {}
                 if diag.get("L_semantic") is not None:
                     margin_flag = semantic_margin_info.get("margin_ok_at_L_semantic_norm")
@@ -2049,6 +2053,8 @@ def run_experiment_for_model(model_id, output_files, config: ExperimentConfig):
                 reasons.append("layer_map_missing")
             if diag_flags.get("rank_only_near_uniform"):
                 reasons.append("rank_only_near_uniform")
+            if diag_flags.get("decoding_point_sensitive"):
+                reasons.append("decoding_point_sensitive")
             if diag_flags.get("low_lens_consistency_at_semantic"):
                 reasons.append("low_lens_consistency_at_semantic")
             if tuned_is_calibration_only:

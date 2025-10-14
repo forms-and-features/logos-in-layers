@@ -57,6 +57,7 @@ class _Block(nn.Module):
     def __init__(self, d_model: int):
         super().__init__()
         self.ln1 = nn.LayerNorm(d_model)
+        self.ln2 = nn.LayerNorm(d_model)
         self.mlp = nn.Sequential(nn.Linear(d_model, d_model))
         self.hook_resid_post = _Hookable('blocks.X.hook_resid_post')
 
@@ -172,6 +173,14 @@ def test_run_prompt_pass_minimal():
     # Prism disabled path should produce no sidecar rows
     assert json_data_prism["records"] == []
     assert json_data_prism["pure_next_token_records"] == []
+    decoding_point = summary.get("decoding_point")
+    assert isinstance(decoding_point, dict)
+    assert decoding_point.get("arch") in {"pre_norm", "post_norm", "unknown"}
+    assert isinstance(decoding_point.get("gate"), dict)
+    assert isinstance(decoding_point.get("strategies"), list)
+    assert isinstance(decoding_point.get("per_target"), list)
+    gate_value = decoding_point.get("gate", {}).get("decoding_point_consistent")
+    assert gate_value is not False
 
 
 def test_run_prompt_pass_control_margin():
