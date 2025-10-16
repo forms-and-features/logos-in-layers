@@ -91,16 +91,21 @@ Write concise but thorough paragraphs that correlate quantitative patterns acros
    - Tuned audit: `delta_kl_rot_{p25,p50,p75}` and `pos_ood_gap`; note `tuned_is_calibration_only`.
    - Head mismatch: `tau_star_modelcal` and before/after final‑KL.
 
+   Briefly summarize notable findings.
+
 2. Copy reflex (early layers 0–3)
    Use pure‑CSV flags: `copy_collapse` OR `copy_soft_k1@τ_soft`=True in layers 0–3 → mark “copy‑reflex”. Call out outliers. Normalize timing by depth.
 
    Report control strength: if control_summary.first_control_strong_pos is present, flag lexical leakage as **strong**; otherwise treat positive control margins as weak calibration noise.
+
+   Briefly summarize notable findings.
 
 3. Lens artefact risk
    Report:
    - From diagnostics.raw_lens_full and artifact‑audit CSV: `lens_artifact_score_v2` (and legacy score), `js_divergence_p50`, `l1_prob_diff_p50`, `jaccard_raw_norm_p50`, `pct_layers_kl_ge_1.0`, `n_norm_only_semantics_layers`, earliest norm‑only layer.
    - Risk tier (low/medium/high). For high tier, restrict to rank/KL milestones and confirmed semantics.
    - Also report diagnostics.lens_consistency p50 values (jaccard@10/@50, spearman_top50) at candidate layers; low values indicate view‑dependent early “semantics”.
+   - Briefly summarize notable findings.
 
 4. Confirmed semantics
    When available, report L_semantic_strong_run2 in preference to other milestones; otherwise prefer L_semantic_strong, then L_semantic_confirmed (noting any uniform/Top‑2 margin failures).
@@ -109,17 +114,21 @@ Write concise but thorough paragraphs that correlate quantitative patterns acros
    If confirmed is absent, cite `L_semantic_norm`, explicitly noting when `margin_ok_at_L_semantic_norm=false`.
    When `evaluation_pack.micro_suite` exists, summarize medians across facts and cite at least one fact row per model.
    When present, summarize gate‑stability under rescaling at the reported layer (both_gates_pass_frac) and the position‑window rank‑1 fraction; downgrade confidence if either is low per RULES.
+   Briefly summarize notable findings.
 
 5. Entropy & confidence
    Compare entropy drift `(entropy_bits − teacher_entropy_bits)` at representative depths (use summary percentiles or evaluation_pack.entropy). Summarize whether drift shrinks as rank improves and KL falls.
+   Briefly summarize notable findings.
 
 6. Normalization & numeric health
    Note norm strategy (post_ln2 vs next_ln1), early spikes (resid_norm_ratio / delta_resid_cos), and any numeric health flags overlapping candidate layers.
+   Briefly summarize notable findings.
 
 7. Repeatability
    Quote diagnostics.repeatability {max_rank_dev, p95_rank_dev, top1_flip_rate} **and** diagnostics.repeatability_forward
    {milestones.pass1.layer, milestones.pass2.layer, delta_layers, topk_jaccard_at_primary_layer, gate.repeatability_forward_pass}.
    If forward-of-two fails or is absent, state this explicitly and downgrade near-threshold claims per RULES.
+   Briefly summarize notable findings.
 
 8. Family patterns
    Within families (e.g., Qwen, Gemma), summarize consistencies/differences in collapse depth, artefact tier, tuned audit, and control margins.
@@ -127,7 +136,7 @@ Write concise but thorough paragraphs that correlate quantitative patterns acros
 10. Prism Summary Across Models (if present)
 - Treat Prism as a shared‑decoder diagnostic. Report KL deltas at the sampled depths and any rank‑milestone shifts relative to baseline norm lens. Classify as Helpful / Neutral / Regressive.
 
-11. Investigate and write a paragraph about notable similarities and differences between models of the same family (Qwen, gemma).
+11. Investigate and write a paragraph about notable similarities and differences between models of the same family (Qwen, gemma, Llama, Mistral).
 
 13. Misinterpretations in existing EVALS
 Bullet each over‑statement or error you found; cite the exact EVAL line.
