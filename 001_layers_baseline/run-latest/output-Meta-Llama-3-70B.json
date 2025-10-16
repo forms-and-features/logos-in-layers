@@ -837,8 +837,9 @@
       "max_abs": 0.0
     },
     "flags": {
+      "decoding_point_sensitive": true,
       "rank_only_near_uniform": true,
-      "repeatability_skipped": "deterministic_env",
+      "repeatability_forward_skipped": "deterministic_env",
       "normalization_spike": true
     },
     "prism_summary": {
@@ -7425,7 +7426,10 @@
     },
     "normalization_provenance": {
       "arch": "pre_norm",
-      "strategy": "next_ln1",
+      "strategy": {
+        "primary": "next_ln1",
+        "ablation": "post_ln2_vs_next_ln1@targets"
+      },
       "per_layer": [
         {
           "layer": 0,
@@ -8654,8 +8658,73 @@
       "layers_flagged": []
     },
     "repeatability": {
-      "status": "skipped",
-      "reason": "deterministic_env"
+      "status": "ok",
+      "layers_checked": 81,
+      "max_rank_dev": 0.0,
+      "p95_rank_dev": 0.0,
+      "top1_flip_rate": 0.0,
+      "deterministic_algorithms": true
+    },
+    "decoding_point": {
+      "arch": "pre_norm",
+      "tested": true,
+      "strategies": [
+        "post_ln2",
+        "next_ln1"
+      ],
+      "targets": [
+        {
+          "name": "L_semantic_norm",
+          "layer": 40
+        },
+        {
+          "name": "first_rank_le_5",
+          "layer": 38
+        }
+      ],
+      "per_target": [
+        {
+          "name": "L_semantic_norm",
+          "layer": 40,
+          "rank1_agree": true,
+          "delta_answer_rank": 0,
+          "top1_token_agree": true,
+          "answer_rank_post_ln2": 1,
+          "answer_rank_next_ln1": 1,
+          "top1_id_post_ln2": 20437,
+          "top1_id_next_ln1": 20437,
+          "p_answer_post_ln2": 1.6389487427659333e-05,
+          "p_answer_next_ln1": 2.3916558347991668e-05,
+          "p_top1_post_ln2": 1.6389487427659333e-05,
+          "p_top1_next_ln1": 2.3916558347991668e-05,
+          "spearman_top50": 0.4177405536174774,
+          "jaccard@10": 0.3333333333333333,
+          "jaccard@50": 0.4084507042253521,
+          "status": "ok"
+        },
+        {
+          "name": "first_rank_le_5",
+          "layer": 38,
+          "rank1_agree": false,
+          "delta_answer_rank": 0,
+          "top1_token_agree": true,
+          "answer_rank_post_ln2": 3,
+          "answer_rank_next_ln1": 3,
+          "top1_id_post_ln2": 5042,
+          "top1_id_next_ln1": 5042,
+          "p_answer_post_ln2": 1.6291112842736766e-05,
+          "p_answer_next_ln1": 2.501689778000582e-05,
+          "p_top1_post_ln2": 1.8423108485876583e-05,
+          "p_top1_next_ln1": 2.897492959164083e-05,
+          "spearman_top50": 0.5786258578300476,
+          "jaccard@10": 0.42857142857142855,
+          "jaccard@50": 0.4492753623188406,
+          "status": "ok"
+        }
+      ],
+      "gate": {
+        "decoding_point_consistent": false
+      }
     },
     "lens_consistency": {
       "targets": [
@@ -8709,6 +8778,26 @@
       "pieces": [
         "ĠBerlin"
       ]
+    },
+    "repeatability_forward": {
+      "milestones": {
+        "primary": "L_semantic_norm",
+        "pass1": {
+          "layer": 40
+        },
+        "pass2": {
+          "layer": null
+        },
+        "delta_layers": null
+      },
+      "topk_jaccard_at_primary_layer": null,
+      "gate": {
+        "repeatability_forward_pass": null
+      },
+      "enabled": true,
+      "mode": "skipped_deterministic",
+      "tolerance_layers": 1,
+      "topk_k": 10
     },
     "last_layer_consistency": {
       "kl_to_final_bits": 0.0007293472672488833,
@@ -9634,6 +9723,7 @@
       "norm_only_semantics_window",
       "normalization_spike",
       "rank_only_near_uniform",
+      "decoding_point_sensitive",
       "scale_sensitive_semantic_gate"
     ],
     "notes": "Family-level head calibration; treat probabilities comparatively only within model.",
@@ -9678,10 +9768,10 @@
       "risk_tier": "medium"
     },
     "repeatability": {
-      "max_rank_dev": null,
-      "p95_rank_dev": null,
-      "top1_flip_rate": null,
-      "flag": "skipped"
+      "max_rank_dev": 0.0,
+      "p95_rank_dev": 0.0,
+      "top1_flip_rate": 0.0,
+      "flag": "ok"
     },
     "alignment": {
       "gold_alignment_rate": 1.0,

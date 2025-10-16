@@ -837,7 +837,8 @@
       "max_abs": 0.0
     },
     "flags": {
-      "repeatability_skipped": "deterministic_env",
+      "decoding_point_sensitive": true,
+      "repeatability_forward_skipped": "deterministic_env",
       "pos_window_low_stability": true,
       "normalization_spike": true
     },
@@ -7388,7 +7389,10 @@
     },
     "normalization_provenance": {
       "arch": "pre_norm",
-      "strategy": "next_ln1",
+      "strategy": {
+        "primary": "next_ln1",
+        "ablation": "post_ln2_vs_next_ln1@targets"
+      },
       "per_layer": [
         {
           "layer": 0,
@@ -8017,8 +8021,73 @@
       "layers_flagged": []
     },
     "repeatability": {
-      "status": "skipped",
-      "reason": "deterministic_env"
+      "status": "ok",
+      "layers_checked": 41,
+      "max_rank_dev": 0.0,
+      "p95_rank_dev": 0.0,
+      "top1_flip_rate": 0.0,
+      "deterministic_algorithms": true
+    },
+    "decoding_point": {
+      "arch": "pre_norm",
+      "tested": true,
+      "strategies": [
+        "post_ln2",
+        "next_ln1"
+      ],
+      "targets": [
+        {
+          "name": "L_semantic_norm",
+          "layer": 36
+        },
+        {
+          "name": "first_rank_le_5",
+          "layer": 33
+        }
+      ],
+      "per_target": [
+        {
+          "name": "L_semantic_norm",
+          "layer": 36,
+          "rank1_agree": true,
+          "delta_answer_rank": 0,
+          "top1_token_agree": true,
+          "answer_rank_post_ln2": 1,
+          "answer_rank_next_ln1": 1,
+          "top1_id_post_ln2": 19846,
+          "top1_id_next_ln1": 19846,
+          "p_answer_post_ln2": 0.23044662177562714,
+          "p_answer_next_ln1": 0.9530214071273804,
+          "p_top1_post_ln2": 0.23044662177562714,
+          "p_top1_next_ln1": 0.9530214071273804,
+          "spearman_top50": 0.3265882134437561,
+          "jaccard@10": 0.25,
+          "jaccard@50": 0.3333333333333333,
+          "status": "ok"
+        },
+        {
+          "name": "first_rank_le_5",
+          "layer": 33,
+          "rank1_agree": false,
+          "delta_answer_rank": -3,
+          "top1_token_agree": false,
+          "answer_rank_post_ln2": 1,
+          "answer_rank_next_ln1": 4,
+          "top1_id_post_ln2": 19846,
+          "top1_id_next_ln1": 2130,
+          "p_answer_post_ln2": 0.024113107472658157,
+          "p_answer_next_ln1": 0.0025335305836051702,
+          "p_top1_post_ln2": 0.024113107472658157,
+          "p_top1_next_ln1": 0.9313669800758362,
+          "spearman_top50": 0.22610414028167725,
+          "jaccard@10": 0.25,
+          "jaccard@50": 0.3157894736842105,
+          "status": "ok"
+        }
+      ],
+      "gate": {
+        "decoding_point_consistent": false
+      }
     },
     "lens_consistency": {
       "targets": [
@@ -8105,6 +8174,26 @@
       "pieces": [
         "ĠBerlin"
       ]
+    },
+    "repeatability_forward": {
+      "milestones": {
+        "primary": "L_semantic_norm",
+        "pass1": {
+          "layer": 36
+        },
+        "pass2": {
+          "layer": null
+        },
+        "delta_layers": null
+      },
+      "topk_jaccard_at_primary_layer": null,
+      "gate": {
+        "repeatability_forward_pass": null
+      },
+      "enabled": true,
+      "mode": "skipped_deterministic",
+      "tolerance_layers": 1,
+      "topk_k": 10
     },
     "last_layer_consistency": {
       "kl_to_final_bits": 0.0,
@@ -12175,6 +12264,7 @@
       "high_lens_artifact_risk",
       "high_lens_artifact_score",
       "normalization_spike",
+      "decoding_point_sensitive",
       "pos_window_low_stability"
     ],
     "notes": "Family-level head calibration; treat probabilities comparatively only within model.",
@@ -12220,10 +12310,10 @@
       "risk_tier": "high"
     },
     "repeatability": {
-      "max_rank_dev": null,
-      "p95_rank_dev": null,
-      "top1_flip_rate": null,
-      "flag": "skipped"
+      "max_rank_dev": 0.0,
+      "p95_rank_dev": 0.0,
+      "top1_flip_rate": 0.0,
+      "flag": "ok"
     },
     "alignment": {
       "gold_alignment_rate": 1.0,

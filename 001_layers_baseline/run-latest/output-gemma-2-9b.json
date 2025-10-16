@@ -837,7 +837,8 @@
       "max_abs": 0.0
     },
     "flags": {
-      "repeatability_skipped": "deterministic_env",
+      "decoding_point_sensitive": true,
+      "repeatability_forward_skipped": "deterministic_env",
       "pos_window_low_stability": true,
       "normalization_spike": true
     },
@@ -5949,7 +5950,10 @@
     },
     "normalization_provenance": {
       "arch": "pre_norm",
-      "strategy": "next_ln1",
+      "strategy": {
+        "primary": "next_ln1",
+        "ablation": "post_ln2_vs_next_ln1@targets"
+      },
       "per_layer": [
         {
           "layer": 0,
@@ -6608,8 +6612,73 @@
       "layers_flagged": []
     },
     "repeatability": {
-      "status": "skipped",
-      "reason": "deterministic_env"
+      "status": "ok",
+      "layers_checked": 43,
+      "max_rank_dev": 0.0,
+      "p95_rank_dev": 0.0,
+      "top1_flip_rate": 0.0,
+      "deterministic_algorithms": true
+    },
+    "decoding_point": {
+      "arch": "pre_norm",
+      "tested": true,
+      "strategies": [
+        "post_ln2",
+        "next_ln1"
+      ],
+      "targets": [
+        {
+          "name": "L_semantic_norm",
+          "layer": 42
+        },
+        {
+          "name": "first_rank_le_5",
+          "layer": 42
+        }
+      ],
+      "per_target": [
+        {
+          "name": "L_semantic_norm",
+          "layer": 42,
+          "rank1_agree": false,
+          "delta_answer_rank": 68,
+          "top1_token_agree": false,
+          "answer_rank_post_ln2": 69,
+          "answer_rank_next_ln1": 1,
+          "top1_id_post_ln2": 664,
+          "top1_id_next_ln1": 12514,
+          "p_answer_post_ln2": 0.0001019370392896235,
+          "p_answer_next_ln1": 0.9297690391540527,
+          "p_top1_post_ln2": 0.4022665023803711,
+          "p_top1_next_ln1": 0.9297690391540527,
+          "spearman_top50": 0.38009408116340637,
+          "jaccard@10": 0.5384615384615384,
+          "jaccard@50": 0.2987012987012987,
+          "status": "ok"
+        },
+        {
+          "name": "first_rank_le_5",
+          "layer": 42,
+          "rank1_agree": false,
+          "delta_answer_rank": 68,
+          "top1_token_agree": false,
+          "answer_rank_post_ln2": 69,
+          "answer_rank_next_ln1": 1,
+          "top1_id_post_ln2": 664,
+          "top1_id_next_ln1": 12514,
+          "p_answer_post_ln2": 0.0001019370392896235,
+          "p_answer_next_ln1": 0.9297690391540527,
+          "p_top1_post_ln2": 0.4022665023803711,
+          "p_top1_next_ln1": 0.9297690391540527,
+          "spearman_top50": 0.38009408116340637,
+          "jaccard@10": 0.5384615384615384,
+          "jaccard@50": 0.2987012987012987,
+          "status": "ok"
+        }
+      ],
+      "gate": {
+        "decoding_point_consistent": false
+      }
     },
     "lens_consistency": {
       "targets": [
@@ -6696,6 +6765,26 @@
       "pieces": [
         "▁Berlin"
       ]
+    },
+    "repeatability_forward": {
+      "milestones": {
+        "primary": "L_semantic_norm",
+        "pass1": {
+          "layer": 42
+        },
+        "pass2": {
+          "layer": null
+        },
+        "delta_layers": null
+      },
+      "topk_jaccard_at_primary_layer": null,
+      "gate": {
+        "repeatability_forward_pass": null
+      },
+      "enabled": true,
+      "mode": "skipped_deterministic",
+      "tolerance_layers": 1,
+      "topk_k": 10
     },
     "last_layer_consistency": {
       "kl_to_final_bits": 1.0128875226902398,
@@ -10771,6 +10860,7 @@
       "high_lens_artifact_risk",
       "high_lens_artifact_score",
       "normalization_spike",
+      "decoding_point_sensitive",
       "pos_window_low_stability"
     ],
     "notes": "Family-level head calibration; treat probabilities comparatively only within model.",
@@ -10816,10 +10906,10 @@
       "risk_tier": "high"
     },
     "repeatability": {
-      "max_rank_dev": null,
-      "p95_rank_dev": null,
-      "top1_flip_rate": null,
-      "flag": "skipped"
+      "max_rank_dev": 0.0,
+      "p95_rank_dev": 0.0,
+      "top1_flip_rate": 0.0,
+      "flag": "ok"
     },
     "alignment": {
       "gold_alignment_rate": 1.0,
