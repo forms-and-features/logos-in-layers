@@ -1,5 +1,6 @@
 import torch
 import string
+import unicodedata
 from typing import Any, Callable, Dict
 
 
@@ -120,7 +121,13 @@ def is_pure_whitespace_or_punct(text: str) -> bool:
     normalized = text.replace("▁", " ").replace("Ġ", " ").replace("Ċ", " ")
     if normalized.strip() == "":
         return True
-    return all(ch.isspace() or (ch in string.punctuation) for ch in normalized)
+    # Accept both ASCII punctuation and wider Unicode punctuation blocks
+    return all(
+        ch.isspace()
+        or (ch in string.punctuation)
+        or unicodedata.category(ch).startswith("P")
+        for ch in normalized
+    )
 
 
 def build_copy_ignore_mask(

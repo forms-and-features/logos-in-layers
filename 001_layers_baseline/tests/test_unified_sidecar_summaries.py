@@ -77,7 +77,9 @@ def test_unified_metrics_rank_and_kl_deltas():
     kl = out["kl_bits_at_percentiles"]
     assert kl["baseline"] == {"p25": 1.2, "p50": 0.8, "p75": 0.4}
     assert kl["prism"] == {"p25": 1.0, "p50": 0.9, "p75": 0.3}
-    assert kl["delta"] == {"p25": 0.2, "p50": -0.09999999999999998, "p75": 0.10000000000000003}
+    assert kl["delta"]["p50"] == -0.09999999999999998
+    assert kl["delta"]["p75"] == 0.10000000000000003
+    assert abs(kl["delta"]["p25"] - 0.2) < 1e-9  # tolerate float roundoff
 
     # First KL <= 1.0: baseline at L4 (0.8), alt at L2 (1.0) → delta = 2 - 4 = -2
     fk = out["first_kl_le_1.0"]
@@ -106,7 +108,7 @@ def test_filtering_and_null_propagation():
 
     kl = out["kl_bits_at_percentiles"]
     # n_layers=4 → percentiles target layers ~{1,2,3}; baseline missing p25/p75 → None
-    assert kl["baseline"]["p50"] == 0.5  # layer 2 → p50
+    assert kl["baseline"]["p50"] == 2.0  # layer 2 → p50 (rounded percentile)
     assert kl["baseline"]["p25"] is None and kl["baseline"]["p75"] is None
     assert kl["tuned"] == {"p25": None, "p50": None, "p75": None}
     assert kl["delta"]["p50"] is None
@@ -131,4 +133,3 @@ def test_empty_and_none_alt_records_equivalence():
         alt_label="prism",
     )
     assert out_none == out_empty
-

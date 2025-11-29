@@ -95,7 +95,7 @@ def test_summarize_pure_records():
     assert diag["first_kl_below_0.5"] == 3
     assert diag["first_kl_below_1.0"] == 2
     assert diag["first_rank_le_1"] == 3
-    assert diag["first_rank_le_5"] is None  # no rank<=5 until layer 3 (which is <=1 already accounted)
+    assert diag["first_rank_le_5"] == 3  # first rank<=5 arrives with rank==1 at layer 3
     assert diag["first_rank_le_10"] == 2
 
     cos_milestones = diag["cos_milestones"]["norm"]
@@ -103,7 +103,7 @@ def test_summarize_pure_records():
 
     depth = diag["depth_fractions"]
     assert depth["L_semantic_frac"] == 0.75
-    assert depth["first_rank_le_5_frac"] is None
+    assert depth["first_rank_le_5_frac"] == 0.75
     assert depth["L_copy_strict_frac"] == 0.25
     assert depth["L_copy_soft_k1_frac"] == 0.25
     assert depth["L_copy_soft_k2_frac"] == 0.5

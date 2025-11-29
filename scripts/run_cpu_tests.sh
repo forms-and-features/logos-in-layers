@@ -30,54 +30,7 @@ then
   exit 1
 fi
 
-${PY} 001_layers_baseline/tests/test_norm_utils.py
-${PY} 001_layers_baseline/tests/test_numerics.py
-${PY} 001_layers_baseline/tests/test_csv_io.py
-${PY} 001_layers_baseline/tests/test_collapse_rules.py
-${PY} 001_layers_baseline/tests/test_device_policy.py
-${PY} 001_layers_baseline/tests/test_hooks.py
-${PY} 001_layers_baseline/tests/test_run_dir.py
-${PY} 001_layers_baseline/tests/test_rank_metrics.py
-${PY} 001_layers_baseline/tests/test_kl_metrics.py
-${PY} 001_layers_baseline/tests/test_summaries.py
-${PY} 001_layers_baseline/tests/test_unified_sidecar_summaries.py
-${PY} 001_layers_baseline/tests/test_head_transforms.py
-${PY} 001_layers_baseline/tests/test_windows.py
-${PY} 001_layers_baseline/tests/test_raw_lens.py
-${PY} 001_layers_baseline/tests/test_unembed.py
-${PY} 001_layers_baseline/tests/test_token_utils.py
-${PY} 001_layers_baseline/tests/test_records.py
-${PY} 001_layers_baseline/tests/test_pure_emit.py
-${PY} 001_layers_baseline/tests/test_probes.py
-${PY} 001_layers_baseline/tests/test_prism_sidecar_helpers.py
-${PY} 001_layers_baseline/tests/test_prism_sidecar_equivalence.py
-${PY} 001_layers_baseline/tests/test_consistency.py
-${PY} 001_layers_baseline/tests/test_lenses_basic.py
-${PY} 001_layers_baseline/tests/test_pass_runner_minimal.py
-${PY} 001_layers_baseline/tests/test_prism_placement_failure.py
+echo "Running pytest over 001_layers_baseline/tests …"
+"$PY" -m pytest -q 001_layers_baseline/tests
 
-# Prism unit tests (CPU-only)
-${PY} 001_layers_baseline/tests/test_prism_whiten.py
-${PY} 001_layers_baseline/tests/test_prism_procrustes.py
-${PY} 001_layers_baseline/tests/test_prism_artifacts.py
-${PY} 001_layers_baseline/tests/test_prism_utils.py
-
-(
-  cd 001_layers_baseline/tests
-  "$PY" test_refactored_self_test.py
-)
-
-# Prism sidecar smoke test (uses mock model and synthetic artifacts)
-${PY} 001_layers_baseline/tests/test_prism_sidecar.py
-
-# Normalization test prints status; still CPU-only
-${PY} 001_layers_baseline/tests/test_normalization.py
-
-# Copy mask coverage and tokenizer guardrails
-${PY} 001_layers_baseline/tests/test_copy_mask.py
-
-# New: Raw-lens full sweep and numeric scoring; confirmed semantics & tuned attribution
-${PY} 001_layers_baseline/tests/test_raw_lens_full_and_score.py
-${PY} 001_layers_baseline/tests/test_confirmed_semantics_and_tuned_attr.py
-
-echo "All CPU-only tests completed."
+echo "All CPU-only tests completed (pytest)."

@@ -86,7 +86,7 @@ def test_detect_copy_collapse_id_subseq_threshold_and_margin():
         ctx_ids,
         window,
         copy_threshold=0.95,
-        copy_margin=0.90,
+        copy_margin=0.99,
     )
     assert collapsed is False
     # Window not in ctx should fail

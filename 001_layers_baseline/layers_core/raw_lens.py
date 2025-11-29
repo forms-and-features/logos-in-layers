@@ -44,11 +44,12 @@ def should_sample_layer(mode: str, n_layers: int, layer_one_indexed: int) -> boo
         return False
     if mode == "full":
         return 1 <= layer_one_indexed <= n_layers
-    # sample
-    candidates = {n_layers // 4, n_layers // 2, (3 * n_layers) // 4}
-    # convert 0-based to 1-based
-    candidate_one_indexed = {c + 1 for c in candidates if 0 <= c < n_layers}
-    return layer_one_indexed in candidate_one_indexed
+    # sample: target 25/50/75% depth using 1-based layer indices
+    targets = {
+        max(1, min(n_layers, int(round(n_layers * frac))))
+        for frac in (0.25, 0.50, 0.75)
+    }
+    return layer_one_indexed in targets
 
 
 def record_dual_lens_sample(

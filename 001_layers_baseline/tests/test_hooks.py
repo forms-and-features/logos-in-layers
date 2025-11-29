@@ -26,6 +26,8 @@ class MockHookPoint:
         class HookObj:
             pass
         h = HookObj(); h.name = self.name
+        if self._fn is None:
+            return
         self._fn(tensor, h)
 
 

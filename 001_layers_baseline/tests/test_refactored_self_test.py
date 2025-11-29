@@ -8,19 +8,11 @@ import _pathfix  # noqa: F401
 
 def test_imports():
     """Test that all imports work correctly"""
-    try:
-        # Test that kl_sanity_test can import from run.py
-        from kl_sanity_test import run_kl_sanity_test
-        print("✅ kl_sanity_test imports successfully")
-
-        # Test that the kl_sanity_test module has the needed functions
-        from run import detect_model_architecture, get_correct_norm_module, apply_norm_or_skip
-        print("✅ kl_sanity_test can access run.py functions")
-
-        return True
-    except ImportError as e:
-        print(f"❌ Import test failed: {e}")
-        return False
+    # Test that kl_sanity_test can import from run.py
+    from kl_sanity_test import run_kl_sanity_test  # noqa: F401
+    # Test that the kl_sanity_test module has the needed functions
+    from run import detect_model_architecture, get_correct_norm_module, apply_norm_or_skip  # noqa: F401
+    # If imports succeed, assertions hold; no return needed.
 
 
 def test_module_structure():
@@ -28,20 +20,9 @@ def test_module_structure():
     import kl_sanity_test
 
     # Check that main function exists for standalone usage
-    if hasattr(kl_sanity_test, 'main'):
-        print("✅ kl_sanity_test has main() for standalone usage")
-    else:
-        print("❌ kl_sanity_test missing main() function")
-        return False
-
+    assert hasattr(kl_sanity_test, 'main')
     # Check that run_kl_sanity_test function exists
-    if hasattr(kl_sanity_test, 'run_kl_sanity_test'):
-        print("✅ kl_sanity_test has run_kl_sanity_test() function")
-    else:
-        print("❌ kl_sanity_test missing run_kl_sanity_test() function")
-        return False
-
-    return True
+    assert hasattr(kl_sanity_test, 'run_kl_sanity_test')
 
 
 def test_help_text():
@@ -50,19 +31,11 @@ def test_help_text():
     import sys
     import os
 
-    try:
-        run_py = os.path.join(os.path.dirname(__file__), "..", "run.py")
-        result = subprocess.run([sys.executable, run_py, "--help"],
-                                capture_output=True, text=True, timeout=10)
-        if "kl_sanity_test.py" in result.stdout:
-            print("✅ run.py help text mentions standalone kl_sanity_test.py")
-            return True
-        else:
-            print("❌ run.py help text doesn't mention standalone usage")
-            return False
-    except Exception as e:
-        print(f"❌ Help text test failed: {e}")
-        return False
+    run_py = os.path.join(os.path.dirname(__file__), "..", "run.py")
+    result = subprocess.run([sys.executable, run_py, "--help"],
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0
+    assert "kl_sanity_test.py" in result.stdout
 
 
 if __name__ == "__main__":
@@ -79,4 +52,3 @@ if __name__ == "__main__":
     else:
         print("\n💥 Some refactoring tests failed!")
         exit(1)
-
